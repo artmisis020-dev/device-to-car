@@ -6,7 +6,8 @@ import json
 import math
 import os
 import time
-from datetime import datetime, timedelta
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 from flask import Flask, request, jsonify, render_template_string, redirect, url_for, session, send_file
@@ -14,12 +15,12 @@ from flask import Flask, request, jsonify, render_template_string, redirect, url
 app = Flask(__name__)
 app.secret_key = "sirena_secret_key_2026_static" #TODO: env var or config in prod
 
-DB = "/opt/sirena-server/devices.db"#TODO: env var or config in prod
+DB = "/opt/sirena-server/devices.db" #TODO: env var or config in prod
 
 import threading as _threading
 _cleanup_lock = _threading.Lock()
 _cleanup_counter = 0
-ADMIN_PASSWORD    = "sirena_admin_2026"#TODO: env var or config in prod
+ADMIN_PASSWORD    = "sirena_admin_2026" #TODO: env var or config in prod
 TELEMETRY_TTL_H   = 48
 RECORDINGS_DIR    = "/opt/sirena-video/recordings"
 
@@ -35,69 +36,62 @@ def _sanitize(obj):
 MEDIAMTX_HLS_PORT = 8888
 
 # ─── DB ────────────────────────────────────────────────────────────────────────
+@contextmanager
 def get_db():
     db = sqlite3.connect(DB, timeout=10, check_same_thread=False)
     db.row_factory = sqlite3.Row
-    db.execute("PRAGMA journal_mode=WAL")
     db.execute("PRAGMA synchronous=NORMAL")
-    return db
+    db.execute("PRAGMA foreign_keys=ON")
+    try:
+        yield db
+    finally:
+        db.close()
 
 def init_db():
-    db = get_db()
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS devices (
-            device_id      TEXT PRIMARY KEY,
-            hostname       TEXT,
-            ip             TEXT,
-            hardware       TEXT,
-            sirena_version TEXT,
-            video_version  TEXT,
-            registered_at  TEXT,
-            last_seen      TEXT,
-            approved       INTEGER DEFAULT 0,
-            valid_hours    INTEGER DEFAULT 24,
-            valid_until    TEXT,
-            notes          TEXT,
-            telemetry_active INTEGER DEFAULT 0
-        )
-    """)
-    # Migration: add telemetry_active if missing
-    try:
-        db.execute("ALTER TABLE devices ADD COLUMN telemetry_active INTEGER DEFAULT 0")
-    except Exception:
-        pass
-
-    # video_active column migration
-    try:
-        db.execute("ALTER TABLE devices ADD COLUMN video_active INTEGER DEFAULT 0")
-    except Exception:
-        pass
-
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS telemetry (
-            id        INTEGER PRIMARY KEY AUTOINCREMENT,
-            device_id TEXT NOT NULL,
-            flight_id TEXT,
-            ts        REAL NOT NULL,
-            msg_type  TEXT NOT NULL,
-            data      TEXT NOT NULL
-        )
-    """)
-    db.execute("CREATE INDEX IF NOT EXISTS idx_tel_device_ts ON telemetry(device_id, ts)")
-    db.commit()
-    db.close()
+    with get_db() as db:
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS devices (
+                device_id        TEXT PRIMARY KEY,
+                hostname         TEXT,
+                ip               TEXT,
+                hardware         TEXT,
+                sirena_version   TEXT,
+                video_version    TEXT,
+                registered_at    TEXT,
+                last_seen        TEXT,
+                approved         INTEGER DEFAULT 0 CHECK(approved IN (0,1)),
+                valid_hours      INTEGER DEFAULT 24,
+                valid_until      TEXT,
+                notes            TEXT,
+                telemetry_active INTEGER DEFAULT 0 CHECK(telemetry_active IN (0,1)),
+                video_active     INTEGER DEFAULT 0 CHECK(video_active IN (0,1))
+            )
+        """)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS telemetry (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL REFERENCES devices(device_id),
+                flight_id TEXT,
+                ts        REAL NOT NULL,
+                msg_type  TEXT NOT NULL,
+                data      TEXT NOT NULL
+            )
+        """)
+        db.execute("CREATE INDEX IF NOT EXISTS idx_tel_device_ts ON telemetry(device_id, ts)")
+        db.commit()
 
 # ─── Helpers ───────────────────────────────────────────────────────────────────
 def now_str():
-    return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 def is_valid(device):
     if not device["approved"]:
         return False
     if device["valid_until"]:
         try:
-            vu = datetime.strptime(device["valid_until"], "%Y-%m-%d %H:%M:%S")
-            if datetime.utcnow() > vu:
+            vu = datetime.strptime(device["valid_until"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > vu:
                 return False
         except Exception:
             return False
@@ -125,37 +119,35 @@ def api_register():
     if not device_id:
         return jsonify({"error": "missing device_id"}), 400
 
-    db = get_db()
-    existing = db.execute("SELECT * FROM devices WHERE device_id=?", (device_id,)).fetchone()
+    with get_db() as db:
+        existing = db.execute("SELECT * FROM devices WHERE device_id=?", (device_id,)).fetchone()
 
-    if existing:
-        new_sirena = sirena_version if sirena_version and sirena_version != "—" else existing["sirena_version"]
-        new_video  = video_version  if video_version  and video_version  != "inactive" else existing["video_version"]
-        db.execute("""
-            UPDATE devices SET hostname=?, ip=?, hardware=?, sirena_version=?,
-            video_version=?, last_seen=? WHERE device_id=?
-        """, (hostname, ip, hardware, new_sirena, new_video, now_str(), device_id))
-        db.commit()
-        device = db.execute("SELECT * FROM devices WHERE device_id=?", (device_id,)).fetchone()
-        valid = is_valid(device)
-        db.close()
-        return jsonify({
-            "status": "approved" if valid else "pending",
-            "valid_until": device["valid_until"],
-            "message": "Device updated"
-        })
-    else:
-        valid_until = (datetime.utcnow() + timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
-        db.execute("""
-            INSERT INTO devices
-            (device_id, hostname, ip, hardware, sirena_version, video_version,
-             registered_at, last_seen, approved, valid_hours, valid_until, telemetry_active)
-            VALUES (?,?,?,?,?,?,?,?,0,24,?,0)
-        """, (device_id, hostname, ip, hardware, sirena_version, video_version,
-              now_str(), now_str(), valid_until))
-        db.commit()
-        db.close()
-        return jsonify({"status": "pending", "message": "Device registered, awaiting approval"})
+        if existing:
+            new_sirena = sirena_version if sirena_version and sirena_version != "—" else existing["sirena_version"]
+            new_video  = video_version  if video_version  and video_version  != "inactive" else existing["video_version"]
+            db.execute("""
+                UPDATE devices SET hostname=?, ip=?, hardware=?, sirena_version=?,
+                video_version=?, last_seen=? WHERE device_id=?
+            """, (hostname, ip, hardware, new_sirena, new_video, now_str(), device_id))
+            db.commit()
+            device = db.execute("SELECT * FROM devices WHERE device_id=?", (device_id,)).fetchone()
+            valid = is_valid(device)
+            return jsonify({
+                "status": "approved" if valid else "pending",
+                "valid_until": device["valid_until"],
+                "message": "Device updated"
+            })
+        else:
+            valid_until = (datetime.now(timezone.utc) + timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+            db.execute("""
+                INSERT INTO devices
+                (device_id, hostname, ip, hardware, sirena_version, video_version,
+                 registered_at, last_seen, approved, valid_hours, valid_until, telemetry_active)
+                VALUES (?,?,?,?,?,?,?,?,0,24,?,0)
+            """, (device_id, hostname, ip, hardware, sirena_version, video_version,
+                  now_str(), now_str(), valid_until))
+            db.commit()
+            return jsonify({"status": "pending", "message": "Device registered, awaiting approval"})
 
 @app.route("/api/heartbeat", methods=["POST"])
 def api_heartbeat():
@@ -164,28 +156,25 @@ def api_heartbeat():
     if not device_id:
         return jsonify({"error": "missing device_id"}), 400
 
-    db     = get_db()
-    device = db.execute("SELECT * FROM devices WHERE device_id=?", (device_id,)).fetchone()
-    if not device:
-        db.close()
-        return jsonify({"status": "unknown", "message": "Device not registered"}), 404
+    with get_db() as db:
+        device = db.execute("SELECT * FROM devices WHERE device_id=?", (device_id,)).fetchone()
+        if not device:
+            return jsonify({"status": "unknown", "message": "Device not registered"}), 404
 
-    db.execute("UPDATE devices SET last_seen=? WHERE device_id=?", (now_str(), device_id))
-    db.commit()
-    valid = is_valid(device)
-    db.close()
-    return jsonify({
-        "status":           "approved" if valid else "revoked",
-        "valid_until":      device["valid_until"],
-    })
+        db.execute("UPDATE devices SET last_seen=? WHERE device_id=?", (now_str(), device_id))
+        db.commit()
+        valid = is_valid(device)
+        return jsonify({
+            "status":      "approved" if valid else "revoked",
+            "valid_until": device["valid_until"],
+        })
 
 # ─── Admin Device API ──────────────────────────────────────────────────────────
 @app.route("/api/devices", methods=["GET"])
 @require_admin
 def api_devices():
-    db      = get_db()
-    devices = [dict(r) for r in db.execute("SELECT * FROM devices ORDER BY last_seen DESC").fetchall()]
-    db.close()
+    with get_db() as db:
+        devices = [dict(r) for r in db.execute("SELECT * FROM devices ORDER BY last_seen DESC").fetchall()]
     for d in devices:
         d["is_valid"] = is_valid(d)
     return jsonify(devices)
@@ -195,12 +184,11 @@ def api_devices():
 def api_approve(device_id):
     data        = request.get_json(force=True) or {}
     hours       = int(data.get("valid_hours", 24))
-    valid_until = (datetime.utcnow() + timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
-    db          = get_db()
-    db.execute("UPDATE devices SET approved=1, valid_hours=?, valid_until=? WHERE device_id=?",
-               (hours, valid_until, device_id))
-    db.commit()
-    db.close()
+    valid_until = (datetime.now(timezone.utc) + timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
+    with get_db() as db:
+        db.execute("UPDATE devices SET approved=1, valid_hours=?, valid_until=? WHERE device_id=?",
+                   (hours, valid_until, device_id))
+        db.commit()
     return jsonify({"status": "approved", "valid_until": valid_until})
 
 @app.route("/api/devices/<device_id>/revoke", methods=["POST"])
@@ -208,30 +196,27 @@ def api_approve(device_id):
 def api_revoke(device_id):
     data          = request.get_json(force=True) or {}
     delay_minutes = int(data.get("delay_minutes", 0))
-    db            = get_db()
-    if delay_minutes > 0:
-        valid_until = (datetime.utcnow() + timedelta(minutes=delay_minutes)).strftime("%Y-%m-%d %H:%M:%S")
-        db.execute("UPDATE devices SET valid_until=? WHERE device_id=?", (valid_until, device_id))
-        db.commit()
-        db.close()
-        return jsonify({"status": "revoke_scheduled", "valid_until": valid_until})
-    else:
-        db.execute("UPDATE devices SET approved=0, valid_until=NULL WHERE device_id=?", (device_id,))
-        db.commit()
-        db.close()
-        return jsonify({"status": "revoked"})
+    with get_db() as db:
+        if delay_minutes > 0:
+            valid_until = (datetime.now(timezone.utc) + timedelta(minutes=delay_minutes)).strftime("%Y-%m-%d %H:%M:%S")
+            db.execute("UPDATE devices SET valid_until=? WHERE device_id=?", (valid_until, device_id))
+            db.commit()
+            return jsonify({"status": "revoke_scheduled", "valid_until": valid_until})
+        else:
+            db.execute("UPDATE devices SET approved=0, valid_until=NULL WHERE device_id=?", (device_id,))
+            db.commit()
+            return jsonify({"status": "revoked"})
 
 @app.route("/api/devices/<device_id>/set_validity", methods=["POST"])
 @require_admin
 def api_set_validity(device_id):
     data        = request.get_json(force=True) or {}
     hours       = int(data.get("valid_hours", 24))
-    valid_until = (datetime.utcnow() + timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
-    db          = get_db()
-    db.execute("UPDATE devices SET valid_hours=?, valid_until=? WHERE device_id=?",
-               (hours, valid_until, device_id))
-    db.commit()
-    db.close()
+    valid_until = (datetime.now(timezone.utc) + timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
+    with get_db() as db:
+        db.execute("UPDATE devices SET valid_hours=?, valid_until=? WHERE device_id=?",
+                   (hours, valid_until, device_id))
+        db.commit()
     return jsonify({"status": "updated", "valid_until": valid_until})
 
 @app.route("/api/devices/<device_id>/notes", methods=["POST"])
@@ -239,56 +224,50 @@ def api_set_validity(device_id):
 def api_notes(device_id):
     data  = request.get_json(force=True) or {}
     notes = data.get("notes", "")
-    db    = get_db()
-    db.execute("UPDATE devices SET notes=? WHERE device_id=?", (notes, device_id))
-    db.commit()
-    db.close()
+    with get_db() as db:
+        db.execute("UPDATE devices SET notes=? WHERE device_id=?", (notes, device_id))
+        db.commit()
     return jsonify({"status": "ok"})
 
 @app.route("/api/devices/<device_id>/delete", methods=["POST"])
 @require_admin
 def api_delete(device_id):
-    db = get_db()
-    db.execute("DELETE FROM devices WHERE device_id=?", (device_id,))
-    db.execute("DELETE FROM telemetry WHERE device_id=?", (device_id,))
-    db.commit()
-    db.close()
+    with get_db() as db:
+        db.execute("DELETE FROM devices WHERE device_id=?", (device_id,))
+        db.execute("DELETE FROM telemetry WHERE device_id=?", (device_id,))
+        db.commit()
     return jsonify({"status": "deleted"})
 
 # ─── Telemetry Control API ─────────────────────────────────────────────────────
 @app.route("/api/devices/<device_id>/telemetry/start", methods=["POST"])
 @require_admin
 def api_telemetry_start(device_id):
-    db = get_db()
-    db.execute("UPDATE devices SET telemetry_active=1 WHERE device_id=?", (device_id,))
-    db.commit()
-    db.close()
+    with get_db() as db:
+        db.execute("UPDATE devices SET telemetry_active=1 WHERE device_id=?", (device_id,))
+        db.commit()
     return jsonify({"status": "telemetry_started"})
 
 @app.route("/api/devices/<device_id>/telemetry/stop", methods=["POST"])
 @require_admin
 def api_telemetry_stop(device_id):
-    db = get_db()
-    db.execute("UPDATE devices SET telemetry_active=0 WHERE device_id=?", (device_id,))
-    db.commit()
-    db.close()
+    with get_db() as db:
+        db.execute("UPDATE devices SET telemetry_active=0 WHERE device_id=?", (device_id,))
+        db.commit()
     return jsonify({"status": "telemetry_stopped"})
 
 @app.route("/api/devices/<device_id>/telemetry/clear", methods=["POST"])
 @require_admin
 def api_telemetry_clear(device_id):
-    db = get_db()
-    db.execute("DELETE FROM telemetry WHERE device_id=?", (device_id,))
-    db.commit()
-    db.close()
+    with get_db() as db:
+        db.execute("DELETE FROM telemetry WHERE device_id=?", (device_id,))
+        db.commit()
     return jsonify({"status": "cleared"})
 
 # ─── Telemetry Status (called by RPi — no admin auth) ─────────────────────────
 @app.route("/api/telemetry/status/<device_id>", methods=["GET"])
 def api_telemetry_status(device_id):
-    db  = get_db()
-    row = db.execute("SELECT telemetry_active FROM devices WHERE device_id=?", (device_id,)).fetchone()
-    db.close()
+    with get_db() as db:
+        row = db.execute("SELECT telemetry_active FROM devices WHERE device_id=?", (device_id,)).fetchone()
     if not row:
         return jsonify({"active": False, "error": "device not found"}), 404
     return jsonify({"active": bool(row["telemetry_active"])})
@@ -304,23 +283,21 @@ def api_telemetry_ingest():
     if not device_id or not msgs:
         return jsonify({"error": "missing device_id or msgs"}), 400
 
-    db  = get_db()
-    row = db.execute("SELECT device_id FROM devices WHERE device_id=?", (device_id,)).fetchone()
-    if not row:
-        db.close()
-        return jsonify({"error": "unknown device"}), 403
+    with get_db() as db:
+        row = db.execute("SELECT device_id FROM devices WHERE device_id=?", (device_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "unknown device"}), 403
 
-    rows = [
-        (device_id, flight_id, m["t"], m["m"],
-         m["d"] if isinstance(m["d"], str) else json.dumps(m["d"], separators=(',', ':')))
-        for m in msgs
-    ]
-    db.executemany(
-        "INSERT INTO telemetry(device_id, flight_id, ts, msg_type, data) VALUES(?,?,?,?,?)",
-        rows
-    )
-    db.commit()
-    db.close()
+        rows = [
+            (device_id, flight_id, m["t"], m["m"],
+             m["d"] if isinstance(m["d"], str) else json.dumps(m["d"], separators=(',', ':')))
+            for m in msgs
+        ]
+        db.executemany(
+            "INSERT INTO telemetry(device_id, flight_id, ts, msg_type, data) VALUES(?,?,?,?,?)",
+            rows
+        )
+        db.commit()
 
     # Cleanup old records in background (every 50 requests, non-blocking)
     global _cleanup_counter
@@ -328,11 +305,10 @@ def api_telemetry_ingest():
     if _cleanup_counter % 50 == 0:
         def _cleanup():
             try:
-                cdb = get_db()
-                cutoff = time.time() - TELEMETRY_TTL_H * 3600
-                cdb.execute("DELETE FROM telemetry WHERE ts<?", (cutoff,))
-                cdb.commit()
-                cdb.close()
+                with get_db() as cdb:
+                    cutoff = time.time() - TELEMETRY_TTL_H * 3600
+                    cdb.execute("DELETE FROM telemetry WHERE ts<?", (cutoff,))
+                    cdb.commit()
             except Exception:
                 pass
         _threading.Thread(target=_cleanup, daemon=True).start()
@@ -347,38 +323,31 @@ def api_telemetry_latest(device_id):
     limit    = int(request.args.get("limit", 500))
     msg_type = request.args.get("msg_type")
 
-    db = get_db()
-    if msg_type:
-        rows = db.execute(
-            "SELECT ts,msg_type,data FROM telemetry WHERE device_id=? AND ts>? AND msg_type=? ORDER BY ts LIMIT ?",
-            (device_id, since, msg_type, limit)
-        ).fetchall()
-    else:
-        rows = db.execute(
-            "SELECT ts,msg_type,data FROM telemetry WHERE device_id=? AND ts>? ORDER BY ts LIMIT ?",
-            (device_id, since, limit)
-        ).fetchall()
-    db.close()
+    with get_db() as db:
+        if msg_type:
+            rows = db.execute(
+                "SELECT ts,msg_type,data FROM telemetry WHERE device_id=? AND ts>? AND msg_type=? ORDER BY ts LIMIT ?",
+                (device_id, since, msg_type, limit)
+            ).fetchall()
+        else:
+            rows = db.execute(
+                "SELECT ts,msg_type,data FROM telemetry WHERE device_id=? AND ts>? ORDER BY ts LIMIT ?",
+                (device_id, since, limit)
+            ).fetchall()
     return jsonify([{"ts": r[0], "type": r[1], "d": _sanitize(json.loads(r[2]))} for r in rows])
 
 @app.route("/api/telemetry/stats/<device_id>", methods=["GET"])
 @require_admin
 def api_telemetry_stats(device_id):
-    db = get_db()
-    total = db.execute("SELECT COUNT(*) FROM telemetry WHERE device_id=?", (device_id,)).fetchone()[0]
-    types = db.execute(
-        "SELECT msg_type, COUNT(*) as cnt FROM telemetry WHERE device_id=? GROUP BY msg_type ORDER BY cnt DESC",
-        (device_id,)
-    ).fetchall()
-    last_ts = db.execute(
-        "SELECT MAX(ts) FROM telemetry WHERE device_id=?", (device_id,)
-    ).fetchone()[0]
-    db.close()
-    rate = 0
-    if last_ts:
-        recent = db.execute if False else None  # already closed
-        # approximate: last 5s
-        pass
+    with get_db() as db:
+        total = db.execute("SELECT COUNT(*) FROM telemetry WHERE device_id=?", (device_id,)).fetchone()[0]
+        types = db.execute(
+            "SELECT msg_type, COUNT(*) as cnt FROM telemetry WHERE device_id=? GROUP BY msg_type ORDER BY cnt DESC",
+            (device_id,)
+        ).fetchall()
+        last_ts = db.execute(
+            "SELECT MAX(ts) FROM telemetry WHERE device_id=?", (device_id,)
+        ).fetchone()[0]
     return jsonify({
         "total": total,
         "last_ts": last_ts,
@@ -389,19 +358,17 @@ def api_telemetry_stats(device_id):
 @app.route("/api/devices/<device_id>/video/start", methods=["POST"])
 @require_admin
 def api_video_start(device_id):
-    db = get_db()
-    db.execute("UPDATE devices SET video_active=1 WHERE device_id=?", (device_id,))
-    db.commit()
-    db.close()
+    with get_db() as db:
+        db.execute("UPDATE devices SET video_active=1 WHERE device_id=?", (device_id,))
+        db.commit()
     return jsonify({"status": "video_started"})
 
 @app.route("/api/devices/<device_id>/video/stop", methods=["POST"])
 @require_admin
 def api_video_stop(device_id):
-    db = get_db()
-    db.execute("UPDATE devices SET video_active=0 WHERE device_id=?", (device_id,))
-    db.commit()
-    db.close()
+    with get_db() as db:
+        db.execute("UPDATE devices SET video_active=0 WHERE device_id=?", (device_id,))
+        db.commit()
     return jsonify({"status": "video_stopped"})
 
 # ─── Video Report (called by RPi video_relay.py — no admin auth) ──────────────
@@ -410,24 +377,21 @@ def api_video_report(device_id):
     """RPi video_relay.py posts here when relay starts / stops."""
     data   = request.get_json(force=True) or {}
     active = 1 if data.get("active") else 0
-    db     = get_db()
-    row    = db.execute("SELECT device_id FROM devices WHERE device_id=?", (device_id,)).fetchone()
-    if not row:
-        db.close()
-        return jsonify({"error": "unknown device"}), 404
-    db.execute("UPDATE devices SET video_active=? WHERE device_id=?", (active, device_id))
-    db.commit()
-    db.close()
+    with get_db() as db:
+        row = db.execute("SELECT device_id FROM devices WHERE device_id=?", (device_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "unknown device"}), 404
+        db.execute("UPDATE devices SET video_active=? WHERE device_id=?", (active, device_id))
+        db.commit()
     return jsonify({"status": "ok", "active": bool(active)})
 
 # ─── Video Status (called by RPi — no admin auth) ─────────────────────────────
 @app.route("/api/video/status/<device_id>", methods=["GET"])
 def api_video_status(device_id):
-    db  = get_db()
-    row = db.execute(
-        "SELECT video_active, hostname FROM devices WHERE device_id=?", (device_id,)
-    ).fetchone()
-    db.close()
+    with get_db() as db:
+        row = db.execute(
+            "SELECT video_active, hostname FROM devices WHERE device_id=?", (device_id,)
+        ).fetchone()
     if not row:
         return jsonify({"active": False, "error": "device not found"}), 404
     return jsonify({
@@ -439,9 +403,8 @@ def api_video_status(device_id):
 @app.route("/api/video/recordings/<device_id>", methods=["GET"])
 @require_admin
 def api_video_recordings(device_id):
-    db  = get_db()
-    row = db.execute("SELECT hostname FROM devices WHERE device_id=?", (device_id,)).fetchone()
-    db.close()
+    with get_db() as db:
+        row = db.execute("SELECT hostname FROM devices WHERE device_id=?", (device_id,)).fetchone()
     if not row:
         return jsonify([])
     hostname   = row["hostname"] or device_id[:12]
@@ -464,9 +427,8 @@ def api_video_recordings(device_id):
 @app.route("/api/video/recordings/<device_id>/delete/<filename>", methods=["POST"])
 @require_admin
 def api_video_delete_recording(device_id, filename):
-    db  = get_db()
-    row = db.execute("SELECT hostname FROM devices WHERE device_id=?", (device_id,)).fetchone()
-    db.close()
+    with get_db() as db:
+        row = db.execute("SELECT hostname FROM devices WHERE device_id=?", (device_id,)).fetchone()
     if not row:
         return jsonify({"error": "device not found"}), 404
     hostname = row["hostname"] or device_id[:12]
@@ -479,9 +441,8 @@ def api_video_delete_recording(device_id, filename):
 @app.route("/api/video/recordings/<device_id>/download/<filename>", methods=["GET"])
 @require_admin
 def api_video_download(device_id, filename):
-    db  = get_db()
-    row = db.execute("SELECT hostname FROM devices WHERE device_id=?", (device_id,)).fetchone()
-    db.close()
+    with get_db() as db:
+        row = db.execute("SELECT hostname FROM devices WHERE device_id=?", (device_id,)).fetchone()
     if not row:
         return "not found", 404
     hostname = row["hostname"] or device_id[:12]
@@ -494,9 +455,8 @@ def api_video_download(device_id, filename):
 @app.route("/video/<device_id>")
 @require_admin
 def video_page(device_id):
-    db  = get_db()
-    dev = db.execute("SELECT * FROM devices WHERE device_id=?", (device_id,)).fetchone()
-    db.close()
+    with get_db() as db:
+        dev = db.execute("SELECT * FROM devices WHERE device_id=?", (device_id,)).fetchone()
     if not dev:
         return "Device not found", 404
     hostname = dev["hostname"] or device_id[:12]
@@ -534,9 +494,8 @@ def index():
 @app.route("/telemetry/<device_id>")
 @require_admin
 def telemetry_page(device_id):
-    db   = get_db()
-    dev  = db.execute("SELECT * FROM devices WHERE device_id=?", (device_id,)).fetchone()
-    db.close()
+    with get_db() as db:
+        dev = db.execute("SELECT * FROM devices WHERE device_id=?", (device_id,)).fetchone()
     if not dev:
         return "Device not found", 404
     return render_template_string(TELEMETRY_HTML,
