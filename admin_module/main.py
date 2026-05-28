@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Sirena Device Registry Server — license/handshake control + telemetry ingestion."""
 
+import os
 import sqlite3
 import json
 import math
-import os
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -13,16 +13,16 @@ from pathlib import Path
 from flask import Flask, request, jsonify, render_template_string, redirect, url_for, session, send_file
 
 app = Flask(__name__)
-app.secret_key = "sirena_secret_key_2026_static" #TODO: env var or config in prod
+app.secret_key = os.environ["SIRENA_SECRET_KEY"]
 
-DB = "/opt/sirena-server/devices.db" #TODO: env var or config in prod
+DB = os.environ.get("SIRENA_DB", "/opt/sirena-server/devices.db")
 
 import threading as _threading
 _cleanup_lock = _threading.Lock()
 _cleanup_counter = 0
-ADMIN_PASSWORD    = "sirena_admin_2026" #TODO: env var or config in prod
+ADMIN_PASSWORD    = os.environ["ADMIN_PASSWORD"]
 TELEMETRY_TTL_H   = 48
-RECORDINGS_DIR    = "/opt/sirena-video/recordings"
+RECORDINGS_DIR    = os.environ.get("SIRENA_RECORDINGS", "/opt/sirena-video/recordings")
 
 def _sanitize(obj):
     """Replace NaN/Infinity (produced by some MAVLink fields) with None for valid JSON."""
