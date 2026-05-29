@@ -1,0 +1,30 @@
+[Unit]
+Description=Sirena WebRTC Camera Server
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=sirena
+WorkingDirectory=/opt/sirena-video
+# Додаємо робочу директорію до шляху пошуку модулів Python про всяк випадок
+Environment=PYTHONPATH=/opt/sirena-video
+# ВИПРАВЛЕНО: прибрано пробіли навколо знаку "="
+Environment=PYTHONUNBUFFERED=1
+
+# Змінні конфігурації камери
+Environment=VIDEO_DEVICE=/dev/v4l/by-id/usb-Thermal_Cam_Co._Ltd_Camera_202206223-video-index0
+Environment=WIDTH=640
+Environment=HEIGHT=512
+Environment=FPS=30
+Environment=PORT=8092
+
+ExecStart=/opt/sirena-video/venv/bin/python3 /opt/sirena-video/webrtc_camera.py
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=webrtc-camera
+
+[Install]
+WantedBy=multi-user.target

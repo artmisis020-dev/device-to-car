@@ -1,0 +1,85 @@
+#!/bin/bash
+# Встановлення Sirena Video на RPi camera
+# Цільова папка: /opt/sirena-video
+
+set -e
+
+if [ "$EUID" -ne 0 ]; then
+  echo "Помилка: Цей скрипт потрібно запускати від імені root (через sudo)"
+  exit 1
+fi
+
+DEPLOY_DIR="$(cd "$(dirname "$0")" && pwd)"
+INSTALL_DIR="/opt/sirena-video"
+SERVICE_USER="sirena"
+
+echo "=== Sirena Video install ==="
+echo "Джерело: $DEPLOY_DIR"
+echo "Ціль:    $INSTALL_DIR"
+
+echo "1. Встановлення системних пакетів..."
+apt-get update
+apt-get install -y \
+    gstreamer1.0-tools \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad \
+    v4l-utils \
+    avahi-daemon \
+    python3-pip \
+    python3-venv
+
+echo "2. Налаштування системного користувача та прав..."
+if ! id "$SERVICE_USER" &>/dev/null; then
+    echo "Створення системного користувача $SERVICE_USER..."
+    useradd -m -s /bin/bash "$SERVICE_USER"
+fi
+
+usermod -aG video "$SERVICE_USER"
+
+# Оновлюємо права sudoers, дозволяючи ПОВНИЙ контроль над systemctl без пароля
+SUDOERS_FILE="/etc/sudoers.d/sirena-systemd"
+echo "Оновлення прав sudo для керування сервісами..."
+echo "sirena ALL=(ALL) NOPASSWD: /usr/bin/systemctl" > "$SUDOERS_FILE"
+chmod 0440 "$SUDOERS_FILE"
+
+echo "3. Зупинка старих сервісів..."
+systemctl stop video-service-manager 2>/dev/null || true
+systemctl stop webrtc-camera         2>/dev/null || true
+systemctl stop video-streamer        2>/dev/null || true
+
+echo "4. Розгортання файлів проєкту..."
+mkdir -p "$INSTALL_DIR"
+cp -a "$DEPLOY_DIR"/. "$INSTALL_DIR/" 2>/dev/null || true
+
+echo "5. Налаштування віртуального оточення Python (venv)..."
+rm -rf "$INSTALL_DIR/venv"
+python3 -m venv "$INSTALL_DIR/venv"
+
+chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR"
+
+echo "Встановлення бібліотек (aiohttp, PyYAML) у venv..."
+sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install --upgrade pip
+sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install aiohttp aiortc av PyYAML aiohttp_jinja2
+
+if [ -f "$DEPLOY_DIR/requirements.txt" ]; then
+    echo "Встановлення з requirements.txt..."
+    sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install -r "$DEPLOY_DIR/requirements.txt" || true
+fi
+
+chmod -R 755 "$INSTALL_DIR"
+
+echo "6. Встановлення твоїх системних сервісів..."
+cp "$DEPLOY_DIR/services/"*.service /etc/systemd/system/
+
+systemctl enable --now avahi-daemon
+systemctl daemon-reload
+
+echo "Запуск сервісів..."
+systemctl enable video-service-manager webrtc-camera video-streamer
+systemctl start  video-service-manager
+
+echo ""
+echo "=== Готово ==="
+echo "UI:     http://$(hostname -I | awk '{print $1}'):9000"
+echo "Логи:   journalctl -u video-service-manager -f"

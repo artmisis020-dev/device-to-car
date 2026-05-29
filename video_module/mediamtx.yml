@@ -1,0 +1,36 @@
+###############################################
+# Sirena — mediamtx config
+# SRT in :8890 → HLS :8888 / WebRTC :8889
+# Records to /opt/sirena-video/recordings/
+###############################################
+
+logLevel: warn
+logDestinations: [stdout]
+
+# ─── Protocols ────────────────────────────────
+srtAddress:     :8890
+hlsAddress:     :8888
+webrtcAddress:  :8889
+rtspAddress:    :8554
+rtmpAddress:    ""
+api:            yes
+apiAddress:     :9997
+
+# ─── HLS settings ─────────────────────────────
+hlsVariant:             lowLatency
+hlsSegmentCount:        6
+hlsSegmentDuration:     1s
+hlsPartDuration:        200ms
+hlsAlwaysRemux:         yes
+
+# ─── Recording for ALL streams ─────────────────
+pathDefaults:
+  record:                 yes
+  recordPath:             /opt/sirena-video/recordings/%path/%Y-%m-%d_%H-%M-%S
+  recordFormat:           fmp4
+  recordSegmentDuration:  10m
+  recordDeleteAfter:      48h
+
+paths:
+  ~^(.+)$:
+    source: publisher
