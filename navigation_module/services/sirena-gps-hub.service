@@ -1,6 +1,6 @@
 [Unit]
 Description=Sirena GPS Hub (Starlink + Beitian → FC NMEA + MAVLink proxy)
-After=network-online.target
+After=network-online.target mavlink-router.service
 Wants=network-online.target
 
 [Service]
