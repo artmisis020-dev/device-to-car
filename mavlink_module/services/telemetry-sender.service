@@ -1,13 +1,13 @@
 [Unit]
 Description=Sirena Telemetry Sender (MAVLink → HTTP server)
-After=network-online.target sirena-gps-hub.service
+After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=sirena
-WorkingDirectory=/home/sirena/sirena
-ExecStart=/usr/bin/python3 /home/sirena/sirena/telemetry_daemon.py
+WorkingDirectory=/opt/sirena-telemetry
+ExecStart=/opt/sirena-telemetry/venv/bin/python3 /opt/sirena-telemetry/telemetry_daemon.py
 Restart=on-failure
 RestartSec=10s
 StandardOutput=journal
