@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Sirena — Device Registry{% endblock %}
+{% block head %}
+<style>
+body { background:#1a1a2e; color:#e0e0e0; }
+.card { background:#16213e; border:1px solid #0f3460; }
+.table { color:#e0e0e0; }
+.table thead { background:#0f3460; }
+.badge-valid { background:#198754; }
+.badge-pending { background:#ffc107; color:#000; }
+.badge-revoked { background:#dc3545; }
+.badge-expired { background:#6c757d; }
+.last-seen-old { color:#dc3545 !important; }
+.stat-card { background:linear-gradient(135deg,#16213e,#1a2a4a); border:1px solid #1e3a5f; border-radius:10px; padding:1rem; text-align:center; }
+.stat-card .stat-value { font-size:2rem; font-weight:700; line-height:1.1; }
+.stat-card .stat-label { font-size:0.75rem; color:#8baac8; text-transform:uppercase; letter-spacing:.05em; margin-top:4px; }
+.card-header { background:#0f3460 !important; color:#e8eef5 !important; font-weight:600; font-size:.9rem; }
+.table thead th { color:#a8c0d8; font-size:.78rem; text-transform:uppercase; letter-spacing:.05em; border-bottom:1px solid #1e3a5f !important; }
+.table tbody td { border-color:#1a2a3a !important; vertical-align:middle; font-size:.85rem; }
+.table-hover tbody tr:hover { background:rgba(30,58,95,.4) !important; }
+.navbar-brand { letter-spacing:.03em; }
+.tel-live { color:#00ff88; font-size:.75rem; animation: blink 1.5s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+</style>
+{% endblock %}
+{% block content %}
+<nav class="navbar navbar-dark" style="background:#0f3460">
+  <div class="container-fluid">
+    <span class="navbar-brand fw-bold">🛰 Sirena Device Registry</span>
+    <div class="d-flex gap-2 align-items-center">
+      <span class="text-light small" id="clock"></span>
+      <a href="/logout" class="btn btn-sm btn-outline-light">Logout</a>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid py-3">
+  <div class="row g-3 mb-3" id="stats"></div>
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span class="fw-bold">Registered Devices</span>
+      <button class="btn btn-sm btn-outline-info" onclick="loadDevices()">⟳ Refresh</button>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0" id="devTable">
+          <thead><tr>
+            <th>Status</th><th>Hostname</th><th>IP</th><th>Hardware ID</th>
+            <th>Sirena</th><th>Video</th><th>Last Seen</th><th>Valid Until</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="devBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Approve Modal -->
+<div class="modal fade" id="approveModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content bg-dark text-white">
+    <div class="modal-header border-secondary">
+      <h5 class="modal-title">Approve Device</h5>
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+    </div>
+    <div class="modal-body">
+      <label class="form-label">Valid for (hours)</label>
+      <input type="number" id="approveHours" class="form-control bg-secondary text-white" value="24" min="1">
+    </div>
+    <div class="modal-footer border-secondary">
+      <button class="btn btn-success" onclick="confirmApprove()">Approve</button>
+    </div>
+  </div></div>
+</div>
+
+<!-- Revoke Modal -->
+<div class="modal fade" id="revokeModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content bg-dark text-white">
+    <div class="modal-header border-secondary">
+      <h5 class="modal-title">Revoke Access</h5>
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+    </div>
+    <div class="modal-body">
+      <div class="mb-3">
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="revokeType" id="revokeNow" value="now" checked>
+          <label class="form-check-label" for="revokeNow">Immediately</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="revokeType" id="revokeDelayOpt" value="delay">
+          <label class="form-check-label" for="revokeDelayOpt">After delay</label>
+        </div>
+      </div>
+      <div id="delayGroup" style="display:none">
+        <label class="form-label">Delay (minutes)</label>
+        <input type="number" id="revokeDelayVal" class="form-control bg-secondary text-white" value="60" min="1">
+      </div>
+    </div>
+    <div class="modal-footer border-secondary">
+      <button class="btn btn-danger" onclick="confirmRevoke()">Revoke</button>
+    </div>
+  </div></div>
+</div>
+{% endblock %}
+{% block scripts %}
+{{ super() }}
+<script>
+let currentDeviceId = null;
+const approveModal = new bootstrap.Modal(document.getElementById('approveModal'));
+const revokeModal  = new bootstrap.Modal(document.getElementById('revokeModal'));
+
+document.querySelectorAll('input[name="revokeType"]').forEach(r => {
+  r.addEventListener('change', () => {
+    document.getElementById('delayGroup').style.display =
+      document.querySelector('input[name="revokeType"]:checked').value === 'delay' ? 'block' : 'none';
+  });
+});
+
+function statusBadge(d) {
+  if (!d.approved) return '<span class="badge badge-pending">Pending</span>';
+  if (!d.valid_until) return '<span class="badge badge-valid">Approved</span>';
+  const vu = new Date(d.valid_until + ' UTC');
+  if (vu < new Date()) return '<span class="badge badge-expired">Expired</span>';
+  return '<span class="badge badge-valid">Active</span>';
+}
+
+function lastSeenClass(ls) {
+  if (!ls) return '';
+  return (new Date() - new Date(ls + ' UTC')) > 5*60*1000 ? 'last-seen-old' : '';
+}
+
+function shortId(id) { return id.substring(0, 12) + '…'; }
+
+async function loadDevices() {
+  let res, devs;
+  try {
+    res = await fetch('/api/devices');
+    if (res.redirected || res.url.includes('/login') || res.status === 403) {
+      window.location.href = '/login'; return;
+    }
+    devs = await res.json();
+  } catch(e) { window.location.href = '/login'; return; }
+
+  const total   = devs.length;
+  const active  = devs.filter(d => d.is_valid).length;
+  const pending = devs.filter(d => !d.approved).length;
+  const online  = devs.filter(d => d.last_seen && (new Date()-new Date(d.last_seen+' UTC'))<2*60*1000).length;
+
+  document.getElementById('stats').innerHTML = `
+    <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-value text-white">${total}</div><div class="stat-label">Total Devices</div></div></div>
+    <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-value text-success">${active}</div><div class="stat-label">Active</div></div></div>
+    <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-value text-warning">${pending}</div><div class="stat-label">Pending</div></div></div>
+    <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-value text-info">${online}</div><div class="stat-label">Online (2m)</div></div></div>
+  `;
+
+  const body = devs.map(d => {
+    const vidBtn = d.video_active
+      ? '🎥 <span style="color:#d73a49;font-size:.7rem">● REC</span>'
+      : '🎥';
+    const telBadge = d.telemetry_active
+      ? '<span class="tel-live">● LIVE</span>'
+      : '<span class="text-muted" style="font-size:.7rem">○ off</span>';
+    return `<tr>
+      <td>${statusBadge(d)}</td>
+      <td class="fw-bold">${d.hostname || '—'}</td>
+      <td>${d.ip || '—'}</td>
+      <td><code title="${d.device_id}">${shortId(d.device_id)}</code></td>
+      <td><span class="badge bg-secondary">${d.sirena_version || '—'}</span></td>
+      <td><span class="badge bg-secondary">${d.video_version || '—'}</span></td>
+      <td class="small ${lastSeenClass(d.last_seen)}">${(d.last_seen||'—').replace('T',' ')}</td>
+      <td class="small">${d.valid_until||'—'}</td>
+      <td>
+        <a href="/telemetry/${d.device_id}" class="btn btn-sm btn-outline-success py-0 px-2 me-1" title="Telemetry">📡 ${telBadge}</a>
+        <a href="/video/${d.device_id}" class="btn btn-sm btn-outline-info py-0 px-2 me-1" title="Video">${vidBtn}</a>
+        <button class="btn btn-sm btn-success py-0 px-2 me-1" onclick="openApprove('${d.device_id}')">✓</button>
+        <button class="btn btn-sm btn-danger py-0 px-2 me-1" onclick="openRevoke('${d.device_id}')">✗</button>
+        <button class="btn btn-sm btn-secondary py-0 px-2" onclick="deleteDevice('${d.device_id}','${d.hostname}')">🗑</button>
+      </td>
+    </tr>`;
+  }).join('');
+  document.getElementById('devBody').innerHTML = body ||
+    '<tr><td colspan="9" class="text-center text-muted py-4">No devices registered yet</td></tr>';
+}
+
+function openApprove(id) { currentDeviceId = id; approveModal.show(); }
+function openRevoke(id)   { currentDeviceId = id; revokeModal.show(); }
+
+async function confirmApprove() {
+  const hours = parseInt(document.getElementById('approveHours').value) || 24;
+  await fetch(`/api/devices/${currentDeviceId}/approve`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({valid_hours: hours})
+  });
+  approveModal.hide(); loadDevices();
+}
+
+async function confirmRevoke() {
+  const type = document.querySelector('input[name="revokeType"]:checked').value;
+  const body = type === 'delay'
+    ? {delay_minutes: parseInt(document.getElementById('revokeDelayVal').value)||60} : {};
+  await fetch(`/api/devices/${currentDeviceId}/revoke`, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+  });
+  revokeModal.hide(); loadDevices();
+}
+
+async function deleteDevice(id, hostname) {
+  if (!confirm('Delete device ' + hostname + '?\nThis cannot be undone.')) return;
+  await fetch('/api/devices/' + id + '/delete', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: '{}'
+  });
+  loadDevices();
+}
+
+setInterval(() => {
+  document.getElementById('clock').textContent = new Date().toUTCString().slice(0,25) + ' UTC';
+}, 1000);
+setInterval(loadDevices, 15000);
+loadDevices();
+</script>
+{% endblock %}

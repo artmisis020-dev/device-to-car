@@ -1,0 +1,382 @@
+{% extends "base.html" %}
+{% block title %}📡 Telemetry — {{ hostname }}{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
+.card { background:#161b22; border:1px solid #21262d; border-radius:8px; }
+.card-header { background:#1c2128 !important; border-bottom:1px solid #21262d; color:#c9d1d9 !important; font-weight:600; padding:.6rem 1rem; font-size:.85rem; }
+.metric-label { font-size:.68rem; color:#8b949e; text-transform:uppercase; letter-spacing:.05em; }
+.metric-value { font-size:1.6rem; font-weight:700; line-height:1.1; color:#e6edf3; }
+.metric-unit  { font-size:.75rem; color:#8b949e; }
+.badge-armed   { background:#d73a49; }
+.badge-disarmed{ background:#388bfd; }
+.status-dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+.dot-live   { background:#3fb950; animation: pulse 2s infinite; }
+.dot-off    { background:#6e7681; }
+@keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(63,185,80,.4)} 70%{box-shadow:0 0 0 6px rgba(63,185,80,0)} }
+#map { height:320px; border-radius:6px; }
+.msg-table { font-size:.75rem; }
+.msg-table td, .msg-table th { padding:.25rem .5rem !important; }
+.rate-bar { height:4px; background:#388bfd; border-radius:2px; transition:width .3s; }
+.navbar { background:#161b22 !important; border-bottom:1px solid #21262d; }
+</style>
+{% endblock %}
+{% block content %}
+<nav class="navbar navbar-dark mb-3">
+  <div class="container-fluid">
+    <span class="navbar-brand">
+      <span class="status-dot dot-off me-2" id="statusDot"></span>
+      📡 {{ hostname }} — Telemetry
+    </span>
+    <div class="d-flex gap-2">
+      <button id="btnToggle" class="btn btn-sm btn-success" onclick="toggleTelemetry()">▶ Start</button>
+      <button class="btn btn-sm btn-outline-warning" onclick="clearTelemetry()">🗑 Clear</button>
+      <a href="/" class="btn btn-sm btn-outline-secondary">← Registry</a>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid">
+  <!-- Status bar -->
+  <div class="d-flex gap-3 mb-3 align-items-center flex-wrap">
+    <span id="statusText" class="text-muted small">Waiting for telemetry…</span>
+    <span class="text-muted small">|</span>
+    <span class="small">Msgs: <strong id="msgCount">0</strong></span>
+    <span class="small">Rate: <strong id="msgRate">0</strong> msg/s</span>
+    <span class="small">Flight: <code id="flightId" class="text-info">—</code></span>
+    <span class="small" id="lastSeen"></span>
+    <span class="small text-warning" id="dbgLine"></span>
+  </div>
+
+  <div class="row g-2 mb-2">
+    <!-- GPS -->
+    <div class="col-6 col-md-3">
+      <div class="card h-100">
+        <div class="card-header">🛰 GPS</div>
+        <div class="card-body p-2">
+          <div class="metric-label">Latitude</div>
+          <div class="metric-value" id="gpsLat">—</div>
+          <div class="metric-label mt-1">Longitude</div>
+          <div class="metric-value" id="gpsLon">—</div>
+          <div class="d-flex gap-3 mt-2">
+            <div><div class="metric-label">Alt (m)</div><div id="gpsAlt" class="fw-bold">—</div></div>
+            <div><div class="metric-label">Sats</div><div id="gpsSats" class="fw-bold">—</div></div>
+            <div><div class="metric-label">Fix</div><div id="gpsFix" class="fw-bold">—</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Attitude -->
+    <div class="col-6 col-md-3">
+      <div class="card h-100">
+        <div class="card-header">✈ Attitude</div>
+        <div class="card-body p-2">
+          <div class="row g-1 text-center">
+            <div class="col-4"><div class="metric-label">Roll</div><div class="fw-bold" id="attRoll">—</div></div>
+            <div class="col-4"><div class="metric-label">Pitch</div><div class="fw-bold" id="attPitch">—</div></div>
+            <div class="col-4"><div class="metric-label">Yaw</div><div class="fw-bold" id="attYaw">—</div></div>
+          </div>
+          <hr class="my-2" style="border-color:#21262d">
+          <div class="row g-1 text-center">
+            <div class="col-6"><div class="metric-label">Speed m/s</div><div class="fw-bold" id="vfrSpeed">—</div></div>
+            <div class="col-6"><div class="metric-label">Heading</div><div class="fw-bold" id="vfrHdg">—</div></div>
+          </div>
+          <div class="mt-1 text-center">
+            <div class="metric-label">Throttle</div>
+            <div class="progress mt-1" style="height:6px;background:#21262d">
+              <div class="progress-bar bg-info" id="throttleBar" style="width:0%"></div>
+            </div>
+            <div class="small text-muted" id="throttleVal">0%</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Battery -->
+    <div class="col-6 col-md-3">
+      <div class="card h-100">
+        <div class="card-header">🔋 Battery</div>
+        <div class="card-body p-2">
+          <div class="metric-value" id="batVolt">—<span class="metric-unit"> V</span></div>
+          <div class="metric-label mt-1">Voltage</div>
+          <div class="mt-2">
+            <div class="progress" style="height:10px;background:#21262d">
+              <div class="progress-bar" id="batBar" style="width:0%;background:#3fb950"></div>
+            </div>
+            <div class="d-flex justify-content-between mt-1">
+              <span class="small text-muted" id="batPct">—%</span>
+              <span class="small text-muted" id="batCurr">— A</span>
+            </div>
+          </div>
+          <div class="mt-2">
+            <div class="metric-label">System Status</div>
+            <div class="fw-bold" id="sysStatus">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- System -->
+    <div class="col-6 col-md-3">
+      <div class="card h-100">
+        <div class="card-header">⚙ System</div>
+        <div class="card-body p-2">
+          <div class="metric-label">Mode</div>
+          <div class="fw-bold fs-5" id="flightMode">—</div>
+          <div class="mt-2" id="armedBadge"><span class="badge badge-disarmed">DISARMED</span></div>
+          <hr class="my-2" style="border-color:#21262d">
+          <div class="metric-label">Status Text</div>
+          <div class="small text-warning" id="lastStatusText">—</div>
+          <div class="metric-label mt-1">Climb m/s</div>
+          <div class="fw-bold" id="vfrClimb">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-2">
+    <!-- Map -->
+    <div class="col-md-7">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between">
+          🗺 GPS Track
+          <button class="btn btn-sm btn-outline-secondary py-0" onclick="clearTrack()">Clear track</button>
+        </div>
+        <div class="card-body p-1"><div id="map"></div></div>
+      </div>
+    </div>
+    <!-- Message stats -->
+    <div class="col-md-5">
+      <div class="card h-100">
+        <div class="card-header">📊 Message Types</div>
+        <div class="card-body p-0" style="max-height:340px;overflow-y:auto">
+          <table class="table table-sm msg-table mb-0" style="color:#c9d1d9">
+            <thead style="background:#1c2128;position:sticky;top:0">
+              <tr><th>Type</th><th>Count</th><th>Last</th><th class="w-25">Rate</th></tr>
+            </thead>
+            <tbody id="msgTypes"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{{ super() }}
+<script>
+const DEVICE_ID = "{{ device_id }}";
+let telActive   = false;
+let lastTs      = Date.now()/1000 - 300; // load last 5 min on page open
+let msgCounts   = {};
+let msgTimes    = {};
+let msgTotal    = 0;
+let lastMsgTime = 0;
+let prevMsgTotal= 0;
+let gpsTrack    = [];
+let currentFlight = null;
+
+// Map
+const map = L.map('map').setView([0,0], 2);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution:'© OpenStreetMap', maxZoom:19
+}).addTo(map);
+let trackLine  = L.polyline([], {color:'#388bfd', weight:2}).addTo(map);
+let droneMarker = null;
+const droneIcon = L.divIcon({
+  html:'<div style="font-size:20px;transform:translate(-10px,-10px)">✈</div>',
+  className:'', iconSize:[20,20]
+});
+
+function clearTrack() { gpsTrack=[]; trackLine.setLatLngs([]); }
+
+// ─── Telemetry toggle ────────────────────────────────────────────────────────
+async function toggleTelemetry() {
+  const endpoint = telActive
+    ? '/api/devices/'+DEVICE_ID+'/telemetry/stop'
+    : '/api/devices/'+DEVICE_ID+'/telemetry/start';
+  await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+  telActive = !telActive;
+  updateToggleBtn();
+}
+
+async function clearTelemetry() {
+  if (!confirm('Clear all stored telemetry for this device?')) return;
+  await fetch('/api/devices/'+DEVICE_ID+'/telemetry/clear', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'
+  });
+  msgTotal=0; msgCounts={}; msgTimes={};
+  document.getElementById('msgCount').textContent='0';
+}
+
+function updateToggleBtn() {
+  const btn = document.getElementById('btnToggle');
+  if (telActive) {
+    btn.textContent='⏹ Stop'; btn.className='btn btn-sm btn-danger';
+  } else {
+    btn.textContent='▶ Start'; btn.className='btn btn-sm btn-success';
+  }
+}
+
+// ─── Check telemetry active state from server ─────────────────────────────────
+async function syncActiveState() {
+  try {
+    const r = await fetch('/api/telemetry/status/'+DEVICE_ID);
+    const d = await r.json();
+    if (d.active !== telActive) { telActive = d.active; updateToggleBtn(); }
+  } catch(e) {}
+}
+
+// ─── Process incoming messages ────────────────────────────────────────────────
+const FIX_TYPES = ['No GPS','No Fix','2D Fix','3D Fix','DGPS','RTK Float','RTK Fixed'];
+const STATUS_NAMES = {0:'Uninit',1:'Boot',2:'Calibrating',3:'Standby',4:'Active',5:'Critical',6:'Emergency',7:'Poweroff'};
+
+function processMsgs(msgs) {
+  for (const m of msgs) {
+    const t = m.type, d = m.d;
+    msgCounts[t] = (msgCounts[t]||0)+1;
+    msgTimes[t]  = m.ts;
+    msgTotal++;
+    lastMsgTime  = m.ts;
+
+    if (t === 'GLOBAL_POSITION_INT') {
+      const lat = d.lat/1e7, lon = d.lon/1e7;
+      const alt = (d.relative_alt/1000).toFixed(1);
+      document.getElementById('gpsLat').textContent = lat.toFixed(6);
+      document.getElementById('gpsLon').textContent = lon.toFixed(6);
+      document.getElementById('gpsAlt').textContent = alt + ' m';
+      if (lat !== 0 && lon !== 0) {
+        gpsTrack.push([lat,lon]);
+        trackLine.setLatLngs(gpsTrack);
+        if (!droneMarker) droneMarker = L.marker([lat,lon],{icon:droneIcon}).addTo(map);
+        else droneMarker.setLatLng([lat,lon]);
+        if (gpsTrack.length<=3) map.setView([lat,lon],16);
+      }
+    }
+    else if (t === 'GPS_RAW_INT') {
+      document.getElementById('gpsSats').textContent = d.satellites_visible;
+      document.getElementById('gpsFix').textContent  = FIX_TYPES[d.fix_type]||d.fix_type;
+    }
+    else if (t === 'ATTITUDE') {
+      const r2d = 180/Math.PI;
+      document.getElementById('attRoll').textContent  = (d.roll*r2d).toFixed(1)+'°';
+      document.getElementById('attPitch').textContent = (d.pitch*r2d).toFixed(1)+'°';
+      document.getElementById('attYaw').textContent   = (d.yaw*r2d).toFixed(1)+'°';
+    }
+    else if (t === 'VFR_HUD') {
+      document.getElementById('vfrSpeed').textContent = d.groundspeed.toFixed(1);
+      document.getElementById('vfrHdg').textContent   = d.heading+'°';
+      document.getElementById('vfrClimb').textContent = d.climb.toFixed(2);
+      const thr = Math.min(100,Math.max(0,d.throttle));
+      document.getElementById('throttleBar').style.width = thr+'%';
+      document.getElementById('throttleVal').textContent = thr+'%';
+    }
+    else if (t === 'SYS_STATUS') {
+      const v = (d.voltage_battery/1000).toFixed(2);
+      const a = (d.current_battery/100).toFixed(1);
+      const pct = d.battery_remaining;
+      document.getElementById('batVolt').innerHTML = v+'<span class="metric-unit"> V</span>';
+      document.getElementById('batCurr').textContent = a+' A';
+      if (pct >= 0) {
+        document.getElementById('batPct').textContent = pct+'%';
+        const bar = document.getElementById('batBar');
+        bar.style.width = pct+'%';
+        bar.style.background = pct>50?'#3fb950':pct>20?'#f0883e':'#d73a49';
+      }
+    }
+    else if (t === 'HEARTBEAT') {
+      const armed = (d.base_mode & 128) !== 0;
+      document.getElementById('armedBadge').innerHTML = armed
+        ? '<span class="badge badge-armed">ARMED</span>'
+        : '<span class="badge badge-disarmed">DISARMED</span>';
+      document.getElementById('sysStatus').textContent = STATUS_NAMES[d.system_status]||d.system_status;
+    }
+    else if (t === 'STATUSTEXT') {
+      document.getElementById('lastStatusText').textContent = d.text||'';
+    }
+  }
+}
+
+function updateMsgTable() {
+  const now = Date.now()/1000;
+  const rows = Object.entries(msgCounts)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([type,cnt]) => {
+      const age = now - (msgTimes[type]||0);
+      const ageTxt = age<2?'now':age<60?Math.round(age)+'s ago':'>1m';
+      const barW = Math.min(100, cnt/Math.max(...Object.values(msgCounts))*100);
+      return `<tr>
+        <td><code>${type}</code></td>
+        <td>${cnt}</td>
+        <td class="text-muted">${ageTxt}</td>
+        <td><div class="rate-bar" style="width:${barW}%"></div></td>
+      </tr>`;
+    }).join('');
+  document.getElementById('msgTypes').innerHTML = rows;
+}
+
+// ─── Polling loop ─────────────────────────────────────────────────────────────
+let pollErrors = 0;
+async function poll() {
+  try {
+    const r = await fetch(`/api/telemetry/latest/${DEVICE_ID}?since=${lastTs}&limit=500`);
+    if (r.status === 403 || r.redirected) { window.location.href='/login'; return; }
+    const msgs = await r.json();
+    if (msgs.length > 0) {
+      lastTs = msgs[msgs.length-1].ts;
+      processMsgs(msgs);
+      pollErrors = 0;
+    }
+  } catch(e) { pollErrors++; }
+
+  // Update status
+  const now = Date.now()/1000;
+  const alive = (now - lastMsgTime) < 5 && lastMsgTime > 0;
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot me-2 ' + (alive ? 'dot-live' : 'dot-off');
+
+  document.getElementById('msgCount').textContent = msgTotal;
+  if (lastMsgTime > 0) {
+    const age = now - lastMsgTime;
+    document.getElementById('lastSeen').textContent = age<2 ? '🟢 Live now' : `Last: ${age.toFixed(0)}s ago`;
+  }
+
+  // Rate (over last 2s)
+  const rate = (msgTotal - prevMsgTotal) / 1;
+  prevMsgTotal = msgTotal;
+  document.getElementById('msgRate').textContent = rate.toFixed(0);
+
+  document.getElementById('statusText').textContent = alive
+    ? (telActive ? '🟢 Streaming' : '🟡 Active (server not requesting)')
+    : (telActive ? '🟡 Waiting for device…' : '⚫ Telemetry off');
+
+  updateMsgTable();
+}
+
+// Sync active state every 5s
+setInterval(syncActiveState, 5000);
+
+// Init — load last known state from DB (last 5 min), then start polling
+async function loadInitialState() {
+  const dbg = document.getElementById('dbgLine');
+  try {
+    const since = Date.now()/1000 - 300;
+    if (dbg) dbg.textContent = `init: fetching since=${since.toFixed(0)}…`;
+    const r = await fetch(`/api/telemetry/latest/${DEVICE_ID}?since=${since}&limit=500`, {credentials:'include'});
+    if (dbg) dbg.textContent = `init: status=${r.status} ok=${r.ok} redir=${r.redirected}`;
+    if (!r.ok) return;
+    let msgs;
+    try { msgs = await r.json(); } catch(e) { if (dbg) dbg.textContent = 'init: json parse failed: '+e; return; }
+    if (dbg) dbg.textContent = `init: got ${msgs.length} msgs`;
+    if (msgs.length > 0) {
+      lastTs = msgs[msgs.length-1].ts;
+      processMsgs(msgs);
+    }
+  } catch(e) { if (dbg) dbg.textContent = 'init: error: '+e; }
+}
+syncActiveState();
+loadInitialState().then(() => {
+  setInterval(poll, 1000);
+});
+</script>
+{% endblock %}

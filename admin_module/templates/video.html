@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% block title %}🎥 Video — {{ hostname }}{% endblock %}
+{% block head %}
+<style>
+body { background:#0d1117; color:#c9d1d9; }
+.card { background:#161b22; border:1px solid #21262d; border-radius:8px; }
+.card-header { background:#1c2128 !important; border-bottom:1px solid #21262d; color:#c9d1d9 !important; padding:.6rem 1rem; font-size:.85rem; font-weight:600; }
+#videoWrap { position:relative; background:#000; border-radius:6px; overflow:hidden; aspect-ratio:4/3; }
+#liveVideo { width:100%; height:100%; object-fit:contain; display:block; }
+#videoOverlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px; }
+.rec-dot { width:10px; height:10px; border-radius:50%; background:#d73a49; display:inline-block; animation:blink 1s infinite; }
+@keyframes blink { 0%,100%{opacity:1}50%{opacity:.2} }
+.file-row td { vertical-align:middle; font-size:.82rem; padding:.35rem .5rem !important; border-color:#21262d !important; }
+.file-row:hover { background:rgba(30,58,95,.3) !important; }
+.navbar { background:#161b22 !important; border-bottom:1px solid #21262d; }
+</style>
+{% endblock %}
+{% block content %}
+<nav class="navbar navbar-dark mb-3">
+  <div class="container-fluid">
+    <span class="navbar-brand">🎥 {{ hostname }} — Video</span>
+    <div class="d-flex gap-2">
+      <button id="btnRecord" class="btn btn-sm btn-success" onclick="toggleRecord()">⏺ Start Recording</button>
+      <a href="/" class="btn btn-sm btn-outline-secondary">← Registry</a>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid">
+  <!-- Status bar -->
+  <div class="d-flex gap-3 align-items-center mb-3 flex-wrap">
+    <span id="streamStatus" class="small text-muted">⚫ Stream offline</span>
+    <span class="text-muted small">|</span>
+    <span class="small">Recordings: <strong id="recCount">—</strong></span>
+    <span class="small">Total size: <strong id="recSize">—</strong></span>
+  </div>
+
+  <div class="row g-3">
+    <!-- Video player -->
+    <div class="col-lg-7">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          📺 Live Stream
+          <span id="recBadge" style="display:none">
+            <span class="rec-dot"></span> <span class="small text-danger">REC</span>
+          </span>
+        </div>
+        <div class="card-body p-2">
+          <div id="videoWrap">
+            <video id="liveVideo" autoplay muted playsinline></video>
+            <div id="videoOverlay">
+              <div class="text-muted small" id="overlayMsg">Waiting for stream…</div>
+              <div class="text-muted" style="font-size:.7rem">Enable recording to start stream</div>
+            </div>
+          </div>
+          <div class="mt-2 d-flex gap-2 align-items-center">
+            <span class="small text-muted">HLS:</span>
+            <code class="small text-info" style="font-size:.7rem">{{ hls_url }}</code>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recordings list -->
+    <div class="col-lg-5">
+      <div class="card h-100">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          📁 Recordings (last 48h)
+          <button class="btn btn-sm btn-outline-secondary py-0" onclick="loadRecordings()">⟳</button>
+        </div>
+        <div class="card-body p-0" style="max-height:420px; overflow-y:auto">
+          <table class="table table-sm mb-0" style="color:#c9d1d9">
+            <thead style="background:#1c2128; position:sticky; top:0">
+              <tr>
+                <th style="font-size:.72rem; color:#8b949e">File</th>
+                <th style="font-size:.72rem; color:#8b949e">Size</th>
+                <th style="font-size:.72rem; color:#8b949e">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="recBody">
+              <tr><td colspan="3" class="text-center text-muted py-3 small">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7/dist/hls.min.js"></script>
+{{ super() }}
+<script>
+const DEVICE_ID  = "{{ device_id }}";
+const HLS_URL    = "{{ hls_url }}";
+let hls          = null;
+let recordActive = false;
+let retryTimer   = null;
+
+// ─── HLS Player ──────────────────────────────────────────────────────────────
+function startPlayer() {
+  const video = document.getElementById('liveVideo');
+  if (hls) { hls.destroy(); hls = null; }
+
+  if (!Hls.isSupported()) {
+    video.src = HLS_URL;
+    return;
+  }
+
+  hls = new Hls({
+    lowLatencyMode: true,
+    backBufferLength: 10,
+    liveDurationInfinity: true,
+  });
+  hls.loadSource(HLS_URL);
+  hls.attachMedia(video);
+
+  hls.on(Hls.Events.MANIFEST_PARSED, () => {
+    document.getElementById('videoOverlay').style.display = 'none';
+    document.getElementById('streamStatus').innerHTML = '🟢 <span class="text-success">Live</span>';
+    video.play().catch(() => {});
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+  });
+
+  hls.on(Hls.Events.ERROR, (event, data) => {
+    if (data.fatal) {
+      document.getElementById('videoOverlay').style.display = 'flex';
+      document.getElementById('overlayMsg').textContent = 'Stream unavailable';
+      document.getElementById('streamStatus').textContent = '⚫ Stream offline';
+      hls.destroy(); hls = null;
+      if (!retryTimer) retryTimer = setTimeout(startPlayer, 5000);
+    }
+  });
+}
+
+// ─── Recording toggle ─────────────────────────────────────────────────────────
+async function toggleRecord() {
+  const endpoint = recordActive
+    ? '/api/devices/'+DEVICE_ID+'/video/stop'
+    : '/api/devices/'+DEVICE_ID+'/video/start';
+  await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+  recordActive = !recordActive;
+  updateRecordBtn();
+  if (recordActive) setTimeout(startPlayer, 3000);  // give RPi time to start relay
+}
+
+async function syncRecordState() {
+  try {
+    const r = await fetch('/api/video/status/'+DEVICE_ID);
+    const d = await r.json();
+    if (d.active !== recordActive) {
+      recordActive = d.active;
+      updateRecordBtn();
+    }
+  } catch(e) {}
+}
+
+function updateRecordBtn() {
+  const btn = document.getElementById('btnRecord');
+  const badge = document.getElementById('recBadge');
+  if (recordActive) {
+    btn.textContent = '⏹ Stop Recording';
+    btn.className = 'btn btn-sm btn-danger';
+    badge.style.display = '';
+    startPlayer();
+  } else {
+    btn.textContent = '⏺ Start Recording';
+    btn.className = 'btn btn-sm btn-success';
+    badge.style.display = 'none';
+  }
+}
+
+// ─── Recordings list ──────────────────────────────────────────────────────────
+async function loadRecordings() {
+  try {
+    const r    = await fetch('/api/video/recordings/'+DEVICE_ID);
+    const files = await r.json();
+    const total_mb = files.reduce((a,f) => a+f.size_mb, 0).toFixed(0);
+    document.getElementById('recCount').textContent = files.length;
+    document.getElementById('recSize').textContent  = total_mb + ' MB';
+
+    if (!files.length) {
+      document.getElementById('recBody').innerHTML =
+        '<tr><td colspan="3" class="text-center text-muted py-3 small">No recordings yet</td></tr>';
+      return;
+    }
+
+    document.getElementById('recBody').innerHTML = files.map(f => `
+      <tr class="file-row">
+        <td>
+          <div class="fw-bold" style="font-size:.78rem">${f.name.replace('.mp4','')}</div>
+          <div class="text-muted" style="font-size:.68rem">${f.mtime_str}</div>
+        </td>
+        <td class="text-muted">${f.size_mb} MB</td>
+        <td>
+          <a href="/api/video/recordings/${DEVICE_ID}/download/${f.name}"
+             class="btn btn-xs btn-outline-info btn-sm py-0 px-2 me-1" style="font-size:.7rem">⬇</a>
+          <button onclick="deleteRec('${f.name}')"
+                  class="btn btn-xs btn-outline-danger btn-sm py-0 px-1" style="font-size:.7rem">🗑</button>
+        </td>
+      </tr>
+    `).join('');
+  } catch(e) {
+    document.getElementById('recBody').innerHTML =
+      '<tr><td colspan="3" class="text-center text-muted py-3 small">Error loading</td></tr>';
+  }
+}
+
+async function deleteRec(filename) {
+  if (!confirm('Delete ' + filename + '?')) return;
+  await fetch('/api/video/recordings/'+DEVICE_ID+'/delete/'+filename, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'
+  });
+  loadRecordings();
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+syncRecordState();
+setInterval(syncRecordState, 5000);
+setInterval(loadRecordings, 30000);
+loadRecordings();
+</script>
+{% endblock %}
