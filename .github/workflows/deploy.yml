@@ -40,6 +40,15 @@ jobs:
           envkey_ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           file_name: .env
 
+      - name: Ensure app directory exists
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            sudo mkdir -p /opt/sirena-admin
+
       - name: Copy .env to server
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -60,4 +69,25 @@ jobs:
           envs: DEPLOY_REASON
           script: |
             echo "Start Deployment. Reason: $DEPLOY_REASON"
-            bash ${{ secrets.DEPLOY_SCRIPT_PATH }}
+            APP_DIR="/opt/sirena-admin"
+            REPO_URL="https://github.com/artmisis020-dev/device-to-car.git"
+            BRANCH="main"
+            DEPLOY_SCRIPT="$APP_DIR/admin_module/deploy/deploy.sh"
+
+            if [ ! -d "$APP_DIR/.git" ]; then
+              echo "Bootstrap: cloning repository for first deploy"
+              sudo rm -rf "$APP_DIR"
+              sudo git clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+            fi
+
+            echo "Syncing repository to latest $BRANCH"
+            cd "$APP_DIR"
+            sudo git fetch origin "$BRANCH"
+            sudo git reset --hard "origin/$BRANCH"
+
+            if [ ! -f "$DEPLOY_SCRIPT" ]; then
+              echo "Deploy script not found at $DEPLOY_SCRIPT" >&2
+              exit 1
+            fi
+
+            bash "$DEPLOY_SCRIPT"
