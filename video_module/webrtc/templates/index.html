@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sirena Camera</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { background:#111; display:flex; justify-content:center; align-items:center; height:100vh; }
+        video { width:100vw; height:100vh; object-fit:contain; }
+        #s { position:fixed; top:8px; left:8px; color:#0f0; font:13px monospace;
+             background:rgba(0,0,0,.6); padding:2px 8px; border-radius:3px; }
+    </style>
+</head>
+<body>
+<video id="v" autoplay playsinline muted></video>
+<div id="s">connecting…</div>
+<script>
+function attachVideoTrack(track) {
+    if (!track || track.kind !== 'video') return false;
+    const v = document.getElementById('v');
+    const ms = new MediaStream();
+    ms.addTrack(track);
+    v.srcObject = ms;
+    v.play().catch(() => {});
+    document.getElementById('s').textContent = 'track ok — playing';
+    if (window.playWatchdog) { clearInterval(window.playWatchdog); window.playWatchdog = null; }
+    let lastT = -1, stuck = 0, started = false;
+    window.playWatchdog = setInterval(() => {
+        if (!window.currentPc) return;
+        const t = v.currentTime || 0;
+        if (!started) { if (t > 0.05) started = true; else return; }
+        if (t <= lastT + 1e-4) { stuck += 1; } else { stuck = 0; }
+        lastT = t;
+        if (stuck >= 6) {
+            document.getElementById('s').textContent = 'playback stalled — reconnect…';
+            clearInterval(window.playWatchdog); window.playWatchdog = null;
+            try { window.currentPc.close(); } catch (_) {}
+            window.currentPc = null;
+            setTimeout(connect, 500);
+        }
+    }, 500);
+    return true;
+}
+async function connect() {
+    if (window.currentPc) { try { window.currentPc.close(); } catch (_) {} window.currentPc = null; }
+    if (window.playWatchdog) { clearInterval(window.playWatchdog); window.playWatchdog = null; }
+    document.getElementById('s').textContent = 'connecting…';
+    try {
+        const pc = new RTCPeerConnection({ iceServers: [] });
+        window.currentPc = pc;
+        let gotTrack = false, trackTimer = null;
+        const fallbackTimer = setInterval(() => {
+            if (gotTrack) return;
+            for (const r of pc.getReceivers()) {
+                if (r.track && r.track.kind === 'video' && r.track.readyState !== 'ended') {
+                    if (attachVideoTrack(r.track)) { gotTrack = true; clearInterval(fallbackTimer); if (trackTimer) clearTimeout(trackTimer); }
+                }
+            }
+        }, 500);
+        pc.addTransceiver('video', {direction:'recvonly'});
+        pc.ontrack = e => {
+            gotTrack = true;
+            if (trackTimer) clearTimeout(trackTimer);
+            clearInterval(fallbackTimer);
+            const streamTrack = (e.streams && e.streams[0] && e.streams[0].getVideoTracks().length)
+                ? e.streams[0].getVideoTracks()[0] : e.track;
+            if (!attachVideoTrack(streamTrack)) document.getElementById('s').textContent = 'track attach failed';
+        };
+        pc.onconnectionstatechange = () => {
+            if (window.currentPc !== pc) return;
+            const s = pc.connectionState;
+            if (s === 'connected' && !gotTrack && !trackTimer) {
+                trackTimer = setTimeout(() => {
+                    if (!gotTrack) {
+                        document.getElementById('s').textContent = 'no track after connect — reconnect…';
+                        try { pc.close(); } catch (_) {}
+                        setTimeout(connect, 1200);
+                    }
+                }, 20000);
+                return;
+            }
+            if (!['failed','disconnected','closed'].includes(s)) return;
+            if (trackTimer) clearTimeout(trackTimer);
+            clearInterval(fallbackTimer);
+            document.getElementById('s').textContent = s + ' — retry…';
+            setTimeout(connect, 2000);
+        };
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        await new Promise(resolve => {
+            if (pc.iceGatheringState === 'complete') { resolve(); return; }
+            pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') resolve(); };
+        });
+        if (window.currentPc !== pc) return;
+        const r = await fetch('/offer', {method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({sdp:pc.localDescription.sdp, type:pc.localDescription.type})});
+        if (r.status === 503) { document.getElementById('s').textContent = 'server busy — retry…'; setTimeout(connect, 3000); return; }
+        const ans = await r.json();
+        if (window.currentPc !== pc) return;
+        await pc.setRemoteDescription(ans);
+        document.getElementById('s').textContent = 'negotiated — waiting track…';
+    } catch(e) {
+        document.getElementById('s').textContent = 'err: ' + e.message;
+        setTimeout(connect, 3000);
+    }
+}
+connect();
+</script>
+</body>
+</html>

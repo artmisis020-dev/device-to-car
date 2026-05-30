@@ -1,0 +1,19 @@
+[Unit]
+Description=Sirena Telemetry Sender (MAVLink → HTTP server)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sirena
+WorkingDirectory=/opt/sirena-telemetry
+ExecStart=/opt/sirena-telemetry/venv/bin/python3 /opt/sirena-telemetry/telemetry_daemon.py
+Restart=on-failure
+RestartSec=10s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=telemetry-sender
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,26 @@
+[Unit]
+Description=Sirena Video Streamer (SRT)
+After=network.target
+
+[Service]
+Type=simple
+User=sirena
+WorkingDirectory=/opt/sirena-video
+ExecStart=/opt/sirena-video/venv/bin/python3 /opt/sirena-video/video_streamer_minimal_managed.py
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=video-streamer
+Environment=PYTHONUNBUFFERED=1
+
+Environment=VIDEO_DEVICE=/dev/v4l/by-id/usb-Thermal_Cam_Co._Ltd_Camera_202206223-video-index0
+Environment=STREAM_FPS=30
+Environment=SRT_LATENCY_MS=20
+Environment=BITRATE_KBPS=2000
+Environment=KEYINT=15
+Environment=OSD_MODE=off
+Environment=MAVLINK_ENDPOINT=udp:127.0.0.1:14562
+
+[Install]
+WantedBy=multi-user.target

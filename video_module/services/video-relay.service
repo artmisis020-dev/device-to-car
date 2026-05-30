@@ -1,0 +1,19 @@
+[Unit]
+Description=Sirena Video Relay (auto-detect camera → server)
+After=network.target video-service-manager.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/sirena-video
+ExecStart=/opt/sirena-video/venv/bin/python3 /opt/sirena-video/video_relay.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=video-relay
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

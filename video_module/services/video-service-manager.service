@@ -1,0 +1,19 @@
+[Unit]
+Description=Sirena Video Service Manager
+After=network.target
+
+[Service]
+Type=simple
+User=sirena
+WorkingDirectory=/opt/sirena-video
+ExecStart=/opt/sirena-video/venv/bin/python3 video_service_manager.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=video-service-manager
+Environment="MANAGER_HOST=0.0.0.0"
+Environment="MANAGER_PORT=9000"
+
+[Install]
+WantedBy=multi-user.target
