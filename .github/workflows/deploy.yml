@@ -42,6 +42,8 @@ jobs:
           envkey_SIRENA_RECORDINGS: ${{ secrets.SIRENA_RECORDINGS }}
           envkey_SIRENA_SECRET_KEY: ${{ steps.gen_key.outputs.value }}
           envkey_ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          envkey_WEBRTC_PROXY_UPSTREAM: ${{ secrets.WEBRTC_PROXY_UPSTREAM }}
+          envkey_WEBRTC_PROXY_TIMEOUT_S: ${{ secrets.WEBRTC_PROXY_TIMEOUT_S }}
           file_name: .env
 
       - name: Ensure app directory exists
