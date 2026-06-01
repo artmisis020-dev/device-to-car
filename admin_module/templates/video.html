@@ -95,109 +95,59 @@ body { background:#0d1117; color:#c9d1d9; }
 {% endblock %}
 {% block scripts %}
 {{ super() }}
+<video id="video" autoplay playsinline controls></video>
+
 <script>
-const DEVICE_ID  = "{{ device_id }}";
-let recordActive = false;
+async function start() {
+    const pc = new RTCPeerConnection();
 
-function initWebrtcEmbed() {
-  const frame = document.getElementById('webrtcFrame');
-  const overlay = document.getElementById('videoOverlay');
-  const status = document.getElementById('streamStatus');
-  frame.addEventListener('load', () => {
-    overlay.style.display = 'none';
-    status.innerHTML = '🟢 <span class="text-success">WebRTC page loaded</span>';
-  });
-  frame.addEventListener('error', () => {
-    overlay.style.display = 'flex';
-    document.getElementById('overlayMsg').textContent = 'WebRTC stream unavailable';
-    status.textContent = '⚫ Stream offline';
-  });
+    pc.ontrack = (event) => {
+        document.getElementById("video").srcObject =
+            event.streams[0];
+    };
+
+    pc.addTransceiver("video", { direction: "recvonly" });
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    await new Promise(resolve => {
+        if (pc.iceGatheringState === "complete") {
+            resolve();
+        } else {
+            pc.addEventListener("icegatheringstatechange", () => {
+                if (pc.iceGatheringState === "complete") {
+                    resolve();
+                }
+            });
+        }
+    });
+
+    const response = await fetch("{{ webrtc_url }}", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            sdp: pc.localDescription.sdp,
+            type: pc.localDescription.type
+        })
+    });
+
+    const answer = await response.json();
+
+    await pc.setRemoteDescription(answer);
+
+    console.log("Connected");
 }
 
-// ─── Recording toggle ─────────────────────────────────────────────────────────
-async function toggleRecord() {
-  const endpoint = recordActive
-    ? '/api/devices/'+DEVICE_ID+'/video/stop'
-    : '/api/devices/'+DEVICE_ID+'/video/start';
-  await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
-  recordActive = !recordActive;
-  updateRecordBtn();
-}
-
-async function syncRecordState() {
-  try {
-    const r = await fetch('/api/video/status/'+DEVICE_ID);
-    const d = await r.json();
-    if (d.active !== recordActive) {
-      recordActive = d.active;
-      updateRecordBtn();
-    }
-  } catch(e) {}
-}
-
-function updateRecordBtn() {
-  const btn = document.getElementById('btnRecord');
-  const badge = document.getElementById('recBadge');
-  if (recordActive) {
-    btn.textContent = '⏹ Stop Recording';
-    btn.className = 'btn btn-sm btn-danger';
-    badge.style.display = '';
-  } else {
-    btn.textContent = '⏺ Start Recording';
-    btn.className = 'btn btn-sm btn-success';
-    badge.style.display = 'none';
-  }
-}
-
-// ─── Recordings list ──────────────────────────────────────────────────────────
-async function loadRecordings() {
-  try {
-    const r    = await fetch('/api/video/recordings/'+DEVICE_ID);
-    const files = await r.json();
-    const total_mb = files.reduce((a,f) => a+f.size_mb, 0).toFixed(0);
-    document.getElementById('recCount').textContent = files.length;
-    document.getElementById('recSize').textContent  = total_mb + ' MB';
-
-    if (!files.length) {
-      document.getElementById('recBody').innerHTML =
-        '<tr><td colspan="3" class="text-center text-muted py-3 small">No recordings yet</td></tr>';
-      return;
-    }
-
-    document.getElementById('recBody').innerHTML = files.map(f => `
-      <tr class="file-row">
-        <td>
-          <div class="fw-bold" style="font-size:.78rem">${f.name.replace('.mp4','')}</div>
-          <div class="text-muted" style="font-size:.68rem">${f.mtime_str}</div>
-        </td>
-        <td class="text-muted">${f.size_mb} MB</td>
-        <td>
-          <a href="/api/video/recordings/${DEVICE_ID}/download/${f.name}"
-             class="btn btn-xs btn-outline-info btn-sm py-0 px-2 me-1" style="font-size:.7rem">⬇</a>
-          <button onclick="deleteRec('${f.name}')"
-                  class="btn btn-xs btn-outline-danger btn-sm py-0 px-1" style="font-size:.7rem">🗑</button>
-        </td>
-      </tr>
-    `).join('');
-  } catch(e) {
-    document.getElementById('recBody').innerHTML =
-      '<tr><td colspan="3" class="text-center text-muted py-3 small">Error loading</td></tr>';
-  }
-}
-
-async function deleteRec(filename) {
-  if (!confirm('Delete ' + filename + '?')) return;
-  await fetch('/api/video/recordings/'+DEVICE_ID+'/delete/'+filename, {
-    method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'
-  });
-  loadRecordings();
-}
+start().catch(console.error);
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
-initWebrtcEmbed();
-syncRecordState();
-setInterval(syncRecordState, 5000);
-setInterval(loadRecordings, 30000);
-loadRecordings();
+// initWebrtcEmbed();
+// syncRecordState();
+// setInterval(syncRecordState, 5000);
+// setInterval(loadRecordings, 30000);
+// loadRecordings();
 </script>
-{% endblock %}
+{% endblock %}SS
