@@ -30,14 +30,12 @@ def video_page(device_id):
         return "Device not found", 404
 
     hostname = dev["hostname"] or device_id[:12]
-    hls_port = current_app.config["MEDIAMTX_HLS_PORT"]
 
-    server_ip = request.host.split(":")[0]
     return render_template(
         "video.html",
         device_id=device_id,
         hostname=hostname,
-        hls_url=f"http://{server_ip}:{hls_port}/{hostname}/index.m3u8",
+        webrtc_url="http://10.0.0.7:8092/offer",
         stream_name=hostname,
     )
 
