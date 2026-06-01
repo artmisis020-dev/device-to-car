@@ -169,6 +169,7 @@ async function loadDevices() {
       <td class="small ${lastSeenClass(d.last_seen)}">${(d.last_seen||'—').replace('T',' ')}</td>
       <td class="small">${d.valid_until||'—'}</td>
       <td>
+        <a href="/devices/${d.device_id}" class="btn btn-sm btn-outline-light py-0 px-2 me-1" title="Open detail page">🧭</a>
         <a href="/telemetry/${d.device_id}" class="btn btn-sm btn-outline-success py-0 px-2 me-1" title="Telemetry">📡 ${telBadge}</a>
         <a href="/video/${d.device_id}" class="btn btn-sm btn-outline-info py-0 px-2 me-1" title="Video">${vidBtn}</a>
         <button class="btn btn-sm btn-success py-0 px-2 me-1" onclick="openApprove('${d.device_id}')">✓</button>

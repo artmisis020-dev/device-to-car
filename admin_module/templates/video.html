@@ -6,7 +6,7 @@ body { background:#0d1117; color:#c9d1d9; }
 .card { background:#161b22; border:1px solid #21262d; border-radius:8px; }
 .card-header { background:#1c2128 !important; border-bottom:1px solid #21262d; color:#c9d1d9 !important; padding:.6rem 1rem; font-size:.85rem; font-weight:600; }
 #videoWrap { position:relative; background:#000; border-radius:6px; overflow:hidden; aspect-ratio:4/3; }
-#liveVideo { width:100%; height:100%; object-fit:contain; display:block; }
+#webrtcFrame { width:100%; height:100%; border:0; display:block; background:#000; }
 #videoOverlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px; }
 .rec-dot { width:10px; height:10px; border-radius:50%; background:#d73a49; display:inline-block; animation:blink 1s infinite; }
 @keyframes blink { 0%,100%{opacity:1}50%{opacity:.2} }
@@ -47,15 +47,21 @@ body { background:#0d1117; color:#c9d1d9; }
         </div>
         <div class="card-body p-2">
           <div id="videoWrap">
-            <video id="liveVideo" autoplay muted playsinline></video>
+            <iframe
+              id="webrtcFrame"
+              title="WebRTC Stream"
+              src="http://10.0.0.7:8092"
+              allow="autoplay; fullscreen"
+              referrerpolicy="no-referrer"
+            ></iframe>
             <div id="videoOverlay">
-              <div class="text-muted small" id="overlayMsg">Waiting for stream…</div>
-              <div class="text-muted" style="font-size:.7rem">Enable recording to start stream</div>
+              <div class="text-muted small" id="overlayMsg">Connecting to WebRTC stream…</div>
+              <a class="small text-info" href="http://10.0.0.7:8092" target="_blank" rel="noopener noreferrer">Open stream in new tab</a>
             </div>
           </div>
           <div class="mt-2 d-flex gap-2 align-items-center">
-            <span class="small text-muted">HLS:</span>
-            <code class="small text-info" style="font-size:.7rem">{{ hls_url }}</code>
+            <span class="small text-muted">WebRTC:</span>
+            <code class="small text-info" style="font-size:.7rem">http://10.0.0.7:8092</code>
           </div>
         </div>
       </div>
@@ -88,48 +94,23 @@ body { background:#0d1117; color:#c9d1d9; }
 </div>
 {% endblock %}
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7/dist/hls.min.js"></script>
 {{ super() }}
 <script>
 const DEVICE_ID  = "{{ device_id }}";
-const HLS_URL    = "{{ hls_url }}";
-let hls          = null;
 let recordActive = false;
-let retryTimer   = null;
 
-// ─── HLS Player ──────────────────────────────────────────────────────────────
-function startPlayer() {
-  const video = document.getElementById('liveVideo');
-  if (hls) { hls.destroy(); hls = null; }
-
-  if (!Hls.isSupported()) {
-    video.src = HLS_URL;
-    return;
-  }
-
-  hls = new Hls({
-    lowLatencyMode: true,
-    backBufferLength: 10,
-    liveDurationInfinity: true,
+function initWebrtcEmbed() {
+  const frame = document.getElementById('webrtcFrame');
+  const overlay = document.getElementById('videoOverlay');
+  const status = document.getElementById('streamStatus');
+  frame.addEventListener('load', () => {
+    overlay.style.display = 'none';
+    status.innerHTML = '🟢 <span class="text-success">WebRTC page loaded</span>';
   });
-  hls.loadSource(HLS_URL);
-  hls.attachMedia(video);
-
-  hls.on(Hls.Events.MANIFEST_PARSED, () => {
-    document.getElementById('videoOverlay').style.display = 'none';
-    document.getElementById('streamStatus').innerHTML = '🟢 <span class="text-success">Live</span>';
-    video.play().catch(() => {});
-    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-  });
-
-  hls.on(Hls.Events.ERROR, (event, data) => {
-    if (data.fatal) {
-      document.getElementById('videoOverlay').style.display = 'flex';
-      document.getElementById('overlayMsg').textContent = 'Stream unavailable';
-      document.getElementById('streamStatus').textContent = '⚫ Stream offline';
-      hls.destroy(); hls = null;
-      if (!retryTimer) retryTimer = setTimeout(startPlayer, 5000);
-    }
+  frame.addEventListener('error', () => {
+    overlay.style.display = 'flex';
+    document.getElementById('overlayMsg').textContent = 'WebRTC stream unavailable';
+    status.textContent = '⚫ Stream offline';
   });
 }
 
@@ -141,7 +122,6 @@ async function toggleRecord() {
   await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
   recordActive = !recordActive;
   updateRecordBtn();
-  if (recordActive) setTimeout(startPlayer, 3000);  // give RPi time to start relay
 }
 
 async function syncRecordState() {
@@ -162,7 +142,6 @@ function updateRecordBtn() {
     btn.textContent = '⏹ Stop Recording';
     btn.className = 'btn btn-sm btn-danger';
     badge.style.display = '';
-    startPlayer();
   } else {
     btn.textContent = '⏺ Start Recording';
     btn.className = 'btn btn-sm btn-success';
@@ -215,6 +194,7 @@ async function deleteRec(filename) {
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
+initWebrtcEmbed();
 syncRecordState();
 setInterval(syncRecordState, 5000);
 setInterval(loadRecordings, 30000);

@@ -51,5 +51,20 @@ def init_db():
             )
             """
         )
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS fc_commands (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id  TEXT NOT NULL REFERENCES devices(device_id),
+                command    TEXT NOT NULL,
+                payload    TEXT,
+                status     TEXT NOT NULL DEFAULT 'queued',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                note       TEXT
+            )
+            """
+        )
         db.execute("CREATE INDEX IF NOT EXISTS idx_tel_device_ts ON telemetry(device_id, ts)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_fc_commands_device_created ON fc_commands(device_id, created_at DESC)")
         db.commit()

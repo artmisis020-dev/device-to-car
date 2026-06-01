@@ -7,6 +7,10 @@ on:
         description: 'Reason for deployment (optional)'
         required: false
         default: 'Manual server update'
+      branch:
+        description: 'Git branch to deploy'
+        required: false
+        default: 'main'
 
 jobs:
   build-and-test:
@@ -62,16 +66,18 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         env:
           DEPLOY_REASON: ${{ github.event.inputs.reason }}
+          DEPLOY_BRANCH: ${{ github.event.inputs.branch }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          envs: DEPLOY_REASON
+          envs: DEPLOY_REASON,DEPLOY_BRANCH
           script: |
+            set -Eeuo pipefail
             echo "Start Deployment. Reason: $DEPLOY_REASON"
             APP_DIR="/opt/sirena-admin"
             REPO_URL="https://github.com/artmisis020-dev/device-to-car.git"
-            BRANCH="main"
+            BRANCH="${DEPLOY_BRANCH:-main}"
             DEPLOY_SCRIPT="$APP_DIR/admin_module/deploy/deploy.sh"
 
             if [ ! -d "$APP_DIR/.git" ]; then
@@ -81,13 +87,15 @@ jobs:
             fi
 
             echo "Syncing repository to latest $BRANCH"
-            cd "$APP_DIR"
-            sudo git fetch origin "$BRANCH"
-            sudo git reset --hard "origin/$BRANCH"
+            REPO_OWNER="$(stat -c '%U' "$APP_DIR")"
+            echo "Repository owner: $REPO_OWNER"
 
-            if [ ! -f "$DEPLOY_SCRIPT" ]; then
+            sudo -u "$REPO_OWNER" -H git -C "$APP_DIR" fetch origin "$BRANCH"
+            sudo -u "$REPO_OWNER" -H git -C "$APP_DIR" reset --hard "origin/$BRANCH"
+
+            if ! sudo test -f "$DEPLOY_SCRIPT"; then
               echo "Deploy script not found at $DEPLOY_SCRIPT" >&2
               exit 1
             fi
 
-            bash "$DEPLOY_SCRIPT"
+            sudo bash "$DEPLOY_SCRIPT"

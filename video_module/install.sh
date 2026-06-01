@@ -27,7 +27,10 @@ apt-get install -y \
     v4l-utils \
     avahi-daemon \
     python3-pip \
-    python3-venv
+    python3-venv \
+    python3-gi \
+    python3-gst-1.0 \
+    gir1.2-gstreamer-1.0
 
 echo "2. Налаштування системного користувача та прав..."
 if ! id "$SERVICE_USER" &>/dev/null; then
@@ -54,7 +57,7 @@ cp -a "$DEPLOY_DIR"/. "$INSTALL_DIR/" 2>/dev/null || true
 
 echo "5. Налаштування віртуального оточення Python (venv)..."
 rm -rf "$INSTALL_DIR/venv"
-python3 -m venv "$INSTALL_DIR/venv"
+python3 -m venv "$INSTALL_DIR/venv" --system-site-packages
 
 chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR"
 
@@ -75,11 +78,9 @@ cp "$DEPLOY_DIR/services/"*.service /etc/systemd/system/
 systemctl enable --now avahi-daemon
 systemctl daemon-reload
 
-echo "Запуск сервісів..."
-systemctl enable video-service-manager webrtc-camera video-streamer
-systemctl start  video-service-manager
+echo "Старт video-service-manager/webrtc-camera/video-streamer залишено root manager-у (sirena-manager.service)."
 
 echo ""
 echo "=== Готово ==="
 echo "UI:     http://$(hostname -I | awk '{print $1}'):9000"
-echo "Логи:   journalctl -u video-service-manager -f"
+echo "Сервіси буде запускати sirena-manager.service"

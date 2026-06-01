@@ -38,8 +38,10 @@ logging.basicConfig(
 log = logging.getLogger("mavrouter")
 
 # --- Налаштування ---
-UART_PORT = "/dev/ttyAMA4"        # TELEM1 FC — змінити якщо інший порт
-UART_BAUD = 57600                  # baud rate FC TELEM1
+UART_PORT = "/dev/ttyAMA5"        # TELEM1 FC — UART5 (GPIO12/13)
+# UART_BAUD = 57600
+UART_BAUD = 115200                 # baud rate FC TELEM1
+#                   # baud rate FC TELEM1
 
 ROUTER_PORT = 14556                # наш UDP bind порт (звідси відправляємо)
 

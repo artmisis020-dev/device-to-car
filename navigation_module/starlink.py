@@ -12,6 +12,7 @@ import sys
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
+import starlink_grpc
 
 # Налаштування логування
 logging.basicConfig(
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 # Константи
 DEFAULT_STARLINK_IP = "192.168.100.1"
 DEFAULT_STARLINK_PORT = 9200
-
+DEFAULT_TARGET = f"{DEFAULT_STARLINK_IP}:{DEFAULT_STARLINK_PORT}"
 
 class StarlinkClient:
     """
@@ -49,22 +50,23 @@ class StarlinkClient:
     @staticmethod
     def _import_starlink_grpc() -> Any:
         """Завантажити модуль starlink_grpc з starlink-grpc-tools."""
-        base = Path(__file__).resolve().parent
-        tools_dir = base / "starlink-grpc-tools"
+        return starlink_grpc
+        # base = Path(__file__).resolve().parent
+        # tools_dir = base / "starlink-grpc-tools"
         
-        if not (tools_dir / "starlink_grpc.py").exists():
-            raise FileNotFoundError(f"Не знайдено {tools_dir / 'starlink_grpc.py'}")
+        # if not (tools_dir / "starlink_grpc.py").exists():
+        #     raise FileNotFoundError(f"Не знайдено {tools_dir / 'starlink_grpc.py'}")
         
-        sys.path.insert(0, str(tools_dir))
-        try:
-            import starlink_grpc  # type: ignore
-            logger.info("Модуль starlink_grpc успішно завантажено")
-            return starlink_grpc
-        except ImportError as e:
-            logger.error(f"Не вдалось завантажити starlink_grpc: {e}")
-            raise
+        # sys.path.insert(0, str(tools_dir))
+        # try:
+        #     import starlink_grpc  # type: ignore
+        #     logger.info("Модуль starlink_grpc успішно завантажено")
+        #     return starlink_grpc
+        # except ImportError as e:
+        #     logger.error(f"Не вдалось завантажити starlink_grpc: {e}")
+        #     raise
     
-    def get_location(self, target: str = f"{DEFAULT_STARLINK_IP}:{DEFAULT_STARLINK_PORT}") -> Dict[str, Any]:
+    def get_location(self, target: str = DEFAULT_TARGET) -> Dict[str, Any]:
         """
         Отримати координати та статус GPS з Starlink dish.
         
@@ -122,7 +124,7 @@ class StarlinkClient:
                 "available": False,
             }
     
-    def get_status(self, target: str = f"{DEFAULT_STARLINK_IP}:{DEFAULT_STARLINK_PORT}") -> Dict[str, Any]:
+    def get_status(self, target: str = DEFAULT_TARGET) -> Dict[str, Any]:
         """
         Отримати повний статус Starlink dish.
         
@@ -169,7 +171,7 @@ class StarlinkClient:
             
             return {"available": False}
     
-    def reboot(self, target: str = f"{DEFAULT_STARLINK_IP}:{DEFAULT_STARLINK_PORT}") -> bool:
+    def reboot(self, target: str = DEFAULT_TARGET) -> bool:
         """
         Перезавантажити Starlink dish.
         
@@ -200,7 +202,7 @@ class StarlinkClient:
             logger.error(f"Не вдалось перезавантажити Starlink: {e}")
             return False
     
-    def set_gps(self, target: str = f"{DEFAULT_STARLINK_IP}:{DEFAULT_STARLINK_PORT}", 
+    def set_gps(self, target: str = DEFAULT_TARGET, 
                 enable: bool = True) -> bool:
         """
         Включити або вимкнути GPS на Starlink dish.
@@ -266,7 +268,7 @@ def reboot(target: str = f"{DEFAULT_STARLINK_IP}:{DEFAULT_STARLINK_PORT}") -> bo
     return get_client().reboot(target)
 
 
-def set_gps(target: str = f"{DEFAULT_STARLINK_IP}:{DEFAULT_STARLINK_PORT}", 
+def set_gps(target: str = DEFAULT_TARGET, 
             enable: bool = True) -> bool:
     """Встановити GPS на Starlink (функція-обгортка)."""
     return get_client().set_gps(target, enable)

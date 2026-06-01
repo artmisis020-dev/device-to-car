@@ -62,6 +62,7 @@ mkdir -p "$INSTALL_DIR"
 cp -p "$DEPLOY_DIR/telemetry_daemon.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/telemetry_sender.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/mavlink_router.py" "$INSTALL_DIR/"
+cp -p "$DEPLOY_DIR/mavlink_bridge.py" "$INSTALL_DIR/"
 
 # Динамічно виправляємо жорстко прописаний шлях імпорту в telemetry_daemon.py
 sed -i 's|/opt/sirena-video/|/opt/sirena-telemetry/|g' "$INSTALL_DIR/telemetry_daemon.py"
@@ -72,7 +73,7 @@ rm -rf "$INSTALL_DIR/venv"
 python3 -m venv "$INSTALL_DIR/venv"
 
 # Надаємо власені права перед pip інсталяцією
-chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSsTALL_DIR"
+chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR"
 
 echo "Встановлення необхідних Python бібліотек (pymavlink, pyserial)..."
 sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install --upgrade pip
@@ -106,23 +107,12 @@ else
     echo "Попередження: mavlink-router.service не знайдено в папці services."
 fi
 
-# Оновлення демона та активація сервісів
+# Оновлення демона без запуску сервісів.
+# Стартом керує root manager (sirena-manager.service).
 systemctl daemon-reload
-
-echo "Активація автозапуску та старт сервісів..."
-if systemctl list-unit-files telemetry-sender.service &>/dev/null; then
-    systemctl enable telemetry-sender.service
-    systemctl start telemetry-sender.service
-fi
-
-if systemctl list-unit-files mavlink-router.service &>/dev/null; then
-    systemctl enable mavlink-router.service
-    systemctl start mavlink-router.service
-fi
 
 echo "------------------------------------------------------------"
 echo "Встановлення завершено успішно!"
 echo "Модуль розташовано у: $INSTALL_DIR"
-echo "Логи роутера:    journalctl -u mavlink-router -f"
-echo "Логи телеметрії: journalctl -u telemetry-sender -f"
+echo "Сервіси буде запускати sirena-manager.service"
 echo "------------------------------------------------------------"

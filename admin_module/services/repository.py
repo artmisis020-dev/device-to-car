@@ -84,6 +84,7 @@ def delete_device(device_id):
     with get_db() as db:
         db.execute("DELETE FROM devices WHERE device_id=?", (device_id,))
         db.execute("DELETE FROM telemetry WHERE device_id=?", (device_id,))
+        db.execute("DELETE FROM fc_commands WHERE device_id=?", (device_id,))
         db.commit()
 
 
@@ -162,3 +163,30 @@ def get_hostname(device_id):
     with get_db() as db:
         row = db.execute("SELECT hostname FROM devices WHERE device_id=?", (device_id,)).fetchone()
     return row
+
+
+def insert_fc_command(device_id, command, payload, created_at, updated_at, note=""):
+    with get_db() as db:
+        db.execute(
+            """
+            INSERT INTO fc_commands (device_id, command, payload, status, created_at, updated_at, note)
+            VALUES (?, ?, ?, 'queued', ?, ?, ?)
+            """,
+            (device_id, command, payload, created_at, updated_at, note),
+        )
+        db.commit()
+
+
+def list_fc_commands(device_id, limit=25):
+    with get_db() as db:
+        rows = db.execute(
+            """
+            SELECT id, device_id, command, payload, status, created_at, updated_at, note
+            FROM fc_commands
+            WHERE device_id=?
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+            """,
+            (device_id, limit),
+        ).fetchall()
+    return [dict(row) for row in rows]

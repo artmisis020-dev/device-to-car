@@ -25,6 +25,15 @@ def api_devices():
     return jsonify(device_service.list_devices_with_validity())
 
 
+@device_api_bp.route("/api/devices/<device_id>", methods=["GET"])
+@require_admin
+def api_device_detail(device_id):
+    detail = device_service.get_device_detail(device_id)
+    if not detail:
+        return jsonify({"error": "device not found"}), 404
+    return jsonify(detail)
+
+
 @device_api_bp.route("/api/devices/<device_id>/approve", methods=["POST"])
 @require_admin
 def api_approve(device_id):
@@ -56,3 +65,19 @@ def api_notes(device_id):
 @require_admin
 def api_delete(device_id):
     return jsonify(device_service.delete_device(device_id))
+
+
+@device_api_bp.route("/api/devices/<device_id>/commands", methods=["GET", "POST"])
+@require_admin
+def api_device_commands(device_id):
+    if request.method == "GET":
+        return jsonify(device_service.list_fc_commands(device_id))
+
+    payload = json_body()
+    result, status = device_service.queue_fc_command(
+        device_id,
+        payload.get("command", ""),
+        payload.get("payload"),
+        payload.get("note", ""),
+    )
+    return jsonify(result), status
