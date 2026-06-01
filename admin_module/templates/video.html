@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}🎥 Video — {{ hostname }}{% endblock %}
+{% block title %}Video - {{ hostname }}{% endblock %}
 {% block head %}
 <style>
 body { background:#0d1117; color:#c9d1d9; }
@@ -18,29 +18,27 @@ body { background:#0d1117; color:#c9d1d9; }
 {% block content %}
 <nav class="navbar navbar-dark mb-3">
   <div class="container-fluid">
-    <span class="navbar-brand">🎥 {{ hostname }} — Video</span>
+    <span class="navbar-brand">{{ hostname }} - Video</span>
     <div class="d-flex gap-2">
-      <button id="btnRecord" class="btn btn-sm btn-success" onclick="toggleRecord()">⏺ Start Recording</button>
-      <a href="/" class="btn btn-sm btn-outline-secondary">← Registry</a>
+      <button id="btnRecord" class="btn btn-sm btn-success" onclick="toggleRecord()">Start Recording</button>
+      <a href="/" class="btn btn-sm btn-outline-secondary">Back</a>
     </div>
   </div>
 </nav>
 
 <div class="container-fluid">
-  <!-- Status bar -->
   <div class="d-flex gap-3 align-items-center mb-3 flex-wrap">
-    <span id="streamStatus" class="small text-muted">⚫ Stream offline</span>
+    <span id="streamStatus" class="small text-muted">Offline</span>
     <span class="text-muted small">|</span>
-    <span class="small">Recordings: <strong id="recCount">—</strong></span>
-    <span class="small">Total size: <strong id="recSize">—</strong></span>
+    <span class="small">Recordings: <strong id="recCount">-</strong></span>
+    <span class="small">Total size: <strong id="recSize">-</strong></span>
   </div>
 
   <div class="row g-3">
-    <!-- Video player -->
     <div class="col-lg-7">
       <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
-          📺 Live Stream
+          Live Stream
           <span id="recBadge" style="display:none">
             <span class="rec-dot"></span> <span class="small text-danger">REC</span>
           </span>
@@ -50,29 +48,28 @@ body { background:#0d1117; color:#c9d1d9; }
             <iframe
               id="webrtcFrame"
               title="WebRTC Stream"
-              src="http://10.0.0.7:8092"
+              src="{{ webrtc_embed_url }}"
               allow="autoplay; fullscreen"
               referrerpolicy="no-referrer"
             ></iframe>
             <div id="videoOverlay">
-              <div class="text-muted small" id="overlayMsg">Connecting to WebRTC stream…</div>
-              <a class="small text-info" href="http://10.0.0.7:8092" target="_blank" rel="noopener noreferrer">Open stream in new tab</a>
+              <div class="text-muted small" id="overlayMsg">Connecting to WebRTC stream...</div>
+              <a class="small text-info" href="{{ webrtc_embed_url }}" target="_blank" rel="noopener noreferrer">Open stream in new tab</a>
             </div>
           </div>
           <div class="mt-2 d-flex gap-2 align-items-center">
-            <span class="small text-muted">WebRTC:</span>
-            <code class="small text-info" style="font-size:.7rem">http://10.0.0.7:8092</code>
+            <span class="small text-muted">Proxy URL:</span>
+            <code class="small text-info" style="font-size:.7rem">{{ webrtc_embed_url }}</code>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Recordings list -->
     <div class="col-lg-5">
       <div class="card h-100">
         <div class="card-header d-flex justify-content-between align-items-center">
-          📁 Recordings (last 48h)
-          <button class="btn btn-sm btn-outline-secondary py-0" onclick="loadRecordings()">⟳</button>
+          Recordings (last 48h)
+          <button class="btn btn-sm btn-outline-secondary py-0" onclick="loadRecordings()">Refresh</button>
         </div>
         <div class="card-body p-0" style="max-height:420px; overflow-y:auto">
           <table class="table table-sm mb-0" style="color:#c9d1d9">
@@ -84,7 +81,7 @@ body { background:#0d1117; color:#c9d1d9; }
               </tr>
             </thead>
             <tbody id="recBody">
-              <tr><td colspan="3" class="text-center text-muted py-3 small">Loading…</td></tr>
+              <tr><td colspan="3" class="text-center text-muted py-3 small">Loading...</td></tr>
             </tbody>
           </table>
         </div>
@@ -93,61 +90,111 @@ body { background:#0d1117; color:#c9d1d9; }
   </div>
 </div>
 {% endblock %}
+
 {% block scripts %}
 {{ super() }}
-<video id="video" autoplay playsinline controls></video>
-
 <script>
-async function start() {
-    const pc = new RTCPeerConnection();
+const DEVICE_ID = "{{ device_id }}";
+let recordActive = false;
 
-    pc.ontrack = (event) => {
-        document.getElementById("video").srcObject =
-            event.streams[0];
-    };
+function initWebrtcEmbed() {
+  const frame = document.getElementById('webrtcFrame');
+  const overlay = document.getElementById('videoOverlay');
+  const status = document.getElementById('streamStatus');
 
-    pc.addTransceiver("video", { direction: "recvonly" });
+  frame.addEventListener('load', () => {
+    overlay.style.display = 'none';
+    status.innerHTML = '<span class="text-success">WebRTC page loaded</span>';
+  });
 
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-
-    await new Promise(resolve => {
-        if (pc.iceGatheringState === "complete") {
-            resolve();
-        } else {
-            pc.addEventListener("icegatheringstatechange", () => {
-                if (pc.iceGatheringState === "complete") {
-                    resolve();
-                }
-            });
-        }
-    });
-
-    const response = await fetch("{{ webrtc_url }}", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-            sdp: pc.localDescription.sdp,
-            type: pc.localDescription.type
-        })
-    });
-
-    const answer = await response.json();
-
-    await pc.setRemoteDescription(answer);
-
-    console.log("Connected");
+  frame.addEventListener('error', () => {
+    overlay.style.display = 'flex';
+    document.getElementById('overlayMsg').textContent = 'WebRTC stream unavailable';
+    status.textContent = 'Offline';
+  });
 }
 
-start().catch(console.error);
+async function toggleRecord() {
+  const endpoint = recordActive
+    ? '/api/devices/' + DEVICE_ID + '/video/stop'
+    : '/api/devices/' + DEVICE_ID + '/video/start';
+  await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  recordActive = !recordActive;
+  updateRecordBtn();
+}
 
-// ─── Init ─────────────────────────────────────────────────────────────────────
-// initWebrtcEmbed();
-// syncRecordState();
-// setInterval(syncRecordState, 5000);
-// setInterval(loadRecordings, 30000);
-// loadRecordings();
+async function syncRecordState() {
+  try {
+    const r = await fetch('/api/video/status/' + DEVICE_ID);
+    const d = await r.json();
+    if (d.active !== recordActive) {
+      recordActive = d.active;
+      updateRecordBtn();
+    }
+  } catch (e) {}
+}
+
+function updateRecordBtn() {
+  const btn = document.getElementById('btnRecord');
+  const badge = document.getElementById('recBadge');
+  if (recordActive) {
+    btn.textContent = 'Stop Recording';
+    btn.className = 'btn btn-sm btn-danger';
+    badge.style.display = '';
+  } else {
+    btn.textContent = 'Start Recording';
+    btn.className = 'btn btn-sm btn-success';
+    badge.style.display = 'none';
+  }
+}
+
+async function loadRecordings() {
+  try {
+    const r = await fetch('/api/video/recordings/' + DEVICE_ID);
+    const files = await r.json();
+    const totalMb = files.reduce((a, f) => a + f.size_mb, 0).toFixed(0);
+    document.getElementById('recCount').textContent = files.length;
+    document.getElementById('recSize').textContent = totalMb + ' MB';
+
+    if (!files.length) {
+      document.getElementById('recBody').innerHTML =
+        '<tr><td colspan="3" class="text-center text-muted py-3 small">No recordings yet</td></tr>';
+      return;
+    }
+
+    document.getElementById('recBody').innerHTML = files.map(f => `
+      <tr class="file-row">
+        <td>
+          <div class="fw-bold" style="font-size:.78rem">${f.name.replace('.mp4', '')}</div>
+          <div class="text-muted" style="font-size:.68rem">${f.mtime_str}</div>
+        </td>
+        <td class="text-muted">${f.size_mb} MB</td>
+        <td>
+          <a href="/api/video/recordings/${DEVICE_ID}/download/${f.name}"
+             class="btn btn-xs btn-outline-info btn-sm py-0 px-2 me-1" style="font-size:.7rem">DL</a>
+          <button onclick="deleteRec('${f.name}')"
+                  class="btn btn-xs btn-outline-danger btn-sm py-0 px-1" style="font-size:.7rem">DEL</button>
+        </td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    document.getElementById('recBody').innerHTML =
+      '<tr><td colspan="3" class="text-center text-muted py-3 small">Error loading</td></tr>';
+  }
+}
+
+async function deleteRec(filename) {
+  if (!confirm('Delete ' + filename + '?')) return;
+  await fetch('/api/video/recordings/' + DEVICE_ID + '/delete/' + filename, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+  });
+  loadRecordings();
+}
+
+initWebrtcEmbed();
+syncRecordState();
+setInterval(syncRecordState, 5000);
+setInterval(loadRecordings, 30000);
+loadRecordings();
 </script>
-{% endblock %}SS
+{% endblock %}

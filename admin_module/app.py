@@ -37,6 +37,8 @@ def create_app(settings=None):
         LOGIN_ATTEMPT_WINDOW_S=settings.login_attempt_window_s,
         TELEMETRY_MAX_BATCH=settings.telemetry_max_batch,
         MAX_CONTENT_LENGTH=settings.max_content_length,
+        WEBRTC_PROXY_UPSTREAM=settings.webrtc_proxy_upstream,
+        WEBRTC_PROXY_TIMEOUT_S=settings.webrtc_proxy_timeout_s,
     )
 
     app.extensions["cleanup_scheduler"] = CleanupScheduler(every_n_requests=50)
@@ -95,7 +97,10 @@ def _register_security_hooks(app):
     @app.after_request
     def add_security_headers(response):
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("X-Frame-Options", "DENY")
+        if request.path.startswith("/webrtc"):
+            response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        else:
+            response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         return response
 
