@@ -18,6 +18,7 @@ import glob
 import hashlib
 import json
 import logging
+import os
 import signal
 import socket
 import subprocess
@@ -25,6 +26,7 @@ import sys
 import time
 import urllib.request
 import urllib.error
+from urllib.parse import urlparse
 from pathlib import Path
 
 logging.basicConfig(
@@ -34,8 +36,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ─── Config ────────────────────────────────────────────────────────────────────
-REGISTRY_URL      = "http://173.242.60.33:8080"
-SERVER_SRT_HOST   = "173.242.60.33"
+ADMIN_SERVER_URL  = os.environ.get("SIRENA_ADMIN_SERVER_URL", "http://173.242.60.33:8080").rstrip("/")
+REGISTRY_URL      = ADMIN_SERVER_URL
+SERVER_SRT_HOST   = os.environ.get("SIRENA_SRT_HOST", urlparse(ADMIN_SERVER_URL).hostname or "173.242.60.33")
 SERVER_SRT_PORT   = 8890
 POLL_INTERVAL     = 5.0
 REPORT_EVERY      = 12    # re-report state to server every N polls (~60s)

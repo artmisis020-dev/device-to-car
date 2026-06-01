@@ -37,7 +37,7 @@ class ThermalTrack(VideoStreamTrack):
             ]
         cmd = [
             "gst-launch-1.0", "-q",
-            "v4l2src", f"device={self.device}",
+            "v4l2src", f"device={self.device}", "io-mode=mmap",
             "!", f"video/x-raw,format=YUY2,width={self.width},height={self.height},framerate={self.fps}/1",
             "!", "queue", "max-size-buffers=2", "leaky=downstream",
             "!", "videoconvert",

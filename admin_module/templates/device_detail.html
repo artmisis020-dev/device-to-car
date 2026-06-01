@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Sirena — {{ hostname }}{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+body { background:#0b1220; color:#d7e1ea; }
+.card { background:#111a2b; border:1px solid #20324f; border-radius:12px; }
+.card-header { background:#16243a !important; border-bottom:1px solid #20324f; color:#e8eef5 !important; font-weight:600; }
+.soft { color:#8ea6c5; }
+#map { height: 360px; border-radius: 8px; }
+#videoFrame { width:100%; aspect-ratio:16/9; background:#000; border:0; border-radius:8px; }
+.kv { display:grid; grid-template-columns:120px 1fr; gap:.35rem .75rem; font-size:.9rem; }
+.kv div:nth-child(odd) { color:#8ea6c5; }
+.msg-table td, .msg-table th { padding:.35rem .5rem !important; font-size:.78rem; border-color:#1e2b40 !important; }
+.cmd-btn { min-width:88px; }
+</style>
+{% endblock %}
+{% block content %}
+<nav class="navbar navbar-dark" style="background:#16243a;border-bottom:1px solid #20324f">
+  <div class="container-fluid">
+    <span class="navbar-brand fw-semibold">🧭 {{ hostname }} / {{ device_id[:12] }}</span>
+    <div class="d-flex gap-2">
+      <a href="/telemetry/{{ device_id }}" class="btn btn-sm btn-outline-success">Telemetry</a>
+      <a href="/video/{{ device_id }}" class="btn btn-sm btn-outline-info">Video</a>
+      <a href="/" class="btn btn-sm btn-outline-secondary">Back</a>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid py-3">
+  <div class="row g-3 mb-3">
+    <div class="col-xl-4">
+      <div class="card h-100">
+        <div class="card-header">Drone Profile</div>
+        <div class="card-body">
+          <div class="kv" id="profileBox">Loading…</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-xl-4">
+      <div class="card h-100">
+        <div class="card-header">Live Video</div>
+        <div class="card-body p-2">
+          <iframe id="videoFrame" src="/video/{{ device_id }}" title="live video"></iframe>
+          <div class="soft mt-2 small">Embedded player: /video/{{ device_id }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-xl-4">
+      <div class="card h-100">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          FC Commands
+          <span class="soft small">queued in admin DB</span>
+        </div>
+        <div class="card-body">
+          <div class="d-flex flex-wrap gap-2 mb-3">
+            <button class="btn btn-sm btn-danger cmd-btn" onclick="sendCommand('ARM')">ARM</button>
+            <button class="btn btn-sm btn-outline-danger cmd-btn" onclick="sendCommand('DISARM')">DISARM</button>
+            <button class="btn btn-sm btn-warning cmd-btn" onclick="sendCommand('RTL')">RTL</button>
+            <button class="btn btn-sm btn-outline-warning cmd-btn" onclick="sendCommand('LOITER')">LOITER</button>
+            <button class="btn btn-sm btn-info cmd-btn" onclick="sendCommand('TAKEOFF', {altitude: 10})">TAKEOFF</button>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm msg-table mb-0">
+              <thead><tr><th>Time</th><th>Command</th><th>Status</th></tr></thead>
+              <tbody id="commandBody"><tr><td colspan="3" class="text-center soft py-3">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-xl-7">
+      <div class="card h-100">
+        <div class="card-header">Map</div>
+        <div class="card-body"><div id="map"></div></div>
+      </div>
+    </div>
+    <div class="col-xl-5">
+      <div class="card h-100">
+        <div class="card-header">Telemetry Snapshot</div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm msg-table mb-0">
+              <thead><tr><th>Type</th><th>Count</th><th>Data</th></tr></thead>
+              <tbody id="latestTelemetry"><tr><td colspan="3" class="text-center soft py-3">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+{{ super() }}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const DEVICE_ID = "{{ device_id }}";
+const map = L.map('map').setView([0, 0], 2);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+let marker = null;
+let track = L.polyline([], {color:'#4ea1ff', weight:3}).addTo(map);
+
+function fmt(value) {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+async function loadDetail() {
+  const res = await fetch(`/api/devices/${DEVICE_ID}`);
+  const data = await res.json();
+  if (!res.ok) {
+    document.getElementById('profileBox').innerHTML = '<div class="soft">Device not found</div>';
+    return;
+  }
+
+  const device = data.device;
+  const profile = [
+    ['Device ID', device.device_id],
+    ['Hostname', device.hostname || '—'],
+    ['IP', device.ip || '—'],
+    ['Hardware', device.hardware || '—'],
+    ['Sirena', device.sirena_version || '—'],
+    ['Video', device.video_version || '—'],
+    ['Approved', data.is_valid ? 'yes' : 'no'],
+    ['Last seen', device.last_seen || '—'],
+    ['Telemetry', data.telemetry.active ? 'on' : 'off'],
+    ['Video', data.video.active ? 'on' : 'off'],
+  ];
+  document.getElementById('profileBox').innerHTML = profile.map(([k, v]) => `<div>${k}</div><div>${fmt(v)}</div>`).join('');
+
+  const latest = data.telemetry.latest || [];
+  const rows = latest.slice(0, 25).map(row => `<tr><td>${fmt(row.type)}</td><td class="soft">${row.ts}</td><td><code>${fmt(row.data)}</code></td></tr>`);
+  document.getElementById('latestTelemetry').innerHTML = rows.length ? rows.join('') : '<tr><td colspan="3" class="text-center soft py-3">No telemetry yet</td></tr>';
+
+  const gps = latest.find((row) => row.data && (row.data.lat !== undefined || row.data.latitude !== undefined));
+  const lat = gps?.data?.lat !== undefined ? gps.data.lat / 1e7 : gps?.data?.latitude;
+  const lon = gps?.data?.lon !== undefined ? gps.data.lon / 1e7 : gps?.data?.longitude;
+  if (typeof lat === 'number' && typeof lon === 'number' && !Number.isNaN(lat) && !Number.isNaN(lon)) {
+    const point = [lat, lon];
+    map.setView(point, 15);
+    track.setLatLngs([point]);
+    if (!marker) marker = L.marker(point).addTo(map);
+    else marker.setLatLng(point);
+  }
+
+  const commands = data.commands || [];
+  document.getElementById('commandBody').innerHTML = commands.length
+    ? commands.map(cmd => `<tr><td>${cmd.created_at}</td><td>${cmd.command}</td><td>${cmd.status}</td></tr>`).join('')
+    : '<tr><td colspan="3" class="text-center soft py-3">No commands queued</td></tr>';
+}
+
+async function sendCommand(command, payload = null) {
+  await fetch(`/api/devices/${DEVICE_ID}/commands`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({command, payload}),
+  });
+  loadDetail();
+}
+
+loadDetail();
+setInterval(loadDetail, 10000);
+</script>
+{% endblock %}

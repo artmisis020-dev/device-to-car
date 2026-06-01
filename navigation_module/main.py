@@ -1,4 +1,4 @@
-ґ#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Головний оркестратор GPS Hub системи — Enhanced.
 
@@ -40,14 +40,14 @@ from typing import Optional, Dict, Any, List
 
 # Локальні модулі (оригінальний Sirena)
 import starlink
-import dtc
+# import dtc
 import mavlink_bridge
 import gps_priority
 
 # StarGPSHandler з satellite-gps-
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from modules.stargps.stargps_handler import StarGPSHandler, GPSRecord, Arc4Hysteresis, run_cmad
+from stargps_handler import StarGPSHandler, GPSRecord, Arc4Hysteresis, run_cmad
 
 # Налаштування логування
 logging.basicConfig(
@@ -71,7 +71,7 @@ FORECAST_HZ            = 5       # дискретизація forecast (точо
 # ---------------------------------------------------------------------------
 # Sirena Registry — handshake / heartbeat
 # ---------------------------------------------------------------------------
-REGISTRY_URL        = "http://91.223.169.157:8080"
+REGISTRY_URL        = "http://173.242.60.33:8080"
 REGISTRY_ENABLED    = True          # False → вимкнути перевірку (dev mode)
 HANDSHAKE_TIMEOUT   = 300           # сек — максимум чекати approve (5 хв)
 HANDSHAKE_INTERVAL  = 10            # сек — пауза між спробами handshake
@@ -185,7 +185,7 @@ class MavLinkGPSHub:
         self._registry_approved: bool = False
         self._heartbeat_thread: Optional[threading.Thread] = None
 
-        # Опитуємо конфіг
+        # Завантажуємо конфіг
         self.load_config(conf_file)
 
         # Ініціалізуємо параметри з конфігу
@@ -210,7 +210,7 @@ class MavLinkGPSHub:
         if conf_mode in ("AUTO", "STARLINK", "BEITIAN"):
             self.source_mode = conf_mode
         self.bridge = None
-        self.dtc_client = dtc.get_client()
+        # self.dtc_client = dtc.get_client()
 
         self.starlink_thread = None
         self.beitian_thread = None

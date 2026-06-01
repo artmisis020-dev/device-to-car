@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 User=sirena
 WorkingDirectory=/opt/sirena-telemetry
+EnvironmentFile=/opt/sirena/.env
 ExecStart=/opt/sirena-telemetry/venv/bin/python3 /opt/sirena-telemetry/telemetry_daemon.py
 Restart=on-failure
 RestartSec=10s
