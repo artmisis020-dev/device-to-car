@@ -1,38 +1,27 @@
-log:
-  level: info
-  format: text
-  output: stdout
-api:
-  enabled: true
-  address: 127.0.0.1:9997
-  
-rtsp:
-  enabled: true
-  address: 0.0.0.0
-  port: 8554
-  transportProtocols: [tcp, udp]
+logLevel: info
+logDestinations: [stdout]
 
-srt:
-  enabled: true
-  address: :8890
+api: yes
+apiAddress: 127.0.0.1:9997
 
+rtsp: yes
+rtspAddress: :8554
+rtspTransports: [tcp, udp]
 
-webRTC:
-  enabled: true
-  address: :8889
-  encryption: no
-  localUdpAddress: :8189
-  localTcpAddress: :8189
-  # Runtime deploy can replace this from MEDIAMTX_ADDITIONAL_HOSTS.
-  additionalHosts: []
+srt: yes
+srtAddress: :8890
 
+webrtc: yes
+webrtcAddress: :8889
+webrtcEncryption: no
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+# Runtime deploy can replace this from MEDIAMTX_ADDITIONAL_HOSTS.
+webrtcAdditionalHosts: []
 
-hls:
-  enabled: false
+hls: no
+rtmp: no
 
-rtmp:
-  enabled: false
-  
 paths:
   all_others:
     source: publisher
