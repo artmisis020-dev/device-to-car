@@ -2,6 +2,7 @@ import re
 from urllib.parse import quote
 
 from flask import current_app, request
+import requests
 
 from . import repository
 
@@ -38,6 +39,72 @@ def _clean_base_url(value):
     )
 
 
+def _mediamtx_api_base_url():
+    configured = current_app.config.get("MEDIAMTX_API_URL", "")
+    if configured:
+        return _clean_base_url(configured)
+    return "http://127.0.0.1:9997"
+
+
+def _published_paths():
+    base_url = _mediamtx_api_base_url()
+    try:
+        response = requests.get(f"{base_url}/v3/paths/list", timeout=2)
+        response.raise_for_status()
+        payload = response.json() or {}
+    except Exception:
+        return None
+
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return []
+
+    published = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = (item.get("name") or "").strip()
+        if not name:
+            continue
+        if item.get("ready") is True:
+            published.append(name)
+    return published
+
+
+def _resolve_stream_name(row, device_id):
+    preferred = _stream_name_from_row(row, device_id)
+    published = _published_paths()
+
+    # If API is unavailable, keep previous behavior and trust DB/hostname mapping.
+    if published is None:
+        return preferred
+
+    if preferred in published:
+        return preferred
+
+    preferred_lower = preferred.lower()
+    for name in published:
+        if name.lower() == preferred_lower:
+            return name
+
+    device_short = (device_id or "")[:12]
+    if device_short and device_short in published:
+        return device_short
+
+    # Safe fallback only when exactly one publisher is active.
+    if len(published) == 1:
+        return published[0]
+
+    return preferred
+
+
+def is_stream_published(stream):
+    published = _published_paths()
+    if published is None:
+        return True
+    return stream in published
+
+
 def set_active(device_id, active):
     repository.set_video_active(device_id, active)
     return {"status": "video_started" if active else "video_stopped"}
@@ -57,15 +124,15 @@ def status(device_id):
         return {"active": False, "error": "device not found"}, 404
     return {
         "active": bool(row["video_active"]),
-        "stream_name": _stream_name_from_row(row, device_id),
+        "stream_name": _resolve_stream_name(row, device_id),
     }, 200
 
 
 def stream_name(device_id):
-    row = repository.get_hostname(device_id)
+    row = repository.get_device(device_id)
     if not row:
         return None
-    return _stream_name_from_row(row, device_id)
+    return _resolve_stream_name(row, device_id)
 
 
 def stream_url(device_id):

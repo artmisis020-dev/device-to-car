@@ -124,7 +124,16 @@ function waitIceGatheringComplete(peer) {
 
 async function loadStreamInfo() {
   const res = await fetch(`/api/video/${DEVICE_ID}/stream`);
-  if (!res.ok) throw new Error('Stream metadata unavailable');
+  if (!res.ok) {
+    let errorText = 'Stream metadata unavailable';
+    try {
+      const payload = await res.json();
+      if (payload && payload.error) errorText = payload.error;
+    } catch (e) {
+      // Keep default text when non-JSON error is returned.
+    }
+    throw new Error(errorText);
+  }
   const data = await res.json();
   if (!data.stream_url) throw new Error('Stream URL is not configured');
   data.whep_url = data.whep_url || (data.stream_url.replace(/\/$/, '') + '/whep');
