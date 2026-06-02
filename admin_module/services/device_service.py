@@ -1,8 +1,13 @@
 from datetime import datetime, timedelta, timezone
 import json
+from pathlib import Path
+import shutil
+
+from flask import current_app
 
 from ..helpers import is_valid, now_str
 from . import repository
+from . import video_service
 
 
 def register_device(data, remote_ip):
@@ -107,8 +112,48 @@ def set_notes(device_id, notes):
 
 
 def delete_device(device_id):
-    repository.delete_device(device_id)
-    return {"status": "deleted"}
+    device = repository.get_device(device_id)
+    if not device:
+        return {"error": "device not found"}, 404
+
+    removed_recording_dirs = _delete_recording_dirs(device, device_id)
+    deleted = repository.delete_device(device_id)
+    if not deleted:
+        return {"error": "device not found"}, 404
+    return {
+        "status": "deleted",
+        "device_id": device_id,
+        "removed_recording_dirs": removed_recording_dirs,
+    }, 200
+
+
+def _delete_recording_dirs(device, device_id):
+    recordings_root = Path(current_app.config["SIRENA_RECORDINGS"]).resolve()
+    candidates = {
+        device_id,
+        device_id[:12],
+        video_service._stream_name_from_row(device, device_id),
+    }
+    removed = []
+
+    for name in candidates:
+        if not name:
+            continue
+        target = (recordings_root / name).resolve()
+        if not _is_relative_to(target, recordings_root) or target == recordings_root:
+            continue
+        if target.is_dir():
+            shutil.rmtree(target)
+            removed.append(name)
+    return removed
+
+
+def _is_relative_to(path, parent):
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
 
 
 def get_device(device_id):
