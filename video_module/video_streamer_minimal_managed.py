@@ -35,7 +35,10 @@ STREAM_FPS = env_int("STREAM_FPS", 30)
 SRT_LATENCY_MS = env_int("SRT_LATENCY_MS", 0)
 BITRATE_KBPS = env_int("BITRATE_KBPS", 2500)
 KEYINT = env_int("KEYINT", 30)
-MAVLINK_ENDPOINT = os.environ.get("MAVLINK_ENDPOINT", "udp:127.0.0.1:14562")
+MAVLINK_ENDPOINT = os.environ.get(
+    "MAVLINK_ENDPOINT",
+    os.environ.get("SIRENA_MAVLINK_TELEMETRY_URL", "udp:127.0.0.1:14562"),
+)
 SIRENA_RELAY_TARGET = os.environ.get("SIRENA_RELAY_TARGET", "").strip().strip('"')
 OSD_RATE_HZ = max(1, env_int("OSD_RATE_HZ", 5))
 

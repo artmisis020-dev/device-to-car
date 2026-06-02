@@ -13,15 +13,8 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=video-streamer
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/opt/sirena/.env
 EnvironmentFile=-/etc/default/sirena-relay
-
-Environment=VIDEO_DEVICE=/dev/v4l/by-id/usb-Thermal_Cam_Co._Ltd_Camera_202206223-video-index0
-Environment=STREAM_FPS=30
-Environment=SRT_LATENCY_MS=20
-Environment=BITRATE_KBPS=2000
-Environment=KEYINT=15
-Environment=OSD_MODE=off
-Environment=MAVLINK_ENDPOINT=udp:127.0.0.1:14562
 
 [Install]
 WantedBy=multi-user.target

@@ -23,8 +23,8 @@ webRTC:
   encryption: no
   localUdpAddress: :8189
   localTcpAddress: :8189
-  # Public ip address or domain name of the server, used in SDP answer
-  additionalHosts: [173.242.60.33]
+  # Runtime deploy can replace this from MEDIAMTX_ADDITIONAL_HOSTS.
+  additionalHosts: []
 
 
 hls:

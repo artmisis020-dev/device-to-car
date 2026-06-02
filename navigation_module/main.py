@@ -43,12 +43,13 @@ import starlink
 # import dtc
 import mavlink_bridge
 import gps_priority
+import config
 
 # StarGPSHandler з satellite-gps-
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from stargps_handler import StarGPSHandler, GPSRecord, Arc4Hysteresis, run_cmad
-
+# from stargps_handler import StarGPSHandler, GPSRecord, Arc4Hysteresis, run_cmad
+from stargps_handler import StarGPSHandler, GPSRecord
 # Налаштування логування
 logging.basicConfig(
     level=logging.INFO,
@@ -71,12 +72,12 @@ FORECAST_HZ            = 5       # дискретизація forecast (точо
 # ---------------------------------------------------------------------------
 # Sirena Registry — handshake / heartbeat
 # ---------------------------------------------------------------------------
-REGISTRY_URL        = "http://173.242.60.33:8080"
+REGISTRY_URL        = config.REGISTRY_URL
 REGISTRY_ENABLED    = True          # False → вимкнути перевірку (dev mode)
 HANDSHAKE_TIMEOUT   = 300           # сек — максимум чекати approve (5 хв)
 HANDSHAKE_INTERVAL  = 10            # сек — пауза між спробами handshake
 HEARTBEAT_INTERVAL  = 60            # сек — інтервал heartbeat
-SIRENA_VERSION      = "v2.2.0-enhanced"
+SIRENA_VERSION      = config.SIRENA_VERSION
 
 
 def _get_hardware_id() -> str:
@@ -111,7 +112,7 @@ def _get_video_version() -> str:
     """Версія video сервісу."""
     try:
         result = subprocess.check_output(
-            ["systemctl", "show", "webrtc-camera.service", "--property=ActiveState"],
+            ["systemctl", "show", config.VIDEO_STATUS_UNIT, "--property=ActiveState"],
             stderr=subprocess.DEVNULL).decode().strip()
         return "active" if "active" in result else "inactive"
     except Exception:
@@ -199,7 +200,7 @@ class MavLinkGPSHub:
         self.starlink_retry_sec = max(5.0, float(self.conf.get("starlink_retry_sec", 60.0)))
         self.starlink_algo = str(self.conf.get("starlink_algo", "ARC4")).upper()
         self.starlink_max_speed_mps = float(self.conf.get("starlink_max_speed_mps", 40.0))
-        self.arc4_hyst = Arc4Hysteresis()
+        # self.arc4_hyst = Arc4Hysteresis()
         self._starlink_samples = deque(maxlen=self.starlink_filter_window)
 
         self.priority = gps_priority.GPSPriority(
@@ -228,14 +229,14 @@ class MavLinkGPSHub:
             else:
                 logger.warning(f"Конфіг не знайден: {conf_file}")
                 self.conf = {
-                    "dtc_ip": "127.0.0.1",
-                    "dtc_port": 10110,
-                    "starlink_ip": "192.168.100.1",
-                    "starlink_port": 9200,
-                    "uart_gps_port": "/dev/ttyAMA2",
-                    "uart_gps_baud": 38400,
-                    "uart_fc_port": "/dev/ttyAMA3",
-                    "uart_fc_baud": 38400,
+                    "dtc_ip": config.DEFAULT_DTC_IP,
+                    "dtc_port": config.DEFAULT_DTC_PORT,
+                    "starlink_ip": config.DEFAULT_STARLINK_IP,
+                    "starlink_port": config.DEFAULT_STARLINK_PORT,
+                    "uart_gps_port": config.DEFAULT_UART_GPS_PORT,
+                    "uart_gps_baud": config.DEFAULT_UART_GPS_BAUD,
+                    "uart_fc_port": config.DEFAULT_UART_FC_PORT,
+                    "uart_fc_baud": config.DEFAULT_UART_FC_BAUD,
                     "manual_hold_sec": 45,
                     "manual_sats": 12,
                     "manual_alt_max_delta_m": 120.0,
@@ -255,10 +256,10 @@ class MavLinkGPSHub:
 
     def connect_hardware(self) -> bool:
         try:
-            uart_in_port = self.conf.get("uart_gps_port", "/dev/ttyAMA2")
-            uart_in_baud = self.conf.get("uart_gps_baud", 38400)
-            uart_out_port = self.conf.get("uart_fc_port", "/dev/ttyAMA3")
-            uart_out_baud = self.conf.get("uart_fc_baud", 38400)
+            uart_in_port = self.conf.get("uart_gps_port", config.DEFAULT_UART_GPS_PORT)
+            uart_in_baud = self.conf.get("uart_gps_baud", config.DEFAULT_UART_GPS_BAUD)
+            uart_out_port = self.conf.get("uart_fc_port", config.DEFAULT_UART_FC_PORT)
+            uart_out_baud = self.conf.get("uart_fc_baud", config.DEFAULT_UART_FC_BAUD)
 
             self.bridge = mavlink_bridge.MAVLinkBridge()
 
@@ -464,16 +465,18 @@ class MavLinkGPSHub:
         is_static = speed < 0.5
 
         if algo == "ARC4":
-            if is_static:
-                return True
-            metric, is_stable = self.arc4_hyst.update(az_window, speed)
-            return is_stable
+            pass
+            # if is_static:
+            #     return True
+            # metric, is_stable = self.arc4_hyst.update(az_window, speed)
+            # return is_stable
 
         elif algo == "CMAD":
-            if is_static:
-                return True
-            metric, is_stable = run_cmad(az_window, thr=8.0)
-            return is_stable
+            pass
+            # if is_static:
+            #     return True
+            # metric, is_stable = run_cmad(az_window, thr=8.0)
+            # return is_stable
 
         else:
             # LINEAR_STD (оригінальний алгоритм)

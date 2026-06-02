@@ -38,6 +38,11 @@ if [ ! -f "$APP_DIR/.env" ]; then
     exit 1
 fi
 
+set -a
+# shellcheck disable=SC1091
+. "$APP_DIR/.env"
+set +a
+
 sudo cp "$APP_DIR/admin_module/deploy/sirena-admin.service" /etc/systemd/system/
 sudo systemctl daemon-reload
 
@@ -45,7 +50,17 @@ echo "Restarting Gunicorn service..."
 sudo systemctl restart "$SERVICE"
 
 echo "Applying MediaMTX service..."
-sudo bash "$APP_DIR/admin_module/deploy/install_mediamtx.sh" "$APP_DIR/admin_module/mediamtx.yml" "$MEDIAMTX_SERVICE"
+MEDIAMTX_RUNTIME_CONFIG="$APP_DIR/mediamtx.runtime.yml"
+MEDIAMTX_HOSTS="${MEDIAMTX_ADDITIONAL_HOSTS:-}"
+MEDIAMTX_HOSTS="${MEDIAMTX_HOSTS//[[:space:]]/}"
+if [ -n "$MEDIAMTX_HOSTS" ]; then
+    MEDIAMTX_HOSTS="[$MEDIAMTX_HOSTS]"
+else
+    MEDIAMTX_HOSTS="[]"
+fi
+sed "s|^  additionalHosts: .*|  additionalHosts: $MEDIAMTX_HOSTS|" \
+    "$APP_DIR/admin_module/mediamtx.yml" > "$MEDIAMTX_RUNTIME_CONFIG"
+sudo bash "$APP_DIR/admin_module/deploy/install_mediamtx.sh" "$MEDIAMTX_RUNTIME_CONFIG" "$MEDIAMTX_SERVICE"
 
 sleep 2
 if ! systemctl is-active --quiet "$SERVICE"; then

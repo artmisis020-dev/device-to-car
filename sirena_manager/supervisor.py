@@ -14,7 +14,15 @@ import urllib.request
 from pathlib import Path
 from typing import Dict, List
 
-from .config import ADMIN_SERVER_URL, BOOT_SEQUENCE, SERVICES, SIRENA_VERSION, SYSTEMCTL, ServiceDefinition
+from .config import (
+    ADMIN_SERVER_URL,
+    BOOT_SEQUENCE,
+    SERVICES,
+    SIRENA_VERSION,
+    SYSTEMCTL,
+    VIDEO_STATUS_UNIT,
+    ServiceDefinition,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -218,7 +226,7 @@ class SirenaSupervisor:
 
     def _video_version(self) -> str:
         try:
-            result = self._run_systemctl("show", "webrtc-camera.service", "--property=ActiveState", timeout=5)
+            result = self._run_systemctl("show", VIDEO_STATUS_UNIT, "--property=ActiveState", timeout=5)
             return "active" if "active" in (result.stdout or "") else "inactive"
         except Exception:
             logger.exception("Failed getting video service state from systemctl")

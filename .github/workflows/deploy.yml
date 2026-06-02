@@ -45,6 +45,7 @@ jobs:
           envkey_WEBRTC_PROXY_UPSTREAM: ${{ secrets.WEBRTC_PROXY_UPSTREAM }}
           envkey_WEBRTC_PROXY_TIMEOUT_S: ${{ secrets.WEBRTC_PROXY_TIMEOUT_S }}
           envkey_MEDIAMTX_WEBRTC_PUBLIC_URL: ${{ secrets.MEDIAMTX_WEBRTC_PUBLIC_URL }}
+          envkey_MEDIAMTX_ADDITIONAL_HOSTS: ${{ secrets.MEDIAMTX_ADDITIONAL_HOSTS }}
           file_name: .env
 
       - name: Ensure app directory exists

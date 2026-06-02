@@ -10,6 +10,26 @@ On the RPi, the local manager starts and supervises:
 
 The remote admin server stores registered drones, telemetry, video state, and the drone detail page.
 
+## Deploy Admin Server
+
+On the admin host, place the project under `/opt/sirena-admin` and run:
+
+```bash
+bash /opt/sirena-admin/admin_module/deploy/deploy.sh
+```
+
+This deploy script now applies both services:
+- `sirena-admin` (Gunicorn/Flask app)
+- `mediamtx-admin` (MediaMTX with `admin_module/mediamtx.yml`)
+
+If you only need to re-apply MediaMTX:
+
+```bash
+sudo bash /opt/sirena-admin/admin_module/deploy/install_mediamtx.sh \
+	/opt/sirena-admin/admin_module/mediamtx.yml \
+	mediamtx-admin
+```
+
 ## Start on RPi
 
 Fast path:

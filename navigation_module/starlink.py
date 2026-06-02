@@ -8,7 +8,6 @@
 Обробляє помилки зв'язку та використовує кешування при недоступності.
 """
 
-import sys
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional

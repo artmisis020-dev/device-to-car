@@ -52,7 +52,7 @@ def video_page(device_id):
         "video.html",
         device_id=device_id,
         hostname=hostname,
-        webrtc_embed_url="http://173.242.60.33/drone01",
+        webrtc_embed_url="",
         stream_name=hostname,
     )
 

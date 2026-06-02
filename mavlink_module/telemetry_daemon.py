@@ -9,12 +9,13 @@ Standalone wrapper: підключається до локального MAVLink
 
 import hashlib
 import logging
-import os
 import signal
 import socket
 import subprocess
 import sys
 import time
+
+import config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,8 +24,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ─── Config ────────────────────────────────────────────────────────────────────
-REGISTRY_URL   = os.environ.get("SIRENA_ADMIN_SERVER_URL", "http://173.242.60.33:8080").rstrip("/")
-MAVLINK_URL    = "udpin:0.0.0.0:14562"   # слухаємо MAVLink від mavlink-router
+REGISTRY_URL   = config.REGISTRY_URL
+MAVLINK_URL    = config.MAVLINK_TELEMETRY_URL
 CONNECT_RETRY  = 10                       # секунд між спробами підключення
 
 

@@ -1,5 +1,5 @@
 [Unit]
-Description=Sirena GPS Hub (Starlink + Beitian → FC NMEA + MAVLink proxy)
+Description=Sirena GPS Hub (Starlink + Beitian to FC NMEA + MAVLink proxy)
 After=network-online.target mavlink-router.service
 Wants=network-online.target
 
@@ -7,20 +7,16 @@ Wants=network-online.target
 Type=simple
 User=sirena
 WorkingDirectory=/home/sirena/sirena
-
 ExecStart=/usr/bin/python3 /home/sirena/sirena/main.py
-
 Restart=on-failure
 RestartSec=5s
-
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=sirena-gps-hub
-
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PYTHONPATH=/home/sirena/sirena:/home/sirena/sirena/starlink-grpc-tools
-
+EnvironmentFile=/opt/sirena/.env
 MemoryLimit=256M
 
 [Install]

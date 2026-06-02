@@ -10,6 +10,14 @@ MANAGER_PORT = int(os.environ.get("SIRENA_MANAGER_PORT", os.environ.get("MANAGER
 SYSTEMCTL = os.environ.get("SIRENA_SYSTEMCTL", "sudo systemctl")
 ADMIN_SERVER_URL = os.environ.get("SIRENA_ADMIN_SERVER_URL", "http://127.0.0.1:8080")
 SIRENA_VERSION = os.environ.get("SIRENA_VERSION", "dev")
+VIDEO_STATUS_UNIT = "video-streamer.service"
+MAVLINK_ROUTER_UNIT = "mavlink-router.service"
+TELEMETRY_SENDER_UNIT = "telemetry-sender.service"
+NAVIGATION_UNIT = "sirena-gps-hub.service"
+VIDEO_MANAGER_UNIT = "video-service-manager.service"
+VIDEO_RELAY_UNIT = "video-relay.service"
+WEBRTC_CAMERA_UNIT = "webrtc-camera.service"
+VIDEO_STREAMER_UNIT = "video-streamer.service"
 
 
 @dataclass(frozen=True)
@@ -25,42 +33,42 @@ SERVICES = {
     "mavlink_router": ServiceDefinition(
         name="mavlink_router",
         label="MAVLink Router",
-        units=("mavlink-router.service",),
+        units=(MAVLINK_ROUTER_UNIT,),
     ),
     "telemetry_sender": ServiceDefinition(
         name="telemetry_sender",
         label="Telemetry Sender",
-        units=("telemetry-sender.service",),
+        units=(TELEMETRY_SENDER_UNIT,),
         depends_on=("mavlink_router",),
     ),
     "navigation": ServiceDefinition(
         name="navigation",
         label="GPS Hub",
-        units=("sirena-gps-hub.service",),
+        units=(NAVIGATION_UNIT,),
         depends_on=("mavlink_router",),
     ),
     "video_manager": ServiceDefinition(
         name="video_manager",
         label="Video Service Manager",
-        units=("video-service-manager.service",),
+        units=(VIDEO_MANAGER_UNIT,),
     ),
     "video_relay": ServiceDefinition(
         name="video_relay",
         label="Video Relay",
-        units=("video-relay.service",),
+        units=(VIDEO_RELAY_UNIT,),
         depends_on=("video_manager",),
     ),
     "webrtc_camera": ServiceDefinition(
         name="webrtc_camera",
         label="WebRTC Camera",
-        units=("webrtc-camera.service",),
+        units=(WEBRTC_CAMERA_UNIT,),
         depends_on=("video_relay",),
         controllable=False,
     ),
     "video_streamer": ServiceDefinition(
         name="video_streamer",
         label="SRT Video Streamer",
-        units=("video-streamer.service",),
+        units=(VIDEO_STREAMER_UNIT,),
         depends_on=("video_relay",),
         controllable=False,
     ),

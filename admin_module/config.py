@@ -52,7 +52,7 @@ class Settings:
             login_attempt_window_s=_parse_int_env("SIRENA_LOGIN_WINDOW_S", 600, minimum=10),
             telemetry_max_batch=_parse_int_env("SIRENA_TELEMETRY_MAX_BATCH", 2000, minimum=1),
             max_content_length=_parse_int_env("SIRENA_MAX_CONTENT_LENGTH", 2 * 1024 * 1024, minimum=1024),
-            webrtc_proxy_upstream=os.environ.get("WEBRTC_PROXY_UPSTREAM", "http://10.0.0.7:8092").strip(),
+            webrtc_proxy_upstream=os.environ.get("WEBRTC_PROXY_UPSTREAM", "http://127.0.0.1:8092").strip(),
             webrtc_proxy_timeout_s=_parse_int_env("WEBRTC_PROXY_TIMEOUT_S", 20, minimum=1, maximum=120),
             mediamtx_webrtc_public_url=os.environ.get("MEDIAMTX_WEBRTC_PUBLIC_URL", "").strip().rstrip("/"),
         )

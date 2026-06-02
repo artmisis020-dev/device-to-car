@@ -17,11 +17,11 @@ INPUT_FORMAT = os.environ.get("INPUT_FORMAT", "YUY2").upper()
 RELAY_FLAG_FILE = "/tmp/sirena_video_relay_active"
 
 # Конфігурація Sirena Registry
-REGISTRY_URL = "http://173.242.60.33:8080"
-REGISTRY_ENABLED = True
-HANDSHAKE_TIMEOUT = 300
-HANDSHAKE_INTERVAL = 10
-VIDEO_VERSION = "v1.0.0-webrtc"
+REGISTRY_URL = os.environ.get("SIRENA_ADMIN_SERVER_URL", "http://127.0.0.1:8080").rstrip("/")
+REGISTRY_ENABLED = os.environ.get("SIRENA_REGISTRY_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"}
+HANDSHAKE_TIMEOUT = int(os.environ.get("SIRENA_HANDSHAKE_TIMEOUT", "300"))
+HANDSHAKE_INTERVAL = int(os.environ.get("SIRENA_HANDSHAKE_INTERVAL", "10"))
+VIDEO_VERSION = os.environ.get("SIRENA_WEBRTC_VIDEO_VERSION", "v1.0.0-webrtc")
 
 # Шляхи до шаблонів
 BASE_DIR = Path(__file__).parent

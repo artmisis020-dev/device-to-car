@@ -64,11 +64,11 @@ echo "Встановлення Python бібліотек..."
 sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install --upgrade pip
 
 if [ -f "$DEPLOY_DIR/requirements.txt" ]; then
-    echo "Виявлено requirements.txt, встановлюємо залежності..."
-    sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install -r "$DEPLOY_DIR/requirements.txt" || true
+    echo "Встановлення залежностей з requirements.txt..."
+    sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install -r "$DEPLOY_DIR/requirements.txt"
 else
     echo "requirements.txt не знайдено, ставимо базові модулі..."
-    sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install pymavlink pyserial grpcio grpcio-tools yagrc || true
+    sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install pymavlink pyserial grpcio grpcio-tools yagrc
 fi
 
 chmod -R 755 "$INSTALL_DIR"

@@ -13,6 +13,7 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=mavlink-router
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/opt/sirena/.env
 
 [Install]
 WantedBy=multi-user.target

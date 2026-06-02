@@ -8,8 +8,6 @@ User=sirena
 WorkingDirectory=/opt/sirena
 EnvironmentFile=/opt/sirena/.env
 Environment=PYTHONUNBUFFERED=1
-Environment=SIRENA_MANAGER_HOST=127.0.0.1
-Environment=SIRENA_MANAGER_PORT=9070
 ExecStart=/opt/sirena/.venv/bin/python3 /opt/sirena/main.py
 Restart=on-failure
 RestartSec=5s
