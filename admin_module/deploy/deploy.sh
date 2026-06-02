@@ -58,7 +58,7 @@ if [ -n "$MEDIAMTX_HOSTS" ]; then
 else
     MEDIAMTX_HOSTS="[]"
 fi
-sed "s|^  additionalHosts: .*|  additionalHosts: $MEDIAMTX_HOSTS|" \
+sed "s|^webrtcAdditionalHosts: .*|webrtcAdditionalHosts: $MEDIAMTX_HOSTS|" \
     "$APP_DIR/admin_module/mediamtx.yml" > "$MEDIAMTX_RUNTIME_CONFIG"
 sudo bash "$APP_DIR/admin_module/deploy/install_mediamtx.sh" "$MEDIAMTX_RUNTIME_CONFIG" "$MEDIAMTX_SERVICE"
 
