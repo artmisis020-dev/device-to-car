@@ -4,6 +4,7 @@ set -Eeuo pipefail
 APP_DIR="/opt/sirena-admin"
 VENV="$APP_DIR/.venv"
 SERVICE="sirena-admin"
+MEDIAMTX_SERVICE="mediamtx-admin"
 SERVICE_USER="sirena"
 
 # 1. System-level setup (requires root privileges)
@@ -43,11 +44,20 @@ sudo systemctl daemon-reload
 echo "Restarting Gunicorn service..."
 sudo systemctl restart "$SERVICE"
 
+echo "Applying MediaMTX service..."
+sudo bash "$APP_DIR/admin_module/deploy/install_mediamtx.sh" "$APP_DIR/admin_module/mediamtx.yml" "$MEDIAMTX_SERVICE"
+
 sleep 2
-if systemctl is-active --quiet "$SERVICE"; then
-    echo "===== DEPLOY SUCCESSFUL ====="
-else
+if ! systemctl is-active --quiet "$SERVICE"; then
     echo "Deploy failed: $SERVICE is not active" >&2
     sudo journalctl -u "$SERVICE" -n 50 --no-pager >&2
     exit 1
 fi
+
+if ! systemctl is-active --quiet "$MEDIAMTX_SERVICE"; then
+    echo "Deploy failed: $MEDIAMTX_SERVICE is not active" >&2
+    sudo journalctl -u "$MEDIAMTX_SERVICE" -n 50 --no-pager >&2
+    exit 1
+fi
+
+echo "===== DEPLOY SUCCESSFUL ====="

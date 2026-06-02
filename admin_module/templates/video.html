@@ -2,17 +2,88 @@
 {% block title %}Video - {{ hostname }}{% endblock %}
 {% block head %}
 <style>
-body { background:#0d1117; color:#c9d1d9; }
-.card { background:#161b22; border:1px solid #21262d; border-radius:8px; }
-.card-header { background:#1c2128 !important; border-bottom:1px solid #21262d; color:#c9d1d9 !important; padding:.6rem 1rem; font-size:.85rem; font-weight:600; }
-#videoWrap { position:relative; background:#000; border-radius:6px; overflow:hidden; aspect-ratio:4/3; }
-#webrtcFrame { width:100%; height:100%; border:0; display:block; background:#000; }
-#videoOverlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px; }
-.rec-dot { width:10px; height:10px; border-radius:50%; background:#d73a49; display:inline-block; animation:blink 1s infinite; }
-@keyframes blink { 0%,100%{opacity:1}50%{opacity:.2} }
-.file-row td { vertical-align:middle; font-size:.82rem; padding:.35rem .5rem !important; border-color:#21262d !important; }
-.file-row:hover { background:rgba(30,58,95,.3) !important; }
-.navbar { background:#161b22 !important; border-bottom:1px solid #21262d; }
+  body {
+    background: #0d1117;
+    color: #c9d1d9;
+  }
+
+  .card {
+    background: #161b22;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+  }
+
+  .card-header {
+    background: #1c2128 !important;
+    border-bottom: 1px solid #21262d;
+    color: #c9d1d9 !important;
+    padding: .6rem 1rem;
+    font-size: .85rem;
+    font-weight: 600;
+  }
+
+  #videoWrap {
+    position: relative;
+    background: #000;
+    border-radius: 6px;
+    overflow: hidden;
+    aspect-ratio: 4/3;
+  }
+
+  #webrtcFrame {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+    background: #000;
+  }
+
+  #videoOverlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .rec-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #d73a49;
+    display: inline-block;
+    animation: blink 1s infinite;
+  }
+
+  @keyframes blink {
+
+    0%,
+    100% {
+      opacity: 1
+    }
+
+    50% {
+      opacity: .2
+    }
+  }
+
+  .file-row td {
+    vertical-align: middle;
+    font-size: .82rem;
+    padding: .35rem .5rem !important;
+    border-color: #21262d !important;
+  }
+
+  .file-row:hover {
+    background: rgba(30, 58, 95, .3) !important;
+  }
+
+  .navbar {
+    background: #161b22 !important;
+    border-bottom: 1px solid #21262d;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -27,73 +98,25 @@ body { background:#0d1117; color:#c9d1d9; }
 </nav>
 
 <div class="container-fluid">
-  <div class="d-flex gap-3 align-items-center mb-3 flex-wrap">
-    <span id="streamStatus" class="small text-muted">Offline</span>
-    <span class="text-muted small">|</span>
-    <span class="small">Recordings: <strong id="recCount">-</strong></span>
-    <span class="small">Total size: <strong id="recSize">-</strong></span>
-  </div>
+  <iframe id="video-frame" style="width: 100%; height: 500px; border: none;" allow="autoplay; fullscreen">
+  </iframe>
 
-  <div class="row g-3">
-    <div class="col-lg-7">
-      <div class="card">
-        <div class="card-header d-flex justify-content-between align-items-center">
-          Live Stream
-          <span id="recBadge" style="display:none">
-            <span class="rec-dot"></span> <span class="small text-danger">REC</span>
-          </span>
-        </div>
-        <div class="card-body p-2">
-          <div id="videoWrap">
-            <iframe
-              id="webrtcFrame"
-              title="WebRTC Stream"
-              src="{{ webrtc_embed_url }}"
-              allow="autoplay; fullscreen"
-              referrerpolicy="no-referrer"
-            ></iframe>
-            <div id="videoOverlay">
-              <div class="text-muted small" id="overlayMsg">Connecting to WebRTC stream...</div>
-              <a class="small text-info" href="{{ webrtc_embed_url }}" target="_blank" rel="noopener noreferrer">Open stream in new tab</a>
-            </div>
-          </div>
-          <div class="mt-2 d-flex gap-2 align-items-center">
-            <span class="small text-muted">Proxy URL:</span>
-            <code class="small text-info" style="font-size:.7rem">{{ webrtc_embed_url }}</code>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-lg-5">
-      <div class="card h-100">
-        <div class="card-header d-flex justify-content-between align-items-center">
-          Recordings (last 48h)
-          <button class="btn btn-sm btn-outline-secondary py-0" onclick="loadRecordings()">Refresh</button>
-        </div>
-        <div class="card-body p-0" style="max-height:420px; overflow-y:auto">
-          <table class="table table-sm mb-0" style="color:#c9d1d9">
-            <thead style="background:#1c2128; position:sticky; top:0">
-              <tr>
-                <th style="font-size:.72rem; color:#8b949e">File</th>
-                <th style="font-size:.72rem; color:#8b949e">Size</th>
-                <th style="font-size:.72rem; color:#8b949e">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="recBody">
-              <tr><td colspan="3" class="text-center text-muted py-3 small">Loading...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 {{ super() }}
+
 <script>
+  const deviceId = "{{ device_id }}";
+
+  fetch(`/api/video/${deviceId}/stream`)
+    .then(res => res.json())
+    .then(data => {
+      document.getElementById("video-frame").src = data.stream_url;
+    });
+</script>
+<!-- <script>
 const DEVICE_ID = "{{ device_id }}";
 let recordActive = false;
 
@@ -196,5 +219,5 @@ syncRecordState();
 setInterval(syncRecordState, 5000);
 setInterval(loadRecordings, 30000);
 loadRecordings();
-</script>
+</script> -->
 {% endblock %}
