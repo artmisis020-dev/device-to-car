@@ -63,11 +63,12 @@ chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR"
 
 echo "Встановлення бібліотек (aiohttp, PyYAML) у venv..."
 sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install --upgrade pip
-sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install aiohttp aiortc av PyYAML aiohttp_jinja2
 
 if [ -f "$DEPLOY_DIR/requirements.txt" ]; then
-    echo "Встановлення з requirements.txt..."
-    sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install -r "$DEPLOY_DIR/requirements.txt" || true
+    echo "Встановлення залежностей з requirements.txt..."
+    sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install -r "$DEPLOY_DIR/requirements.txt"
+else
+    sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install aiohttp aiortc av PyYAML aiohttp_jinja2
 fi
 
 chmod -R 755 "$INSTALL_DIR"

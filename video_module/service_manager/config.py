@@ -23,7 +23,7 @@ TELEMETRY_UNIT = "telemetry-sender.service"
 GPS_MODES = ["AUTO", "STARLINK", "BEITIAN"]
 
 DEFAULT_CONFIG = {
-    "mode": "webrtc",
+    "mode": "srt",
     "fps": 30,
     "bitrate": 1000,
     "camera": None,

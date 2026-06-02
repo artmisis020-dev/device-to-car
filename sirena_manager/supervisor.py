@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import os
 import shlex
 import socket
 import subprocess
@@ -14,6 +16,9 @@ from typing import Dict, List
 
 from .config import ADMIN_SERVER_URL, BOOT_SEQUENCE, SERVICES, SIRENA_VERSION, SYSTEMCTL, ServiceDefinition
 
+
+logger = logging.getLogger(__name__)
+INTERFACE_NAME = "Gerbera"
 
 class SirenaSupervisor:
     def __init__(self) -> None:
@@ -117,6 +122,7 @@ class SirenaSupervisor:
             "hardware": self._hardware_fingerprint(),
             "sirena_version": SIRENA_VERSION,
             "video_version": self._video_version(),
+            "ip": self._wireguard_ip(),
         }
 
         try:
@@ -125,6 +131,7 @@ class SirenaSupervisor:
                 return {"success": False, "error": "admin server returned no response"}
             return {"success": True, "response": response}
         except Exception as exc:
+            logger.exception("Device registration request failed")
             return {"success": False, "error": str(exc)}
 
     def start_boot_sequence(self) -> Dict:
@@ -166,6 +173,7 @@ class SirenaSupervisor:
         try:
             result = self._run_systemctl(action, unit, timeout=5)
         except Exception as exc:
+            logger.exception("systemctl state check failed: action=%s unit=%s", action, unit)
             return str(exc)
         text = (result.stdout or result.stderr or "").strip()
         return text or "unknown"
@@ -190,7 +198,7 @@ class SirenaSupervisor:
                         parts.append(line.split(":", 1)[1].strip())
                         break
         except Exception:
-            pass
+            logger.exception("Failed reading CPU serial from /proc/cpuinfo")
 
         for iface in ("eth0", "wlan0"):
             try:
@@ -199,6 +207,7 @@ class SirenaSupervisor:
                     parts.append(address)
                     break
             except Exception:
+                logger.exception("Failed reading MAC address for interface %s", iface)
                 continue
 
         raw = "|".join(parts) or "unknown"
@@ -212,4 +221,26 @@ class SirenaSupervisor:
             result = self._run_systemctl("show", "webrtc-camera.service", "--property=ActiveState", timeout=5)
             return "active" if "active" in (result.stdout or "") else "inactive"
         except Exception:
+            logger.exception("Failed getting video service state from systemctl")
             return "unknown"
+
+    def _wireguard_ip(self) -> str:
+        override_ip = os.environ.get("SIRENA_WG_IP", "").strip()
+        if override_ip:
+            return override_ip
+
+        try:
+            # Runs: ip -4 addr show dev Gerbera
+            cmd = ["ip", "-4", "addr", "show", "dev", INTERFACE_NAME]
+            output = subprocess.check_output(cmd, text=True)
+
+            # Look for the line containing 'inet' and grab the IP
+            for line in output.splitlines():
+                if "inet " in line:
+                    # Splits the line and grabs '10.0.0.1/24', then splits on '/' to get '10.0.0.1'
+                    return line.split()[1].split("/")[0]
+        except Exception:
+            logger.exception("Failed detecting WireGuard IP from interface %s", INTERFACE_NAME)
+            return ""
+
+        return ""

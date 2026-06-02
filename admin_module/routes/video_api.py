@@ -1,8 +1,6 @@
-from flask import Blueprint, current_app, jsonify, send_file
-
+from flask import Blueprint, jsonify
 from ..helpers import json_body, require_admin
 from ..services import video_service
-
 
 video_api_bp = Blueprint("video_api", __name__)
 
@@ -31,32 +29,17 @@ def api_video_status(device_id):
     return jsonify(payload), status
 
 
-@video_api_bp.route("/api/video/recordings/<device_id>", methods=["GET"])
+@video_api_bp.route("/api/video/<device_id>/stream", methods=["GET"])
 @require_admin
-def api_video_recordings(device_id):
-    return jsonify(video_service.list_recordings(device_id, current_app.config["SIRENA_RECORDINGS"]))
+def api_video_get_stream(device_id):
+    stream_url = video_service.stream_url(device_id)
+    stream_name = video_service.stream_name(device_id)
 
+    if not stream_url:
+        return jsonify({"error": "Stream URL not found"}), 404
 
-@video_api_bp.route("/api/video/recordings/<device_id>/delete/<filename>", methods=["POST"])
-@require_admin
-def api_video_delete_recording(device_id, filename):
-    stream_name, file_path = video_service.resolve_recording_path(device_id, filename, current_app.config["SIRENA_RECORDINGS"])
-    if not stream_name:
-        return jsonify({"error": "device not found"}), 404
-    if not file_path or not file_path.exists() or not file_path.is_file():
-        return jsonify({"error": "file not found"}), 404
-
-    file_path.unlink()
-    return jsonify({"status": "deleted"})
-
-
-@video_api_bp.route("/api/video/recordings/<device_id>/download/<filename>", methods=["GET"])
-@require_admin
-def api_video_download(device_id, filename):
-    stream_name, file_path = video_service.resolve_recording_path(device_id, filename, current_app.config["SIRENA_RECORDINGS"])
-    if not stream_name:
-        return "not found", 404
-    if not file_path or not file_path.exists() or not file_path.is_file():
-        return "not found", 404
-
-    return send_file(file_path, as_attachment=True, download_name=filename)
+    return jsonify({
+        "stream_id": device_id,
+        "stream_name": stream_name,
+        "stream_url": stream_url
+    }), 200

@@ -1,0 +1,17 @@
+[Unit]
+Description=Sirena Admin MediaMTX
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__SERVICE_USER__
+Group=__SERVICE_USER__
+WorkingDirectory=/opt/sirena-admin
+ExecStart=/usr/local/bin/mediamtx __CONFIG_PATH__
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

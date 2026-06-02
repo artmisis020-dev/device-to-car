@@ -39,6 +39,7 @@ def create_app(settings=None):
         MAX_CONTENT_LENGTH=settings.max_content_length,
         WEBRTC_PROXY_UPSTREAM=settings.webrtc_proxy_upstream,
         WEBRTC_PROXY_TIMEOUT_S=settings.webrtc_proxy_timeout_s,
+        MEDIAMTX_WEBRTC_PUBLIC_URL=settings.mediamtx_webrtc_public_url,
     )
 
     app.extensions["cleanup_scheduler"] = CleanupScheduler(every_n_requests=50)

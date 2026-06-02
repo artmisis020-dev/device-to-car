@@ -1,7 +1,25 @@
-from datetime import datetime
-from pathlib import Path
+import re
+
+from flask import current_app, request
 
 from . import repository
+
+_UNSAFE_STREAM_CHARS = re.compile(r"[^A-Za-z0-9_.-]+")
+
+
+def _stream_name_from_row(row, device_id):
+    raw_name = (row["hostname"] if row and row["hostname"] else device_id[:12]).strip()
+    stream_name = _UNSAFE_STREAM_CHARS.sub("-", raw_name).strip(".-")
+    return stream_name or device_id[:12]
+
+
+def _webrtc_public_base_url():
+    configured = current_app.config.get("MEDIAMTX_WEBRTC_PUBLIC_URL")
+    if configured:
+        return configured.rstrip("/")
+
+    host = request.host.split(":")[0]
+    return f"http://{host}:8889"
 
 
 def set_active(device_id, active):
@@ -23,7 +41,7 @@ def status(device_id):
         return {"active": False, "error": "device not found"}, 404
     return {
         "active": bool(row["video_active"]),
-        "stream_name": row["hostname"] or device_id[:12],
+        "stream_name": _stream_name_from_row(row, device_id),
     }, 200
 
 
@@ -31,41 +49,16 @@ def stream_name(device_id):
     row = repository.get_hostname(device_id)
     if not row:
         return None
-    return row["hostname"] or device_id[:12]
+    return _stream_name_from_row(row, device_id)
 
 
-def list_recordings(device_id, recordings_dir):
-    stream = stream_name(device_id)
-    if not stream:
-        return []
+def stream_url(device_id):
+    row = repository.get_device(device_id)
 
-    rec_dir = Path(recordings_dir) / stream
-    if not rec_dir.exists():
-        return []
+    if not row:
+        return None
 
-    files = []
-    for file_path in sorted(rec_dir.glob("*.mp4"), reverse=True):
-        stat = file_path.stat()
-        files.append(
-            {
-                "name": file_path.name,
-                "size": stat.st_size,
-                "size_mb": round(stat.st_size / 1024 / 1024, 1),
-                "mtime": stat.st_mtime,
-                "mtime_str": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
-                "path": str(file_path),
-            }
-        )
-    return files
+    if not row["approved"]:
+        return None
 
-
-def resolve_recording_path(device_id, filename, recordings_dir):
-    stream = stream_name(device_id)
-    if not stream:
-        return None, None
-
-    base_dir = Path(recordings_dir).resolve()
-    candidate = (base_dir / stream / filename).resolve()
-    if base_dir not in candidate.parents:
-        return stream, None
-    return stream, candidate
+    return f"{_webrtc_public_base_url()}/{_stream_name_from_row(row, device_id)}"

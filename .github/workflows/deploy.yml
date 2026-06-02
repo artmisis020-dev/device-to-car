@@ -44,6 +44,7 @@ jobs:
           envkey_ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           envkey_WEBRTC_PROXY_UPSTREAM: ${{ secrets.WEBRTC_PROXY_UPSTREAM }}
           envkey_WEBRTC_PROXY_TIMEOUT_S: ${{ secrets.WEBRTC_PROXY_TIMEOUT_S }}
+          envkey_MEDIAMTX_WEBRTC_PUBLIC_URL: ${{ secrets.MEDIAMTX_WEBRTC_PUBLIC_URL }}
           file_name: .env
 
       - name: Ensure app directory exists
@@ -81,11 +82,20 @@ jobs:
             REPO_URL="https://github.com/artmisis020-dev/device-to-car.git"
             BRANCH="${DEPLOY_BRANCH:-main}"
             DEPLOY_SCRIPT="$APP_DIR/admin_module/deploy/deploy.sh"
+            ENV_BACKUP="/tmp/sirena-admin.env"
+
+            if sudo test -f "$APP_DIR/.env"; then
+              sudo cp "$APP_DIR/.env" "$ENV_BACKUP"
+            fi
 
             if [ ! -d "$APP_DIR/.git" ]; then
               echo "Bootstrap: cloning repository for first deploy"
               sudo rm -rf "$APP_DIR"
               sudo git clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+            fi
+
+            if sudo test -f "$ENV_BACKUP"; then
+              sudo mv "$ENV_BACKUP" "$APP_DIR/.env"
             fi
 
             echo "Syncing repository to latest $BRANCH"

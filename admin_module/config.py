@@ -21,6 +21,7 @@ class Settings:
     max_content_length: int
     webrtc_proxy_upstream: str
     webrtc_proxy_timeout_s: int
+    mediamtx_webrtc_public_url: str
 
     @classmethod
     def from_env(cls):
@@ -53,6 +54,7 @@ class Settings:
             max_content_length=_parse_int_env("SIRENA_MAX_CONTENT_LENGTH", 2 * 1024 * 1024, minimum=1024),
             webrtc_proxy_upstream=os.environ.get("WEBRTC_PROXY_UPSTREAM", "http://10.0.0.7:8092").strip(),
             webrtc_proxy_timeout_s=_parse_int_env("WEBRTC_PROXY_TIMEOUT_S", 20, minimum=1, maximum=120),
+            mediamtx_webrtc_public_url=os.environ.get("MEDIAMTX_WEBRTC_PUBLIC_URL", "").strip().rstrip("/"),
         )
 
 

@@ -14,12 +14,12 @@ log = logging.getLogger(__name__)
 class ServiceManager:
     def __init__(self):
         self._lock = threading.Lock()
-        self.config_file = Path("/tmp/sirena_video_config.json")
+        self.config_file = Path("/opt/sirena-video/sirena_video_config.json")
         self.config = self._load_config()
         self._enforce_single_mode()
 
     def _enforce_single_mode(self):
-        mode = self.config.get("mode", "webrtc")
+        mode = self.config.get("mode", "srt")
         for key, svc in SERVICES.items():
             if key != mode:
                 try:

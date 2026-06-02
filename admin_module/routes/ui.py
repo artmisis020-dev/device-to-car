@@ -52,12 +52,13 @@ def video_page(device_id):
         "video.html",
         device_id=device_id,
         hostname=hostname,
-        webrtc_embed_url="/webrtc/",
+        webrtc_embed_url="http://173.242.60.33/drone01",
         stream_name=hostname,
     )
 
 
 @ui_bp.route("/webrtc", defaults={"path": ""}, methods=_PROXY_METHODS)
+@ui_bp.route("/webrtc/", defaults={"path": ""}, methods=_PROXY_METHODS)
 @ui_bp.route("/webrtc/<path:path>", methods=_PROXY_METHODS)
 @require_admin
 def webrtc_proxy(path):
