@@ -109,9 +109,9 @@ def _get_current_mode() -> str:
         req = urllib.request.Request(VIDEO_MANAGER_URL, method="GET")
         with urllib.request.urlopen(req, timeout=3) as r:
             data = json.loads(r.read().decode())
-            return data.get("mode", "webrtc")
+            return data.get("mode", "srt")
     except Exception:
-        return "webrtc"
+        return "srt"
 
 
 # ─── SRT relay ────────────────────────────────────────────────────────────────

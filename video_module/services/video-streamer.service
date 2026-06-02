@@ -13,6 +13,7 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=video-streamer
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/etc/default/sirena-relay
 
 Environment=VIDEO_DEVICE=/dev/v4l/by-id/usb-Thermal_Cam_Co._Ltd_Camera_202206223-video-index0
 Environment=STREAM_FPS=30
