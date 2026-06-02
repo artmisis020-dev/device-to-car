@@ -2,8 +2,8 @@
 import os
 from pathlib import Path
 
-MANAGER_HOST = "127.0.0.1"
-MANAGER_PORT = 9000
+MANAGER_HOST = os.environ.get("SIRENA_VIDEO_MANAGER_HOST", "0.0.0.0")
+MANAGER_PORT = int(os.environ.get("SIRENA_VIDEO_MANAGER_PORT", "9000"))
 
 SERVICES = {
     "webrtc": {

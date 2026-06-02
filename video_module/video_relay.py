@@ -19,6 +19,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -33,6 +34,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s [video-relay]: %(message)s"
 )
 logger = logging.getLogger(__name__)
+_UNSAFE_STREAM_CHARS = re.compile(r"[^A-Za-z0-9_.-]+")
 
 # ─── Config ────────────────────────────────────────────────────────────────────
 ADMIN_SERVER_URL  = os.environ.get("SIRENA_ADMIN_SERVER_URL", "http://127.0.0.1:8080").rstrip("/")
@@ -78,7 +80,9 @@ def _get_device_id() -> str:
 
 
 def _get_stream_name() -> str:
-    return socket.gethostname()
+    raw_name = socket.gethostname().strip()
+    stream_name = _UNSAFE_STREAM_CHARS.sub("-", raw_name).strip(".-")
+    return stream_name or _get_device_id()[:12]
 
 
 # ─── Local camera detection ───────────────────────────────────────────────────
@@ -116,7 +120,7 @@ def _get_current_mode() -> str:
 # ─── SRT relay ────────────────────────────────────────────────────────────────
 def _enable_srt_relay(stream_name: str):
     target = (f"srt://{SERVER_SRT_HOST}:{SERVER_SRT_PORT}"
-              f"?latency=200&streamid=publish:{stream_name}")
+              f"?mode=caller&latency=200&streamid=publish:{stream_name}")
     Path(RELAY_ENV_FILE).write_text(f'SIRENA_RELAY_TARGET="{target}"\n')
     subprocess.run(["systemctl", "restart", "video-streamer"], check=False)
     logger.info(f"[SRT] Relay enabled → {target}")
@@ -134,7 +138,7 @@ def _disable_srt_relay():
 # ─── WebRTC relay ─────────────────────────────────────────────────────────────
 def _enable_webrtc_relay(stream_name: str):
     target = (f"srt://{SERVER_SRT_HOST}:{SERVER_SRT_PORT}"
-              f"?latency=200&streamid=publish:{stream_name}")
+              f"?mode=caller&latency=200&streamid=publish:{stream_name}")
     Path(RELAY_FLAG_FILE).write_text(target)
     logger.info(f"[WebRTC] Relay flag written → {target}")
 

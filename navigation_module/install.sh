@@ -63,9 +63,9 @@ chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR"
 echo "Встановлення Python бібліотек..."
 sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install --upgrade pip
 
-if [ -f "$DEPLOY_DIR/requirements.txt" ]; then
+if [ -f "$INSTALL_DIR/requirements.txt" ]; then
     echo "Встановлення залежностей з requirements.txt..."
-    sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install -r "$DEPLOY_DIR/requirements.txt"
+    sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
 else
     echo "requirements.txt не знайдено, ставимо базові модулі..."
     sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install pymavlink pyserial grpcio grpcio-tools yagrc

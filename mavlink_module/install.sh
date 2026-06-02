@@ -64,6 +64,7 @@ cp -p "$DEPLOY_DIR/telemetry_sender.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/mavlink_router.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/mavlink_bridge.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/config.py" "$INSTALL_DIR/"
+cp -p "$DEPLOY_DIR/requirements.txt" "$INSTALL_DIR/"
 
 # Динамічно виправляємо жорстко прописаний шлях імпорту в telemetry_daemon.py
 sed -i 's|/opt/sirena-video/|/opt/sirena-telemetry/|g' "$INSTALL_DIR/telemetry_daemon.py"
@@ -79,9 +80,9 @@ chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR"
 echo "Встановлення необхідних Python бібліотек (pymavlink, pyserial)..."
 sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install --upgrade pip
 
-if [ -f "$DEPLOY_DIR/requirements.txt" ]; then
+if [ -f "$INSTALL_DIR/requirements.txt" ]; then
     echo "Встановлення залежностей з requirements.txt..."
-    sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install -r "$DEPLOY_DIR/requirements.txt"
+    sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
 else
     sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install pymavlink pyserial
 fi

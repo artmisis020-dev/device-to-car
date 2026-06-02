@@ -622,19 +622,6 @@ def create_pipeline_string() -> str:
     encoder_chain = get_encoder_chain()
 
     osd_chain = ""
-    if OSD_MODE == "text":
-        osd_chain = (
-            "textoverlay name=osd_tl font-desc=\"Sans 16\" halignment=left valignment=top line-alignment=left "
-            "shaded-background=false draw-outline=true ! "
-            "textoverlay name=osd_tr font-desc=\"Sans 16\" halignment=right valignment=top line-alignment=right "
-            "shaded-background=false draw-outline=true ! "
-            "textoverlay name=osd_bl font-desc=\"Sans 16\" halignment=left valignment=bottom line-alignment=left "
-            "shaded-background=false draw-outline=true ! "
-            "textoverlay name=osd_br font-desc=\"Sans 16\" halignment=right valignment=bottom line-alignment=right "
-            "shaded-background=false draw-outline=true ! "
-        )
-    elif OSD_MODE == "hud-lite":
-        osd_chain = "cairooverlay name=osd_hud ! "
 
     return (
         f"v4l2src device={VIDEO_DEVICE} ! "
