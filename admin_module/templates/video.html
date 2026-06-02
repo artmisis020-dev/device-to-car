@@ -127,8 +127,13 @@ async function loadStreamInfo() {
   if (!res.ok) throw new Error('Stream metadata unavailable');
   const data = await res.json();
   if (!data.stream_url) throw new Error('Stream URL is not configured');
-  data.whep_url = data.stream_url.replace(/\/$/, '') + '/whep';
+  data.whep_url = data.whep_url || (data.stream_url.replace(/\/$/, '') + '/whep');
   return data;
+}
+
+function maybeLegacyWhepFallback(url) {
+  if (!url) return null;
+  return url.replace('/n/', '/');
 }
 
 async function connectStream() {
@@ -165,11 +170,21 @@ async function connectStream() {
     await pc.setLocalDescription(offer);
     await waitIceGatheringComplete(pc);
 
-    const answer = await window.sirenaFetchNoCsrf(streamInfo.whep_url, {
+    let answer = await window.sirenaFetchNoCsrf(streamInfo.whep_url, {
       method: 'POST',
       headers: {'Content-Type': 'application/sdp'},
       body: pc.localDescription.sdp,
     });
+    if (!answer.ok && answer.status === 404) {
+      const fallbackWhep = maybeLegacyWhepFallback(streamInfo.whep_url);
+      if (fallbackWhep && fallbackWhep !== streamInfo.whep_url) {
+        answer = await window.sirenaFetchNoCsrf(fallbackWhep, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/sdp'},
+          body: pc.localDescription.sdp,
+        });
+      }
+    }
     if (!answer.ok) throw new Error(`MediaMTX WHEP failed (${answer.status})`);
 
     await pc.setRemoteDescription({type: 'answer', sdp: await answer.text()});

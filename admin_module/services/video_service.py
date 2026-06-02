@@ -1,4 +1,5 @@
 import re
+from urllib.parse import quote
 
 from flask import current_app, request
 
@@ -16,10 +17,25 @@ def _stream_name_from_row(row, device_id):
 def _webrtc_public_base_url():
     configured = current_app.config.get("MEDIAMTX_WEBRTC_PUBLIC_URL")
     if configured:
-        return configured.rstrip("/")
+        cleaned = _clean_base_url(configured)
+        # Some deployments used /n as a legacy prefix; MediaMTX WHEP expects /<stream>/whep.
+        if cleaned.endswith("/n"):
+            cleaned = cleaned[:-2]
+        return cleaned
 
     host = request.host.split(":")[0]
     return f"http://{host}:8889"
+
+
+def _clean_base_url(value):
+    return (
+        str(value)
+        .replace("\\n", "")
+        .replace("\\r", "")
+        .replace("\\t", "")
+        .strip()
+        .rstrip("/")
+    )
 
 
 def set_active(device_id, active):
@@ -61,4 +77,12 @@ def stream_url(device_id):
     if not row["approved"]:
         return None
 
-    return f"{_webrtc_public_base_url()}/{_stream_name_from_row(row, device_id)}"
+    stream = quote(_stream_name_from_row(row, device_id), safe="")
+    return f"{_webrtc_public_base_url()}/{stream}"
+
+
+def whep_url(device_id):
+    stream = stream_url(device_id)
+    if not stream:
+        return None
+    return f"{stream.rstrip('/')}/whep"
