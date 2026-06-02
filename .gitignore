@@ -38,3 +38,6 @@ logs/
 *.tlog
 *.bin
 *.param
+
+
+/local

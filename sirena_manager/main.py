@@ -13,7 +13,7 @@ def main() -> None:
         print(f"Sirena registration warning: {registration.get('error', 'unknown error')}")
     boot = supervisor.start_boot_sequence()
     if not boot.get("success"):
-        print(f"Sirena bootstrap warning: {boot.get('failed_service', 'unknown service')}")
+        print(f"Sirena bootstrap warning: {boot.get('failed_services', 'unknown service')}")
     app.run(
         host=app.config["MANAGER_HOST"],
         port=app.config["MANAGER_PORT"],
