@@ -165,7 +165,7 @@ async function connectStream() {
     await pc.setLocalDescription(offer);
     await waitIceGatheringComplete(pc);
 
-    const answer = await fetch(streamInfo.whep_url, {
+    const answer = await window.sirenaFetchNoCsrf(streamInfo.whep_url, {
       method: 'POST',
       headers: {'Content-Type': 'application/sdp'},
       body: pc.localDescription.sdp,

@@ -15,12 +15,15 @@
 (() => {
 	const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
 	const originalFetch = window.fetch.bind(window);
+	window.sirenaFetchNoCsrf = originalFetch;
 
 	window.fetch = (input, init = {}) => {
 		const reqInit = {...init};
 		const method = (reqInit.method || 'GET').toUpperCase();
 		const isUnsafe = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
-		if (isUnsafe) {
+		const url = typeof input === 'string' ? new URL(input, window.location.href) : new URL(input.url);
+		const isSameOrigin = url.origin === window.location.origin;
+		if (isUnsafe && isSameOrigin) {
 			const headers = new Headers(reqInit.headers || {});
 			if (csrfToken && !headers.has('X-CSRF-Token')) {
 				headers.set('X-CSRF-Token', csrfToken);
