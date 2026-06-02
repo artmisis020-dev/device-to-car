@@ -2,222 +2,263 @@
 {% block title %}Video - {{ hostname }}{% endblock %}
 {% block head %}
 <style>
-  body {
-    background: #0d1117;
-    color: #c9d1d9;
+  body { background:#0d1117; color:#e6edf3; }
+  .navbar { background:#10161d !important; border-bottom:1px solid #252c36; }
+  .page-wrap { padding:0 1rem 1rem; }
+  .status-line {
+    display:flex; gap:1.35rem; align-items:center; flex-wrap:wrap;
+    padding:.7rem 0; color:#f0f6fc; font-size:.95rem;
   }
-
-  .card {
-    background: #161b22;
-    border: 1px solid #21262d;
-    border-radius: 8px;
+  .status-line .ok { color:#00c978; }
+  .status-line .muted { color:#8b949e; }
+  .divider { width:1px; height:18px; background:#252c36; }
+  .player-card {
+    background:#161b22; border:1px solid #252c36; border-radius:8px;
+    overflow:hidden;
   }
-
-  .card-header {
-    background: #1c2128 !important;
-    border-bottom: 1px solid #21262d;
-    color: #c9d1d9 !important;
-    padding: .6rem 1rem;
-    font-size: .85rem;
-    font-weight: 600;
+  .player-head {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:.75rem 1.1rem; background:#1c2128; border-bottom:1px solid #252c36;
+    font-weight:600;
   }
-
-  #videoWrap {
-    position: relative;
-    background: #000;
-    border-radius: 6px;
-    overflow: hidden;
-    aspect-ratio: 4/3;
+  .rec-state { color:#ff4d6d; font-size:.82rem; display:flex; align-items:center; gap:.35rem; }
+  .rec-dot { width:10px; height:10px; border-radius:999px; background:#7a3142; display:inline-block; }
+  .rec-dot.on { background:#ff4d6d; animation:blink 1s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.35} }
+  .video-shell { position:relative; background:#000; aspect-ratio:16/9; min-height:420px; }
+  video { width:100%; height:100%; object-fit:contain; background:#000; display:block; }
+  .overlay {
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:#8b949e; background:rgba(0,0,0,.35); text-align:center; padding:1rem;
   }
-
-  #webrtcFrame {
-    width: 100%;
-    height: 100%;
-    border: 0;
-    display: block;
-    background: #000;
+  .overlay.hidden { display:none; }
+  .stats-grid {
+    display:grid; grid-template-columns:repeat(6, minmax(110px,1fr)); gap:1px;
+    background:#252c36; border-top:1px solid #252c36;
   }
-
-  #videoOverlay {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    gap: 8px;
+  .stat {
+    background:#161b22; padding:.7rem .8rem;
   }
-
-  .rec-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #d73a49;
-    display: inline-block;
-    animation: blink 1s infinite;
-  }
-
-  @keyframes blink {
-
-    0%,
-    100% {
-      opacity: 1
-    }
-
-    50% {
-      opacity: .2
-    }
-  }
-
-  .file-row td {
-    vertical-align: middle;
-    font-size: .82rem;
-    padding: .35rem .5rem !important;
-    border-color: #21262d !important;
-  }
-
-  .file-row:hover {
-    background: rgba(30, 58, 95, .3) !important;
-  }
-
-  .navbar {
-    background: #161b22 !important;
-    border-bottom: 1px solid #21262d;
+  .stat-label { color:#8b949e; font-size:.68rem; text-transform:uppercase; letter-spacing:.05em; }
+  .stat-value { font-size:.92rem; font-weight:700; margin-top:.15rem; color:#f0f6fc; }
+  .actions { display:flex; gap:.5rem; flex-wrap:wrap; }
+  @media (max-width: 900px) {
+    .stats-grid { grid-template-columns:repeat(2, minmax(120px,1fr)); }
+    .video-shell { min-height:260px; }
   }
 </style>
 {% endblock %}
 {% block content %}
-<nav class="navbar navbar-dark mb-3">
+<nav class="navbar navbar-dark">
   <div class="container-fluid">
     <span class="navbar-brand">{{ hostname }} - Video</span>
-    <div class="d-flex gap-2">
-      <button id="btnRecord" class="btn btn-sm btn-success" onclick="toggleRecord()">Start Recording</button>
+    <div class="actions">
+      <button id="btnReconnect" class="btn btn-sm btn-outline-info" onclick="connectStream()">Reconnect</button>
+      <button id="btnRecord" class="btn btn-sm btn-outline-danger" onclick="toggleRecord()">REC</button>
       <a href="/" class="btn btn-sm btn-outline-secondary">Back</a>
     </div>
   </div>
 </nav>
 
-<div class="container-fluid">
-  <iframe id="video-frame" style="width: 100%; height: 500px; border: none;" allow="autoplay; fullscreen">
-  </iframe>
+<div class="page-wrap">
+  <div class="status-line">
+    <span id="streamStatus" class="muted">Loading stream</span>
+    <span class="divider"></span>
+    <span>Stream: <strong id="streamName">-</strong></span>
+    <span>WebRTC: <strong id="webrtcUrl">-</strong></span>
+  </div>
 
+  <div class="player-card">
+    <div class="player-head">
+      <span>Live Stream</span>
+      <span class="rec-state"><span id="recDot" class="rec-dot"></span><span id="recText">REC</span></span>
+    </div>
+    <div class="video-shell">
+      <video id="video" autoplay playsinline muted controls></video>
+      <div id="overlay" class="overlay">Waiting for WebRTC stream...</div>
+    </div>
+    <div class="stats-grid">
+      <div class="stat"><div class="stat-label">Connection</div><div class="stat-value" id="statConn">-</div></div>
+      <div class="stat"><div class="stat-label">FPS</div><div class="stat-value" id="statFps">-</div></div>
+      <div class="stat"><div class="stat-label">Bitrate</div><div class="stat-value" id="statBitrate">-</div></div>
+      <div class="stat"><div class="stat-label">RTT</div><div class="stat-value" id="statRtt">-</div></div>
+      <div class="stat"><div class="stat-label">Jitter</div><div class="stat-value" id="statJitter">-</div></div>
+      <div class="stat"><div class="stat-label">Resolution</div><div class="stat-value" id="statRes">-</div></div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 {{ super() }}
-
 <script>
-  const deviceId = "{{ device_id }}";
-
-  fetch(`/api/video/${deviceId}/stream`)
-    .then(res => res.json())
-    .then(data => {
-      document.getElementById("video-frame").src = data.stream_url;
-    });
-</script>
-<!-- <script>
 const DEVICE_ID = "{{ device_id }}";
+let pc = null;
+let statsTimer = null;
 let recordActive = false;
+let streamInfo = null;
+let lastVideoStats = null;
 
-function initWebrtcEmbed() {
-  const frame = document.getElementById('webrtcFrame');
-  const overlay = document.getElementById('videoOverlay');
-  const status = document.getElementById('streamStatus');
+function setText(id, value) {
+  document.getElementById(id).textContent = value;
+}
 
-  frame.addEventListener('load', () => {
-    overlay.style.display = 'none';
-    status.innerHTML = '<span class="text-success">WebRTC page loaded</span>';
+function setOverlay(message, visible = true) {
+  const overlay = document.getElementById('overlay');
+  overlay.textContent = message;
+  overlay.classList.toggle('hidden', !visible);
+}
+
+function waitIceGatheringComplete(peer) {
+  if (peer.iceGatheringState === 'complete') return Promise.resolve();
+  return new Promise(resolve => {
+    const done = () => {
+      if (peer.iceGatheringState === 'complete') {
+        peer.removeEventListener('icegatheringstatechange', done);
+        resolve();
+      }
+    };
+    peer.addEventListener('icegatheringstatechange', done);
+  });
+}
+
+async function loadStreamInfo() {
+  const res = await fetch(`/api/video/${DEVICE_ID}/stream`);
+  if (!res.ok) throw new Error('Stream metadata unavailable');
+  const data = await res.json();
+  if (!data.stream_url) throw new Error('Stream URL is not configured');
+  data.whep_url = data.stream_url.replace(/\/$/, '') + '/whep';
+  return data;
+}
+
+async function connectStream() {
+  stopPeer();
+  setOverlay('Connecting WebRTC stream...');
+  setText('streamStatus', 'Connecting');
+  setText('statConn', 'new');
+
+  try {
+    streamInfo = await loadStreamInfo();
+    setText('streamName', streamInfo.stream_name || streamInfo.stream_id || '-');
+    setText('webrtcUrl', streamInfo.stream_url);
+
+    pc = new RTCPeerConnection();
+    pc.addTransceiver('video', {direction: 'recvonly'});
+    pc.addTransceiver('audio', {direction: 'recvonly'});
+
+    pc.ontrack = event => {
+      document.getElementById('video').srcObject = event.streams[0];
+      setOverlay('', false);
+      setText('streamStatus', 'WebRTC connected');
+      document.getElementById('streamStatus').className = 'ok';
+    };
+
+    pc.onconnectionstatechange = () => {
+      setText('statConn', pc.connectionState);
+      if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
+        setOverlay('WebRTC stream disconnected');
+        document.getElementById('streamStatus').className = 'muted';
+      }
+    };
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await waitIceGatheringComplete(pc);
+
+    const answer = await fetch(streamInfo.whep_url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/sdp'},
+      body: pc.localDescription.sdp,
+    });
+    if (!answer.ok) throw new Error(`MediaMTX WHEP failed (${answer.status})`);
+
+    await pc.setRemoteDescription({type: 'answer', sdp: await answer.text()});
+    statsTimer = setInterval(updateStats, 1000);
+  } catch (err) {
+    stopPeer();
+    setText('streamStatus', 'Offline');
+    setText('statConn', '-');
+    setOverlay(err.message || 'WebRTC stream unavailable');
+  }
+}
+
+function stopPeer() {
+  if (statsTimer) clearInterval(statsTimer);
+  statsTimer = null;
+  lastVideoStats = null;
+  if (pc) {
+    pc.getSenders().forEach(sender => sender.track && sender.track.stop());
+    pc.getReceivers().forEach(receiver => receiver.track && receiver.track.stop());
+    pc.close();
+  }
+  pc = null;
+  const video = document.getElementById('video');
+  video.srcObject = null;
+}
+
+async function updateStats() {
+  if (!pc) return;
+  const report = await pc.getStats();
+  let inboundVideo = null;
+  let candidatePair = null;
+
+  report.forEach(stat => {
+    if (stat.type === 'inbound-rtp' && stat.kind === 'video') inboundVideo = stat;
+    if (stat.type === 'candidate-pair' && stat.state === 'succeeded' && stat.nominated) candidatePair = stat;
   });
 
-  frame.addEventListener('error', () => {
-    overlay.style.display = 'flex';
-    document.getElementById('overlayMsg').textContent = 'WebRTC stream unavailable';
-    status.textContent = 'Offline';
-  });
+  if (inboundVideo) {
+    const now = inboundVideo.timestamp;
+    const bytes = inboundVideo.bytesReceived || 0;
+    const frames = inboundVideo.framesDecoded || 0;
+    if (lastVideoStats) {
+      const seconds = (now - lastVideoStats.timestamp) / 1000;
+      const bitrate = seconds > 0 ? ((bytes - lastVideoStats.bytes) * 8 / seconds / 1000) : 0;
+      const fps = seconds > 0 ? ((frames - lastVideoStats.frames) / seconds) : 0;
+      setText('statBitrate', `${Math.max(0, bitrate).toFixed(0)} kbps`);
+      setText('statFps', fps > 0 ? fps.toFixed(1) : '-');
+    }
+    lastVideoStats = {timestamp: now, bytes, frames};
+    setText('statJitter', inboundVideo.jitter ? `${(inboundVideo.jitter * 1000).toFixed(1)} ms` : '-');
+    if (inboundVideo.frameWidth && inboundVideo.frameHeight) {
+      setText('statRes', `${inboundVideo.frameWidth}x${inboundVideo.frameHeight}`);
+    }
+  }
+
+  if (candidatePair && candidatePair.currentRoundTripTime != null) {
+    setText('statRtt', `${(candidatePair.currentRoundTripTime * 1000).toFixed(0)} ms`);
+  }
 }
 
 async function toggleRecord() {
   const endpoint = recordActive
-    ? '/api/devices/' + DEVICE_ID + '/video/stop'
-    : '/api/devices/' + DEVICE_ID + '/video/start';
-  await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    ? `/api/devices/${DEVICE_ID}/video/stop`
+    : `/api/devices/${DEVICE_ID}/video/start`;
+  await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
   recordActive = !recordActive;
   updateRecordBtn();
 }
 
 async function syncRecordState() {
   try {
-    const r = await fetch('/api/video/status/' + DEVICE_ID);
-    const d = await r.json();
-    if (d.active !== recordActive) {
-      recordActive = d.active;
-      updateRecordBtn();
-    }
-  } catch (e) {}
+    const res = await fetch(`/api/video/status/${DEVICE_ID}`);
+    const data = await res.json();
+    recordActive = Boolean(data.active);
+    updateRecordBtn();
+  } catch (err) {}
 }
 
 function updateRecordBtn() {
   const btn = document.getElementById('btnRecord');
-  const badge = document.getElementById('recBadge');
-  if (recordActive) {
-    btn.textContent = 'Stop Recording';
-    btn.className = 'btn btn-sm btn-danger';
-    badge.style.display = '';
-  } else {
-    btn.textContent = 'Start Recording';
-    btn.className = 'btn btn-sm btn-success';
-    badge.style.display = 'none';
-  }
+  const dot = document.getElementById('recDot');
+  btn.className = recordActive ? 'btn btn-sm btn-danger' : 'btn btn-sm btn-outline-danger';
+  btn.textContent = recordActive ? 'Stop REC' : 'REC';
+  dot.classList.toggle('on', recordActive);
 }
 
-async function loadRecordings() {
-  try {
-    const r = await fetch('/api/video/recordings/' + DEVICE_ID);
-    const files = await r.json();
-    const totalMb = files.reduce((a, f) => a + f.size_mb, 0).toFixed(0);
-    document.getElementById('recCount').textContent = files.length;
-    document.getElementById('recSize').textContent = totalMb + ' MB';
-
-    if (!files.length) {
-      document.getElementById('recBody').innerHTML =
-        '<tr><td colspan="3" class="text-center text-muted py-3 small">No recordings yet</td></tr>';
-      return;
-    }
-
-    document.getElementById('recBody').innerHTML = files.map(f => `
-      <tr class="file-row">
-        <td>
-          <div class="fw-bold" style="font-size:.78rem">${f.name.replace('.mp4', '')}</div>
-          <div class="text-muted" style="font-size:.68rem">${f.mtime_str}</div>
-        </td>
-        <td class="text-muted">${f.size_mb} MB</td>
-        <td>
-          <a href="/api/video/recordings/${DEVICE_ID}/download/${f.name}"
-             class="btn btn-xs btn-outline-info btn-sm py-0 px-2 me-1" style="font-size:.7rem">DL</a>
-          <button onclick="deleteRec('${f.name}')"
-                  class="btn btn-xs btn-outline-danger btn-sm py-0 px-1" style="font-size:.7rem">DEL</button>
-        </td>
-      </tr>
-    `).join('');
-  } catch (e) {
-    document.getElementById('recBody').innerHTML =
-      '<tr><td colspan="3" class="text-center text-muted py-3 small">Error loading</td></tr>';
-  }
-}
-
-async function deleteRec(filename) {
-  if (!confirm('Delete ' + filename + '?')) return;
-  await fetch('/api/video/recordings/' + DEVICE_ID + '/delete/' + filename, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
-  });
-  loadRecordings();
-}
-
-initWebrtcEmbed();
+window.addEventListener('beforeunload', stopPeer);
 syncRecordState();
+connectStream();
 setInterval(syncRecordState, 5000);
-setInterval(loadRecordings, 30000);
-loadRecordings();
-</script> -->
+</script>
 {% endblock %}
