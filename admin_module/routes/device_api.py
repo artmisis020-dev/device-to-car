@@ -64,7 +64,8 @@ def api_notes(device_id):
 @device_api_bp.route("/api/devices/<device_id>/delete", methods=["POST"])
 @require_admin
 def api_delete(device_id):
-    return jsonify(device_service.delete_device(device_id))
+    payload, status = device_service.delete_device(device_id)
+    return jsonify(payload), status
 
 
 @device_api_bp.route("/api/devices/<device_id>/commands", methods=["GET", "POST"])

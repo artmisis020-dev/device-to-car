@@ -82,10 +82,12 @@ def set_device_notes(device_id, notes):
 
 def delete_device(device_id):
     with get_db() as db:
-        db.execute("DELETE FROM devices WHERE device_id=?", (device_id,))
         db.execute("DELETE FROM telemetry WHERE device_id=?", (device_id,))
         db.execute("DELETE FROM fc_commands WHERE device_id=?", (device_id,))
+        cursor = db.execute("DELETE FROM devices WHERE device_id=?", (device_id,))
+        deleted = cursor.rowcount
         db.commit()
+    return deleted
 
 
 def set_telemetry_active(device_id, active):

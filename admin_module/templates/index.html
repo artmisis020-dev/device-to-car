@@ -128,7 +128,12 @@ function lastSeenClass(ls) {
   return (new Date() - new Date(ls + ' UTC')) > 5*60*1000 ? 'last-seen-old' : '';
 }
 
-function shortId(id) { return id.substring(0, 12) + '…'; }
+function shortId(id) { return id.substring(0, 12) + '...'; }
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
 
 async function loadDevices() {
   let res, devs;
@@ -153,28 +158,35 @@ async function loadDevices() {
   `;
 
   const body = devs.map(d => {
+    const hostname = d.hostname || '-';
     const vidBtn = d.video_active
-      ? '🎥 <span style="color:#d73a49;font-size:.7rem">● REC</span>'
-      : '🎥';
+      ? 'Video <span style="color:#d73a49;font-size:.7rem">REC</span>'
+      : 'Video';
     const telBadge = d.telemetry_active
-      ? '<span class="tel-live">● LIVE</span>'
-      : '<span class="text-muted" style="font-size:.7rem">○ off</span>';
+      ? '<span class="tel-live">LIVE</span>'
+      : '<span class="text-muted" style="font-size:.7rem">off</span>';
+    const approveBtn = d.is_valid
+      ? ''
+      : `<button class="btn btn-sm btn-success py-0 px-2 me-1" onclick="openApprove('${d.device_id}')" title="Approve device">✓</button>`;
+    const revokeBtn = d.approved
+      ? `<button class="btn btn-sm btn-danger py-0 px-2 me-1" onclick="openRevoke('${d.device_id}')" title="Revoke access">✕</button>`
+      : '';
     return `<tr>
       <td>${statusBadge(d)}</td>
-      <td class="fw-bold">${d.hostname || '—'}</td>
-      <td>${d.ip || '—'}</td>
-      <td><code title="${d.device_id}">${shortId(d.device_id)}</code></td>
-      <td><span class="badge bg-secondary">${d.sirena_version || '—'}</span></td>
-      <td><span class="badge bg-secondary">${d.video_version || '—'}</span></td>
-      <td class="small ${lastSeenClass(d.last_seen)}">${(d.last_seen||'—').replace('T',' ')}</td>
-      <td class="small">${d.valid_until||'—'}</td>
+      <td class="fw-bold">${esc(hostname)}</td>
+      <td>${esc(d.ip || '-')}</td>
+      <td><code title="${esc(d.device_id)}">${shortId(d.device_id)}</code></td>
+      <td><span class="badge bg-secondary">${esc(d.sirena_version || '-')}</span></td>
+      <td><span class="badge bg-secondary">${esc(d.video_version || '-')}</span></td>
+      <td class="small ${lastSeenClass(d.last_seen)}">${esc((d.last_seen||'-').replace('T',' '))}</td>
+      <td class="small">${esc(d.valid_until||'-')}</td>
       <td>
-        <a href="/devices/${d.device_id}" class="btn btn-sm btn-outline-light py-0 px-2 me-1" title="Open detail page">🧭</a>
-        <a href="/telemetry/${d.device_id}" class="btn btn-sm btn-outline-success py-0 px-2 me-1" title="Telemetry">📡 ${telBadge}</a>
+        <a href="/devices/${d.device_id}" class="btn btn-sm btn-outline-light py-0 px-2 me-1" title="Open detail page">↗</a>
+        <a href="/telemetry/${d.device_id}" class="btn btn-sm btn-outline-success py-0 px-2 me-1" title="Telemetry">${telBadge}</a>
         <a href="/video/${d.device_id}" class="btn btn-sm btn-outline-info py-0 px-2 me-1" title="Video">${vidBtn}</a>
-        <button class="btn btn-sm btn-success py-0 px-2 me-1" onclick="openApprove('${d.device_id}')">✓</button>
-        <button class="btn btn-sm btn-danger py-0 px-2 me-1" onclick="openRevoke('${d.device_id}')">✗</button>
-        <button class="btn btn-sm btn-secondary py-0 px-2" onclick="deleteDevice('${d.device_id}','${d.hostname}')">🗑</button>
+        ${approveBtn}
+        ${revokeBtn}
+        <button class="btn btn-sm btn-secondary py-0 px-2" onclick="deleteDevice('${d.device_id}','${esc(hostname)}')" title="Delete device">🗑</button>
       </td>
     </tr>`;
   }).join('');
@@ -206,9 +218,13 @@ async function confirmRevoke() {
 
 async function deleteDevice(id, hostname) {
   if (!confirm('Delete device ' + hostname + '?\nThis cannot be undone.')) return;
-  await fetch('/api/devices/' + id + '/delete', {
+  const res = await fetch('/api/devices/' + id + '/delete', {
     method:'POST', headers:{'Content-Type':'application/json'}, body: '{}'
   });
+  if (!res.ok) {
+    const msg = await res.json().catch(() => ({error: 'delete failed'}));
+    alert(msg.error || 'Delete failed');
+  }
   loadDevices();
 }
 
