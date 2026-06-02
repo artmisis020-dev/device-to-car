@@ -21,7 +21,7 @@ import time
 import logging
 import datetime
 from typing import Dict, Any, Optional, Tuple
-from pynmea2 import parse as parse_nmea
+# from pynmea2 import parse as parse_nmea
 
 logging.basicConfig(
     level=logging.INFO,

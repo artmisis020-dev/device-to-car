@@ -1,0 +1,6 @@
+pymavlink
+pyserial
+grpcio
+grpcio-tools
+yagrc
+starlink-grpc-core

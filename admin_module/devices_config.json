@@ -4,5 +4,5 @@
     "description": "Configuration for connected devices",
     "wg_ip":"10.0.0.7",
     "stream_path":"drone01",
-    "webrtc_url": "http://173.242.60.33:8189/drone01"
+    "webrtc_url": ""
 }

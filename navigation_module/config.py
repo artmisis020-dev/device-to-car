@@ -1,0 +1,15 @@
+import os
+
+
+REGISTRY_URL = os.environ.get("SIRENA_ADMIN_SERVER_URL", "http://127.0.0.1:8080").rstrip("/")
+SIRENA_VERSION = os.environ.get("SIRENA_VERSION", "dev")
+VIDEO_STATUS_UNIT = "video-streamer.service"
+
+DEFAULT_DTC_IP = os.environ.get("SIRENA_DTC_IP", "127.0.0.1")
+DEFAULT_DTC_PORT = 10110
+DEFAULT_STARLINK_IP = os.environ.get("SIRENA_STARLINK_IP", "192.168.100.1")
+DEFAULT_STARLINK_PORT = 9200
+DEFAULT_UART_GPS_PORT = os.environ.get("SIRENA_UART_GPS_PORT", "/dev/ttyAMA2")
+DEFAULT_UART_GPS_BAUD = 38400
+DEFAULT_UART_FC_PORT = os.environ.get("SIRENA_UART_FC_PORT", "/dev/ttyAMA3")
+DEFAULT_UART_FC_BAUD = 38400

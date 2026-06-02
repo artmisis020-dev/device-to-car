@@ -31,6 +31,8 @@ import logging
 import signal
 import sys
 
+import config
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s [mavrouter]: %(message)s"
@@ -38,18 +40,13 @@ logging.basicConfig(
 log = logging.getLogger("mavrouter")
 
 # --- Налаштування ---
-UART_PORT = "/dev/ttyAMA5"        # TELEM1 FC — UART5 (GPIO12/13)
-# UART_BAUD = 57600
-UART_BAUD = 115200                 # baud rate FC TELEM1
-#                   # baud rate FC TELEM1
-
-ROUTER_PORT = 14556                # наш UDP bind порт (звідси відправляємо)
+UART_PORT = config.ROUTER_UART_PORT
+UART_BAUD = config.ROUTER_UART_BAUD
+ROUTER_HOST = config.ROUTER_BIND_HOST
+ROUTER_PORT = config.ROUTER_BIND_PORT
 
 # Отримувачі MAVLink пакетів від FC:
-TARGETS = [
-    ("127.0.0.1", 14551),          # sirena-gps-hub (main.py)
-    ("127.0.0.1", 14562),          # telemetry-sender (telemetry_daemon.py)
-]
+TARGETS = config.ROUTER_TARGETS
 
 running = True
 
@@ -106,9 +103,9 @@ def main():
         sys.exit(1)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(("127.0.0.1", ROUTER_PORT))
+    sock.bind((ROUTER_HOST, ROUTER_PORT))
     sock.settimeout(0.05)
-    log.info(f"UDP bind: 127.0.0.1:{ROUTER_PORT}")
+    log.info(f"UDP bind: {ROUTER_HOST}:{ROUTER_PORT}")
     log.info(f"Розсилка UART → UDP: {TARGETS}")
 
     def uart_to_udp():

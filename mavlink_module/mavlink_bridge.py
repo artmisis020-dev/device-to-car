@@ -27,6 +27,7 @@ import logging
 import time
 from typing import Optional, Dict, Any, Callable
 from pymavlink import mavutil
+import config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,11 +36,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- UDP порти MAVLink ---
-GCS_LISTEN_PORT = 14550      # слухаємо команди від GCS (Mission Planner підключається сюди)
-FC_RECV_ADDR    = "127.0.0.1" # mavlink_router шле FC телеметрію на localhost
-FC_RECV_PORT    = 14551       # порт від mavlink_router (FC → RPi)
-GCS_SEND_ADDR   = "127.0.0.1" # GCS теж на localhost (Mission Planner через WireGuard або тунель)
-GCS_SEND_PORT   = 14550
+GCS_LISTEN_PORT = config.GCS_LISTEN_PORT
+FC_RECV_ADDR    = config.FC_RECV_ADDR
+FC_RECV_PORT    = config.FC_RECV_PORT
+GCS_SEND_ADDR   = config.GCS_SEND_ADDR
+GCS_SEND_PORT   = config.GCS_SEND_PORT
 
 UART_TIMEOUT = 0.1           # timeout читання UART (сек) — не блокує потік надовго
 
@@ -102,7 +103,7 @@ class MAVLinkBridge:
             logger.error(f"Помилка при підключенні до MAVLink: {e}")
             return False
 
-    def connect_uart_gps(self, port: str = "/dev/ttyAMA2", baud: int = 38400) -> bool:
+    def connect_uart_gps(self, port: str = config.UART_GPS_PORT, baud: int = config.UART_GPS_BAUD) -> bool:
         """
         Відкриває UART для читання NMEA від Beitian GPS.
 
@@ -120,7 +121,7 @@ class MAVLinkBridge:
             self.uart_gps_in = None
             return False
 
-    def connect_uart_fc_output(self, port: str = "/dev/ttyAMA3", baud: int = 38400) -> bool:
+    def connect_uart_fc_output(self, port: str = config.UART_FC_PORT, baud: int = config.UART_FC_BAUD) -> bool:
         """
         Відкриває UART для запису NMEA в FC.
 

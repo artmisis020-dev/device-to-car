@@ -6,7 +6,7 @@ import subprocess
 import time as _time
 from pathlib import Path
 from typing import Dict, List, Tuple
-from config import SERVICES, DEFAULT_CONFIG
+from config import SERVICES, DEFAULT_CONFIG, VIDEO_CONFIG_PATH
 
 log = logging.getLogger(__name__)
 
@@ -14,7 +14,7 @@ log = logging.getLogger(__name__)
 class ServiceManager:
     def __init__(self):
         self._lock = threading.Lock()
-        self.config_file = Path("/opt/sirena-video/sirena_video_config.json")
+        self.config_file = VIDEO_CONFIG_PATH
         self.config = self._load_config()
         self._enforce_single_mode()
 
