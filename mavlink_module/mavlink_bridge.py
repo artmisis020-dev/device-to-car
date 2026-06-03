@@ -20,14 +20,26 @@ MAVLink Bridge — міст між FC, GCS та GPS UART
   Він приймає MAVLink від FC через фізичний UART і роздає по UDP 14551.
 """
 
-import socket
 import serial
-import threading
 import logging
 import time
+import importlib.util
+from pathlib import Path
 from typing import Optional, Dict, Any, Callable
 from pymavlink import mavutil
-import config
+
+
+def _load_local_config():
+    config_path = Path(__file__).resolve().with_name("config.py")
+    spec = importlib.util.spec_from_file_location("sirena_mavlink_config", config_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load MAVLink config from {config_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+config = _load_local_config()
 
 logging.basicConfig(
     level=logging.INFO,
