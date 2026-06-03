@@ -32,6 +32,8 @@ def env_int(name: str, default: int) -> int:
 
 
 STREAM_FPS = env_int("STREAM_FPS", 30)
+STREAM_WIDTH = env_int("SIRENA_VIDEO_WIDTH", 640)
+STREAM_HEIGHT = env_int("SIRENA_VIDEO_HEIGHT", 512)
 SRT_LATENCY_MS = env_int("SRT_LATENCY_MS", 0)
 BITRATE_KBPS = env_int("BITRATE_KBPS", 2500)
 KEYINT = env_int("KEYINT", 30)
@@ -587,69 +589,70 @@ def is_mjpeg_only_device(video_device: str) -> bool:
     return len(formats) == 1 and formats[0] == "MJPG"
 
 
+def supports_mjpeg(video_device: str) -> bool:
+    try:
+        result = subprocess.run(
+            ["v4l2-ctl", "-d", video_device, "--list-formats"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return False
+
+    return "MJPG" in (result.stdout or "")
+
+
 def get_v4l2_src_caps(video_device: str) -> str:
-    return "image/jpeg ! jpegdec" if is_mjpeg_only_device(video_device) else "video/x-raw"
+    if supports_mjpeg(video_device):
+        print("[INFO] Camera supports MJPEG, using jpegdec source path", flush=True)
+        return "capsfilter caps=\"image/jpeg\" ! jpegdec"
+    return "capsfilter caps=\"video/x-raw\""
 
 
 def get_encoder_chain() -> str:
-    if Gst.ElementFactory.find("v4l2h264enc") is not None:
-        print("[INFO] Using hardware encoder: v4l2h264enc", flush=True)
-        bitrate_bps = max(25000, min(BITRATE_KBPS * 1000, 25000000))
-        return (
-            "v4l2h264enc extra-controls=controls,"
-            f"h264_i_frame_period={KEYINT},video_bitrate_mode=1,video_bitrate={bitrate_bps},"
-            "h264_profile=0,repeat_sequence_header=1,force_key_frame=0 ! "
-            "video/x-h264,level=(string)4"
-        )
+    if Gst.ElementFactory.find("x264enc") is None:
+        raise RuntimeError("No H264 encoder found: x264enc")
 
-    print("[INFO] Hardware encoder not found, using software x264enc", flush=True)
+    print("[INFO] Using software encoder: x264enc", flush=True)
     return (
-        f"x264enc tune=zerolatency bitrate={BITRATE_KBPS} speed-preset=superfast "
-        f"key-int-max={KEYINT} byte-stream=true option-string=repeat-headers=1 ! "
-        "video/x-h264,level=(string)4"
+        "x264enc "
+        "tune=zerolatency "
+        "speed-preset=ultrafast "
+        f"bitrate={BITRATE_KBPS} "
+        f"key-int-max={KEYINT} "
+        "bframes=0 "
+        "sliced-threads=true "
+        "byte-stream=true "
+        "option-string=repeat-headers=1 ! "
+        "capsfilter caps=\"video/x-h264,profile=baseline,stream-format=byte-stream,alignment=au\""
     )
 
 
 def create_pipeline_string() -> str:
-    resolution_filter = (
-        "video/x-raw,width=640,height=512;"
-        "video/x-raw,width=720,height=480;"
-        "video/x-raw,width=640,height=480;"
-        "video/x-raw,width=[1, 720],height=[1, 720]"
+    output_caps = (
+        "capsfilter caps=\""
+        f"video/x-raw,width={STREAM_WIDTH},height={STREAM_HEIGHT},"
+        f"framerate={STREAM_FPS}/1"
+        "\""
     )
-    framerate_filter = f"video/x-raw,framerate=(fraction){STREAM_FPS}/1"
-    src_caps = get_v4l2_src_caps(VIDEO_DEVICE)
     encoder_chain = get_encoder_chain()
 
     osd_chain = ""
 
     return (
         f"v4l2src device={VIDEO_DEVICE} ! "
-        f"{src_caps} ! "
-        "queue max-size-time=20000000 ! "
-        f"{resolution_filter} ! "
+        "capsfilter caps=\"video/x-raw\" ! "
+        "queue leaky=downstream max-size-buffers=1 ! "
+        "videoconvert ! "
+        "videoscale ! "
         "videorate drop-only=true ! "
-        f"{framerate_filter} ! "
-        "videoconvert ! "
-        f"{osd_chain}"
-        "videoconvert ! "
-        "video/x-raw,format=I420 ! "
-        "queue max-size-time=20000000 ! "
+        f"{output_caps} ! "
+        "capsfilter caps=\"video/x-raw,format=I420\" ! "
         f"{encoder_chain} ! "
         "h264parse config-interval=1 ! "
-        "video/x-h264,stream-format=byte-stream,alignment=au ! "
-        "mpegtsmux alignment=7 ! "
-        + (
-            "tee name=t "
-            f"t. ! srtsink name=srtsink wait-for-connection=false"
-            f" uri=\"srt://:5000?mode=listener&latency={SRT_LATENCY_MS}\" sync=false async=false "
-            f"t. ! srtsink uri=\"{SIRENA_RELAY_TARGET}\" sync=false async=false"
-            if SIRENA_RELAY_TARGET else
-            f"srtsink name=srtsink wait-for-connection=false"
-            f" uri=\"srt://:5000?mode=listener&latency={SRT_LATENCY_MS}\" sync=false async=false"
-        )
+        f"rtspclientsink location=\"{SIRENA_RELAY_TARGET}\" protocols=udp latency=0"
     )
-
 
 class BusMessageHandler:
     def __init__(self, loop: GLib.MainLoop, pipeline: Gst.Element, runtime_state):
@@ -774,14 +777,19 @@ try:
         raise RuntimeError("Failed to start GStreamer pipeline")
 
     ret, state, pending = pipeline.get_state(3 * Gst.SECOND)
-    if ret != Gst.StateChangeReturn.SUCCESS:
+    print(
+        f"[STATE] startup check result={ret.value_name} "
+        f"state={state.value_name} pending={pending.value_name}",
+        flush=True,
+    )
+    if ret == Gst.StateChangeReturn.FAILURE:
         raise RuntimeError("Failed to get pipeline state while starting")
-    if state != Gst.State.PLAYING:
+    if ret == Gst.StateChangeReturn.SUCCESS and state != Gst.State.PLAYING:
         raise RuntimeError(
             f"Pipeline did not reach PLAYING state: {state.value_name}, pending: {pending.value_name}"
         )
 
-    print("[READY] Pipeline started successfully. Streaming on SRT port 5000...", flush=True)
+    print("[READY] Pipeline started successfully. Streaming via configured relay target...", flush=True)
     loop.run()
 
     if runtime_state["restart_requested"] and not runtime_state["stop_requested"]:

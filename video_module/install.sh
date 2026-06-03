@@ -24,13 +24,17 @@ apt-get install -y \
     gstreamer1.0-plugins-base \
     gstreamer1.0-plugins-good \
     gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-ugly \
     v4l-utils \
     avahi-daemon \
     python3-pip \
     python3-venv \
     python3-gi \
     python3-gst-1.0 \
-    gir1.2-gstreamer-1.0
+    gir1.2-gstreamer-1.0 \
+    gstreamer1.0-rtsp \
+    gstreamer1.0-libav
+
 
 echo "2. Налаштування системного користувача та прав..."
 if ! id "$SERVICE_USER" &>/dev/null; then

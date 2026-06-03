@@ -40,7 +40,7 @@ _UNSAFE_STREAM_CHARS = re.compile(r"[^A-Za-z0-9_.-]+")
 ADMIN_SERVER_URL  = os.environ.get("SIRENA_ADMIN_SERVER_URL", "http://127.0.0.1:8080").rstrip("/")
 REGISTRY_URL      = ADMIN_SERVER_URL
 SERVER_SRT_HOST   = os.environ.get("SIRENA_SRT_HOST", "10.0.0.1")
-SERVER_SRT_PORT   = int(os.environ.get("SIRENA_SRT_PORT", "8890"))
+SERVER_SRT_PORT   = int(os.environ.get("SIRENA_SRT_PORT", "8554"))
 POLL_INTERVAL     = float(os.environ.get("SIRENA_VIDEO_RELAY_POLL_INTERVAL", "5.0"))
 REPORT_EVERY      = 12
 
@@ -119,11 +119,10 @@ def _get_current_mode() -> str:
 
 # ─── SRT relay ────────────────────────────────────────────────────────────────
 def _enable_srt_relay(stream_name: str):
-    target = (f"srt://{SERVER_SRT_HOST}:{SERVER_SRT_PORT}"
-              f"?mode=caller&latency=200&streamid=publish:{stream_name}")
+    target = f"rtsp://{SERVER_SRT_HOST}:{SERVER_SRT_PORT}/{stream_name}"
     Path(RELAY_ENV_FILE).write_text(f'SIRENA_RELAY_TARGET="{target}"\n')
     subprocess.run(["systemctl", "restart", "video-streamer"], check=False)
-    logger.info(f"[SRT] Relay enabled → {target}")
+    logger.info(f"[RTSP] Relay enabled -> {target}")
 
 
 def _disable_srt_relay():
