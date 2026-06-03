@@ -4,14 +4,17 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <style>
 body { background:#0b1220; color:#d7e1ea; }
-.card { background:#111a2b; border:1px solid #20324f; border-radius:12px; }
+.card { background:#111a2b; border:1px solid #20324f; border-radius:12px; color:#eef5ff; }
+.card-body { color:#eef5ff; }
 .card-header { background:#16243a !important; border-bottom:1px solid #20324f; color:#e8eef5 !important; font-weight:600; }
-.soft { color:#8ea6c5; }
+.soft { color:#b8c9df !important; }
 #map { height: 360px; border-radius: 8px; }
-#videoFrame { width:100%; aspect-ratio:16/9; background:#000; border:0; border-radius:8px; }
 .kv { display:grid; grid-template-columns:120px 1fr; gap:.35rem .75rem; font-size:.9rem; }
-.kv div:nth-child(odd) { color:#8ea6c5; }
+.kv div:nth-child(odd) { color:#b8c9df; }
+.kv div:nth-child(even) { color:#f3f7fc; font-weight:600; overflow-wrap:anywhere; }
 .msg-table td, .msg-table th { padding:.35rem .5rem !important; font-size:.78rem; border-color:#1e2b40 !important; }
+.msg-table td { color:#eef5ff; }
+.msg-table code { color:#f3f7fc; }
 .cmd-btn { min-width:88px; }
 </style>
 {% endblock %}
@@ -41,8 +44,8 @@ body { background:#0b1220; color:#d7e1ea; }
       <div class="card h-100">
         <div class="card-header">Live Video</div>
         <div class="card-body p-2">
-          <iframe id="videoFrame" src="/video/{{ device_id }}" title="live video"></iframe>
-          <div class="soft mt-2 small">Embedded player: /video/{{ device_id }}</div>
+          {% set video_player_compact = true %}
+          {% include "_video_player.html" %}
         </div>
       </div>
     </div>
