@@ -1,0 +1,286 @@
+{% set video_player_compact = video_player_compact|default(false) %}
+<style>
+  .svp-status-line {
+    display:flex; gap:1.35rem; align-items:center; flex-wrap:wrap;
+    padding:.7rem 0; color:#f0f6fc; font-size:.95rem;
+  }
+  .svp-status-line .ok { color:#00c978; }
+  .svp-status-line .muted { color:#b8c0cc; }
+  .svp-divider { width:1px; height:18px; background:#252c36; }
+  .svp-card {
+    background:#161b22; border:1px solid #252c36; border-radius:8px;
+    overflow:hidden; color:#eef5ff;
+  }
+  .svp-head {
+    display:flex; justify-content:space-between; align-items:center; gap:.75rem;
+    padding:.75rem 1.1rem; background:#1c2128; border-bottom:1px solid #252c36;
+    font-weight:600;
+  }
+  .svp-actions { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
+  .svp-rec-state { color:#ff7892; font-size:.82rem; display:flex; align-items:center; gap:.35rem; }
+  .svp-rec-dot { width:10px; height:10px; border-radius:999px; background:#7a3142; display:inline-block; }
+  .svp-rec-dot.on { background:#ff4d6d; animation:svp-blink 1s infinite; }
+  @keyframes svp-blink { 0%,100%{opacity:1} 50%{opacity:.35} }
+  .svp-video-shell { position:relative; background:#000; aspect-ratio:16/9; min-height:420px; }
+  .svp-compact .svp-video-shell { min-height:0; }
+  .svp-video { width:100%; height:100%; object-fit:contain; background:#000; display:block; }
+  .svp-overlay {
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:#dbe7f3; background:rgba(0,0,0,.45); text-align:center; padding:1rem;
+  }
+  .svp-overlay.hidden { display:none; }
+  .svp-stats-grid {
+    display:grid; grid-template-columns:repeat(6, minmax(110px,1fr)); gap:1px;
+    background:#252c36; border-top:1px solid #252c36;
+  }
+  .svp-compact .svp-stats-grid { display:none; }
+  .svp-stat { background:#161b22; padding:.7rem .8rem; }
+  .svp-stat-label { color:#b8c0cc; font-size:.68rem; text-transform:uppercase; letter-spacing:.05em; }
+  .svp-stat-value { font-size:.92rem; font-weight:700; margin-top:.15rem; color:#f0f6fc; }
+  .svp-compact-link { color:#b8c9df; font-size:.86rem; padding:.65rem .85rem; border-top:1px solid #252c36; }
+  @media (max-width: 900px) {
+    .svp-stats-grid { grid-template-columns:repeat(2, minmax(120px,1fr)); }
+    .svp-video-shell { min-height:260px; }
+  }
+</style>
+
+{% if not video_player_compact %}
+<div class="svp-status-line">
+  <span id="svpStreamStatus" class="muted">Loading stream</span>
+  <span class="svp-divider"></span>
+  <span>Stream: <strong id="svpStreamName">-</strong></span>
+  <span>WebRTC: <strong id="svpWebrtcUrl">-</strong></span>
+</div>
+{% endif %}
+
+<div class="svp-card{% if video_player_compact %} svp-compact{% endif %}">
+  <div class="svp-head">
+    <span>Live Stream</span>
+    <div class="svp-actions">
+      <button id="svpReconnect" class="btn btn-sm btn-outline-info" type="button">Reconnect</button>
+      {% if not video_player_compact %}
+      <button id="svpRecord" class="btn btn-sm btn-outline-danger" type="button">REC</button>
+      <span class="svp-rec-state"><span id="svpRecDot" class="svp-rec-dot"></span><span>REC</span></span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="svp-video-shell">
+    <video id="svpVideo" class="svp-video" autoplay playsinline muted controls></video>
+    <div id="svpOverlay" class="svp-overlay">Waiting for WebRTC stream...</div>
+  </div>
+  <div class="svp-stats-grid">
+    <div class="svp-stat"><div class="svp-stat-label">Connection</div><div class="svp-stat-value" id="svpStatConn">-</div></div>
+    <div class="svp-stat"><div class="svp-stat-label">FPS</div><div class="svp-stat-value" id="svpStatFps">-</div></div>
+    <div class="svp-stat"><div class="svp-stat-label">Bitrate</div><div class="svp-stat-value" id="svpStatBitrate">-</div></div>
+    <div class="svp-stat"><div class="svp-stat-label">RTT</div><div class="svp-stat-value" id="svpStatRtt">-</div></div>
+    <div class="svp-stat"><div class="svp-stat-label">Jitter</div><div class="svp-stat-value" id="svpStatJitter">-</div></div>
+    <div class="svp-stat"><div class="svp-stat-label">Resolution</div><div class="svp-stat-value" id="svpStatRes">-</div></div>
+  </div>
+  {% if video_player_compact %}
+  <div class="svp-compact-link">Player source: <a href="/video/{{ device_id }}" class="link-info">open full video page</a></div>
+  {% endif %}
+</div>
+
+<script>
+(() => {
+  const deviceId = "{{ device_id }}";
+  const compact = {{ 'true' if video_player_compact else 'false' }};
+  const fetchNoCsrf = window.sirenaFetchNoCsrf || window.fetch.bind(window);
+  let pc = null;
+  let statsTimer = null;
+  let recordActive = false;
+  let lastVideoStats = null;
+
+  const el = id => document.getElementById(id);
+  const setText = (id, value) => {
+    const node = el(id);
+    if (node) node.textContent = value;
+  };
+  const setOverlay = (message, visible = true) => {
+    const overlay = el('svpOverlay');
+    if (!overlay) return;
+    overlay.textContent = message;
+    overlay.classList.toggle('hidden', !visible);
+  };
+
+  function waitIceGatheringComplete(peer) {
+    if (peer.iceGatheringState === 'complete') return Promise.resolve();
+    return new Promise(resolve => {
+      const done = () => {
+        if (peer.iceGatheringState === 'complete') {
+          peer.removeEventListener('icegatheringstatechange', done);
+          resolve();
+        }
+      };
+      peer.addEventListener('icegatheringstatechange', done);
+    });
+  }
+
+  async function loadStreamInfo() {
+    const res = await fetch(`/api/video/${deviceId}/stream`);
+    if (!res.ok) {
+      let errorText = 'Stream metadata unavailable';
+      try {
+        const payload = await res.json();
+        if (payload && payload.error) errorText = payload.error;
+      } catch (e) {}
+      throw new Error(errorText);
+    }
+    const data = await res.json();
+    if (!data.stream_url) throw new Error('Stream URL is not configured');
+    data.whep_url = data.whep_url || (data.stream_url.replace(/\/$/, '') + '/whep');
+    return data;
+  }
+
+  function maybeLegacyWhepFallback(url) {
+    if (!url) return null;
+    return url.replace('/n/', '/');
+  }
+
+  async function connectStream() {
+    stopPeer();
+    setOverlay('Connecting WebRTC stream...');
+    setText('svpStreamStatus', 'Connecting');
+    setText('svpStatConn', 'new');
+
+    try {
+      const streamInfo = await loadStreamInfo();
+      setText('svpStreamName', streamInfo.stream_name || streamInfo.stream_id || '-');
+      setText('svpWebrtcUrl', streamInfo.stream_url);
+
+      pc = new RTCPeerConnection();
+      pc.addTransceiver('video', {direction: 'recvonly'});
+      pc.addTransceiver('audio', {direction: 'recvonly'});
+
+      pc.ontrack = event => {
+        el('svpVideo').srcObject = event.streams[0];
+        setOverlay('', false);
+        setText('svpStreamStatus', 'WebRTC connected');
+        const status = el('svpStreamStatus');
+        if (status) status.className = 'ok';
+      };
+
+      pc.onconnectionstatechange = () => {
+        setText('svpStatConn', pc.connectionState);
+        if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
+          setOverlay('WebRTC stream disconnected');
+          const status = el('svpStreamStatus');
+          if (status) status.className = 'muted';
+        }
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      await waitIceGatheringComplete(pc);
+
+      let answer = await fetchNoCsrf(streamInfo.whep_url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/sdp'},
+        body: pc.localDescription.sdp,
+      });
+      if (!answer.ok && answer.status === 404) {
+        const fallbackWhep = maybeLegacyWhepFallback(streamInfo.whep_url);
+        if (fallbackWhep && fallbackWhep !== streamInfo.whep_url) {
+          answer = await fetchNoCsrf(fallbackWhep, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/sdp'},
+            body: pc.localDescription.sdp,
+          });
+        }
+      }
+      if (!answer.ok) throw new Error(`MediaMTX WHEP failed (${answer.status})`);
+
+      await pc.setRemoteDescription({type: 'answer', sdp: await answer.text()});
+      statsTimer = setInterval(updateStats, 1000);
+    } catch (err) {
+      stopPeer();
+      setText('svpStreamStatus', 'Offline');
+      setText('svpStatConn', '-');
+      setOverlay(err.message || 'WebRTC stream unavailable');
+    }
+  }
+
+  function stopPeer() {
+    if (statsTimer) clearInterval(statsTimer);
+    statsTimer = null;
+    lastVideoStats = null;
+    if (pc) {
+      pc.getSenders().forEach(sender => sender.track && sender.track.stop());
+      pc.getReceivers().forEach(receiver => receiver.track && receiver.track.stop());
+      pc.close();
+    }
+    pc = null;
+    const video = el('svpVideo');
+    if (video) video.srcObject = null;
+  }
+
+  async function updateStats() {
+    if (!pc) return;
+    const report = await pc.getStats();
+    let inboundVideo = null;
+    let candidatePair = null;
+
+    report.forEach(stat => {
+      if (stat.type === 'inbound-rtp' && stat.kind === 'video') inboundVideo = stat;
+      if (stat.type === 'candidate-pair' && stat.state === 'succeeded' && stat.nominated) candidatePair = stat;
+    });
+
+    if (inboundVideo) {
+      const now = inboundVideo.timestamp;
+      const bytes = inboundVideo.bytesReceived || 0;
+      const frames = inboundVideo.framesDecoded || 0;
+      if (lastVideoStats) {
+        const seconds = (now - lastVideoStats.timestamp) / 1000;
+        const bitrate = seconds > 0 ? ((bytes - lastVideoStats.bytes) * 8 / seconds / 1000) : 0;
+        const fps = seconds > 0 ? ((frames - lastVideoStats.frames) / seconds) : 0;
+        setText('svpStatBitrate', `${Math.max(0, bitrate).toFixed(0)} kbps`);
+        setText('svpStatFps', fps > 0 ? fps.toFixed(1) : '-');
+      }
+      lastVideoStats = {timestamp: now, bytes, frames};
+      setText('svpStatJitter', inboundVideo.jitter ? `${(inboundVideo.jitter * 1000).toFixed(1)} ms` : '-');
+      if (inboundVideo.frameWidth && inboundVideo.frameHeight) {
+        setText('svpStatRes', `${inboundVideo.frameWidth}x${inboundVideo.frameHeight}`);
+      }
+    }
+
+    if (candidatePair && candidatePair.currentRoundTripTime != null) {
+      setText('svpStatRtt', `${(candidatePair.currentRoundTripTime * 1000).toFixed(0)} ms`);
+    }
+  }
+
+  async function toggleRecord() {
+    const endpoint = recordActive
+      ? `/api/devices/${deviceId}/video/stop`
+      : `/api/devices/${deviceId}/video/start`;
+    await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    recordActive = !recordActive;
+    updateRecordBtn();
+  }
+
+  async function syncRecordState() {
+    if (compact) return;
+    try {
+      const res = await fetch(`/api/video/status/${deviceId}`);
+      const data = await res.json();
+      recordActive = Boolean(data.active);
+      updateRecordBtn();
+    } catch (err) {}
+  }
+
+  function updateRecordBtn() {
+    const btn = el('svpRecord');
+    const dot = el('svpRecDot');
+    if (!btn || !dot) return;
+    btn.className = recordActive ? 'btn btn-sm btn-danger' : 'btn btn-sm btn-outline-danger';
+    btn.textContent = recordActive ? 'Stop REC' : 'REC';
+    dot.classList.toggle('on', recordActive);
+  }
+
+  el('svpReconnect')?.addEventListener('click', connectStream);
+  el('svpRecord')?.addEventListener('click', toggleRecord);
+  window.addEventListener('beforeunload', stopPeer);
+  syncRecordState();
+  connectStream();
+  if (!compact) setInterval(syncRecordState, 5000);
+})();
+</script>

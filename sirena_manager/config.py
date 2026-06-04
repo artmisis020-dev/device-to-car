@@ -5,7 +5,7 @@ import os
 from typing import Tuple
 
 
-MANAGER_HOST = os.environ.get("SIRENA_MANAGER_HOST", os.environ.get("MANAGER_HOST", "127.0.0.1"))
+MANAGER_HOST = os.environ.get("SIRENA_MANAGER_HOST", os.environ.get("MANAGER_HOST", "0.0.0.0"))
 MANAGER_PORT = int(os.environ.get("SIRENA_MANAGER_PORT", os.environ.get("MANAGER_PORT", "9070")))
 SYSTEMCTL = os.environ.get("SIRENA_SYSTEMCTL", "sudo systemctl")
 ADMIN_SERVER_URL = os.environ.get("SIRENA_ADMIN_SERVER_URL", "http://127.0.0.1:8080")

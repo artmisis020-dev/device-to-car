@@ -19,7 +19,25 @@ body { background:#1a1a2e; color:#e0e0e0; }
 .table tbody td { border-color:#1a2a3a !important; vertical-align:middle; font-size:.85rem; }
 .table-hover tbody tr:hover { background:rgba(30,58,95,.4) !important; }
 .navbar-brand { letter-spacing:.03em; }
-.tel-live { color:#00ff88; font-size:.75rem; animation: blink 1.5s infinite; }
+.action-btn {
+  min-width:48px;
+  border:1px solid #8ea6c5 !important;
+  background:#1f2f46 !important;
+  color:#f3f7fc !important;
+  font-weight:700;
+  box-shadow:none !important;
+}
+.action-btn:hover,
+.action-btn:focus {
+  background:#2b4364 !important;
+  border-color:#dbe7f3 !important;
+  color:#fff !important;
+}
+.action-btn.icon-only { min-width:36px; }
+.action-state { color:#f3f7fc; font-size:.78rem; font-weight:700; letter-spacing:.02em; }
+.action-state.muted { color:#b8c9df; font-weight:600; }
+.action-rec { color:#f3f7fc; font-size:.7rem; font-weight:700; margin-left:.25rem; }
+.tel-live { color:#f3f7fc; font-size:.75rem; font-weight:700; animation: blink 1.5s infinite; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 </style>
 {% endblock %}
@@ -160,16 +178,16 @@ async function loadDevices() {
   const body = devs.map(d => {
     const hostname = d.hostname || '-';
     const vidBtn = d.video_active
-      ? 'Video <span style="color:#d73a49;font-size:.7rem">REC</span>'
+      ? 'Video <span class="action-rec">REC</span>'
       : 'Video';
     const telBadge = d.telemetry_active
       ? '<span class="tel-live">LIVE</span>'
-      : '<span class="text-muted" style="font-size:.7rem">off</span>';
+      : '<span class="action-state muted">off</span>';
     const approveBtn = d.is_valid
       ? ''
-      : `<button class="btn btn-sm btn-success py-0 px-2 me-1" onclick="openApprove('${d.device_id}')" title="Approve device">✓</button>`;
+      : `<button class="btn btn-sm action-btn icon-only py-0 px-2 me-1" onclick="openApprove('${d.device_id}')" title="Approve device">✓</button>`;
     const revokeBtn = d.approved
-      ? `<button class="btn btn-sm btn-danger py-0 px-2 me-1" onclick="openRevoke('${d.device_id}')" title="Revoke access">✕</button>`
+      ? `<button class="btn btn-sm action-btn icon-only py-0 px-2 me-1" onclick="openRevoke('${d.device_id}')" title="Revoke access">✕</button>`
       : '';
     return `<tr>
       <td>${statusBadge(d)}</td>
@@ -181,12 +199,12 @@ async function loadDevices() {
       <td class="small ${lastSeenClass(d.last_seen)}">${esc((d.last_seen||'-').replace('T',' '))}</td>
       <td class="small">${esc(d.valid_until||'-')}</td>
       <td>
-        <a href="/devices/${d.device_id}" class="btn btn-sm btn-outline-light py-0 px-2 me-1" title="Open detail page">↗</a>
-        <a href="/telemetry/${d.device_id}" class="btn btn-sm btn-outline-success py-0 px-2 me-1" title="Telemetry">${telBadge}</a>
-        <a href="/video/${d.device_id}" class="btn btn-sm btn-outline-info py-0 px-2 me-1" title="Video">${vidBtn}</a>
+        <a href="/devices/${d.device_id}" class="btn btn-sm action-btn icon-only py-0 px-2 me-1" title="Open detail page">↗</a>
+        <a href="/telemetry/${d.device_id}" class="btn btn-sm action-btn py-0 px-2 me-1" title="Telemetry">${telBadge}</a>
+        <a href="/video/${d.device_id}" class="btn btn-sm action-btn py-0 px-2 me-1" title="Video">${vidBtn}</a>
         ${approveBtn}
         ${revokeBtn}
-        <button class="btn btn-sm btn-secondary py-0 px-2" onclick="deleteDevice('${d.device_id}','${esc(hostname)}')" title="Delete device">🗑</button>
+        <button class="btn btn-sm action-btn icon-only py-0 px-2" onclick="deleteDevice('${d.device_id}','${esc(hostname)}')" title="Delete device">🗑</button>
       </td>
     </tr>`;
   }).join('');

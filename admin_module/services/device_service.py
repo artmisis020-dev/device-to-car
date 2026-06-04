@@ -16,6 +16,7 @@ def register_device(data, remote_ip):
     hardware = data.get("hardware", "")
     sirena_version = data.get("sirena_version", "")
     video_version = data.get("video_version", "")
+    ip = str(data.get("ip") or "").strip() or remote_ip
 
     if not device_id:
         return {"error": "missing device_id"}, 400
@@ -31,7 +32,7 @@ def register_device(data, remote_ip):
         repository.update_device_registration(
             device_id,
             hostname,
-            remote_ip,
+            ip,
             hardware,
             new_sirena,
             new_video,
@@ -50,7 +51,7 @@ def register_device(data, remote_ip):
     repository.create_device(
         device_id,
         hostname,
-        remote_ip,
+        ip,
         hardware,
         sirena_version,
         video_version,

@@ -24,13 +24,17 @@ apt-get install -y \
     gstreamer1.0-plugins-base \
     gstreamer1.0-plugins-good \
     gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-ugly \
     v4l-utils \
     avahi-daemon \
     python3-pip \
     python3-venv \
     python3-gi \
     python3-gst-1.0 \
-    gir1.2-gstreamer-1.0
+    gir1.2-gstreamer-1.0 \
+    gstreamer1.0-rtsp \
+    gstreamer1.0-libav
+
 
 echo "2. Налаштування системного користувача та прав..."
 if ! id "$SERVICE_USER" &>/dev/null; then
@@ -64,9 +68,9 @@ chown -R "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR"
 echo "Встановлення бібліотек (aiohttp, PyYAML) у venv..."
 sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install --upgrade pip
 
-if [ -f "$DEPLOY_DIR/requirements.txt" ]; then
+if [ -f "$INSTALL_DIR/requirements.txt" ]; then
     echo "Встановлення залежностей з requirements.txt..."
-    sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install -r "$DEPLOY_DIR/requirements.txt"
+    sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
 else
     sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install aiohttp aiortc av PyYAML aiohttp_jinja2
 fi
