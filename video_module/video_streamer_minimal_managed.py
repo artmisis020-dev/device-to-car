@@ -2,6 +2,7 @@
 """Managed minimal H.264 SRT video streamer with runtime env controls."""
 
 import math
+import json
 import os
 import signal
 import subprocess
@@ -10,6 +11,13 @@ import threading
 import time
 
 import gi
+
+try:
+    gi.require_foreign("cairo")
+    CAIRO_FOREIGN_AVAILABLE = True
+except Exception as exc:
+    CAIRO_FOREIGN_AVAILABLE = False
+    CAIRO_FOREIGN_ERROR = str(exc)
 
 gi.require_version("Gst", "1.0")
 from gi.repository import GLib, Gst
@@ -41,6 +49,7 @@ MAVLINK_ENDPOINT = os.environ.get(
     "MAVLINK_ENDPOINT",
     os.environ.get("SIRENA_MAVLINK_TELEMETRY_URL", "udp:127.0.0.1:14562"),
 )
+TELEMETRY_SNAPSHOT_PATH = os.environ.get("SIRENA_TELEMETRY_SNAPSHOT_PATH", "/tmp/sirena_mavlink_snapshot.json")
 SIRENA_RELAY_TARGET = os.environ.get("SIRENA_RELAY_TARGET", "").strip().strip('"')
 OSD_RATE_HZ = max(1, env_int("OSD_RATE_HZ", 5))
 
@@ -48,6 +57,12 @@ _legacy_osd_enabled = os.environ.get("OSD_ENABLED", "0").strip().lower() in ("1"
 OSD_MODE = os.environ.get("OSD_MODE", "").strip().lower()
 if OSD_MODE not in ("off", "text", "hud-lite"):
     OSD_MODE = "text" if _legacy_osd_enabled else "off"
+if OSD_MODE == "hud-lite" and not CAIRO_FOREIGN_AVAILABLE:
+    print(
+        f"[WARN] hud-lite requires Python Cairo bindings; falling back to text OSD: {CAIRO_FOREIGN_ERROR}",
+        flush=True,
+    )
+    OSD_MODE = "text"
 
 
 class TelemetryState:
@@ -121,6 +136,26 @@ class TelemetryState:
     def set_error(self, text: str):
         with self.lock:
             self.error = text
+
+    def update_from_snapshot(self, snapshot):
+        with self.lock:
+            for key in (
+                "mode",
+                "armed",
+                "batt_v",
+                "batt_pct",
+                "alt_m",
+                "ground_kmh",
+                "heading",
+                "sats",
+                "fix",
+                "roll_deg",
+                "pitch_deg",
+            ):
+                if key in snapshot:
+                    setattr(self, key, snapshot[key])
+            self.last_update_ts = float(snapshot.get("last_update_ts") or time.time())
+            self.error = str(snapshot.get("error") or "")
 
     def snapshot(self):
         with self.lock:
@@ -528,65 +563,21 @@ def start_telemetry_reader(state: TelemetryState):
         return None
 
     def worker():
-        try:
-            from pymavlink import mavutil
-        except Exception as exc:
-            state.set_error(f"pymavlink import failed: {exc}")
-            return
-
+        last_mtime = None
         while True:
             try:
-                print(f"[OSD] Connecting MAVLink endpoint: {MAVLINK_ENDPOINT}", flush=True)
-                conn = mavutil.mavlink_connection(MAVLINK_ENDPOINT, source_system=250)
-                if MAVLINK_ENDPOINT.startswith("udpout:"):
-                    import threading as _t
-                    def _hb():
-                        import time as _time
-                        while True:
-                            try:
-                                conn.mav.heartbeat_send(0, 0, 0, 0, 0)
-                            except Exception:
-                                pass
-                            _time.sleep(1.0)
-                    _t.Thread(target=_hb, daemon=True).start()
-                # Request all telemetry streams (needed for TCP/UDP connections)
-                try:
-                    conn.mav.request_data_stream_send(1, 0, mavutil.mavlink.MAV_DATA_STREAM_ALL, 4, 1)
-                    print("[OSD] Requested MAVLink data streams", flush=True)
-                except Exception:
-                    pass
-                while True:
-                    msg = conn.recv_match(blocking=True, timeout=1)
-                    if msg is not None:
-                        state.update_from_msg(msg)
+                stat = os.stat(TELEMETRY_SNAPSHOT_PATH)
+                if last_mtime != stat.st_mtime:
+                    last_mtime = stat.st_mtime
+                    with open(TELEMETRY_SNAPSHOT_PATH, "r", encoding="utf-8") as f:
+                        state.update_from_snapshot(json.load(f))
             except Exception as exc:
-                state.set_error(str(exc))
-                time.sleep(1.0)
+                state.set_error(f"snapshot read failed: {exc}")
+            time.sleep(max(0.1, 1.0 / OSD_RATE_HZ))
 
     thread = threading.Thread(target=worker, daemon=True)
     thread.start()
     return thread
-
-
-def is_mjpeg_only_device(video_device: str) -> bool:
-    try:
-        result = subprocess.run(
-            ["v4l2-ctl", "-d", video_device, "--list-formats"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except FileNotFoundError:
-        return False
-
-    formats = []
-    for line in (result.stdout or "").splitlines():
-        line = line.strip()
-        if line.startswith("[") and "]: '" in line:
-            parts = line.split("'")
-            if len(parts) >= 2:
-                formats.append(parts[1].strip())
-    return len(formats) == 1 and formats[0] == "MJPG"
 
 
 def supports_mjpeg(video_device: str) -> bool:
@@ -601,13 +592,6 @@ def supports_mjpeg(video_device: str) -> bool:
         return False
 
     return "MJPG" in (result.stdout or "")
-
-
-def get_v4l2_src_caps(video_device: str) -> str:
-    if supports_mjpeg(video_device):
-        print("[INFO] Camera supports MJPEG, using jpegdec source path", flush=True)
-        return "capsfilter caps=\"image/jpeg\" ! jpegdec"
-    return "capsfilter caps=\"video/x-raw\""
 
 
 def get_encoder_chain() -> str:
@@ -629,6 +613,28 @@ def get_encoder_chain() -> str:
     )
 
 
+def get_osd_chain() -> str:
+    if OSD_MODE == "text":
+        return (
+            "textoverlay name=osd_tl valignment=top halignment=left "
+            "font-desc=\"Sans Bold 18\" shaded-background=true ! "
+            "textoverlay name=osd_tr valignment=top halignment=right "
+            "font-desc=\"Sans Bold 18\" shaded-background=true ! "
+            "textoverlay name=osd_bl valignment=bottom halignment=left "
+            "font-desc=\"Sans Bold 18\" shaded-background=true ! "
+            "textoverlay name=osd_br valignment=bottom halignment=right "
+            "font-desc=\"Sans Bold 14\" shaded-background=true ! "
+        )
+    if OSD_MODE == "hud-lite":
+        return (
+            "videoconvert ! "
+            "capsfilter caps=\"video/x-raw,format=BGRA\" ! "
+            "cairooverlay name=osd_hud ! "
+            "videoconvert ! "
+        )
+    return ""
+
+
 def create_pipeline_string() -> str:
     output_caps = (
         "capsfilter caps=\""
@@ -637,8 +643,7 @@ def create_pipeline_string() -> str:
         "\""
     )
     encoder_chain = get_encoder_chain()
-
-    osd_chain = ""
+    osd_chain = get_osd_chain()
 
     return (
         f"v4l2src device={VIDEO_DEVICE} ! "
@@ -648,6 +653,7 @@ def create_pipeline_string() -> str:
         "videoscale ! "
         "videorate drop-only=true ! "
         f"{output_caps} ! "
+        f"{osd_chain}"
         "capsfilter caps=\"video/x-raw,format=I420\" ! "
         f"{encoder_chain} ! "
         "h264parse config-interval=1 ! "
@@ -718,12 +724,12 @@ PIPELINE_STR = create_pipeline_string()
 telemetry_state = TelemetryState()
 runtime_state = {"stop_requested": False, "restart_requested": False}
 
-print("[INIT] Starting managed GStreamer SRT streamer...", flush=True)
+print("[INIT] Запускається GStreamer SRT streamer...", flush=True)
 print(
     "[CONF] "
     f"VIDEO_DEVICE={VIDEO_DEVICE} STREAM_FPS={STREAM_FPS} "
     f"SRT_LATENCY_MS={SRT_LATENCY_MS} BITRATE_KBPS={BITRATE_KBPS} "
-    f"OSD_MODE={OSD_MODE} MAVLINK_ENDPOINT={MAVLINK_ENDPOINT}",
+    f"OSD_MODE={OSD_MODE} TELEMETRY_SNAPSHOT_PATH={TELEMETRY_SNAPSHOT_PATH}",
     flush=True,
 )
 print(f"[PIPE] {PIPELINE_STR}", flush=True)
@@ -731,11 +737,11 @@ print(f"[PIPE] {PIPELINE_STR}", flush=True)
 try:
     pipeline = Gst.parse_launch(PIPELINE_STR)
     if pipeline is None:
-        raise RuntimeError("Failed to parse pipeline")
+        raise RuntimeError("Не вдалося створити GStreamer пайплайн")
 
     bus = pipeline.get_bus()
     if bus is None:
-        raise RuntimeError("Could not get pipeline bus")
+        raise RuntimeError("Не вдається отримати шину повідомлень GStreamer")
     bus.add_signal_watch()
     bus.connect("message", BusMessageHandler(loop, pipeline, runtime_state))
 
@@ -759,11 +765,11 @@ try:
 
             GLib.timeout_add(interval_ms, update_osd_text)
         else:
-            print("[WARN] Text OSD overlays were not found", flush=True)
+            print("[WARN] Текстові OSD overlay не знайдено", flush=True)
     elif OSD_MODE == "hud-lite":
         hud = pipeline.get_by_name("osd_hud")
         if hud is None:
-            print("[WARN] hud-lite is enabled but cairooverlay was not found", flush=True)
+            print("[WARN] hud-lite включено, але cairooverlay не знайдено", flush=True)
         else:
             drawer = HudLiteDrawer(telemetry_state)
             hud.connect("caps-changed", drawer.on_caps_changed)
@@ -783,17 +789,17 @@ try:
         flush=True,
     )
     if ret == Gst.StateChangeReturn.FAILURE:
-        raise RuntimeError("Failed to get pipeline state while starting")
+        raise RuntimeError("Не вдалося отримати стан пайплайну під час запуску")
     if ret == Gst.StateChangeReturn.SUCCESS and state != Gst.State.PLAYING:
         raise RuntimeError(
-            f"Pipeline did not reach PLAYING state: {state.value_name}, pending: {pending.value_name}"
+            f"Пайп не досягнув стану PLAYING: {state.value_name}, очікується: {pending.value_name}"
         )
 
-    print("[READY] Pipeline started successfully. Streaming via configured relay target...", flush=True)
+    print("[READY] Пайп запущений успішно.", flush=True)
     loop.run()
 
     if runtime_state["restart_requested"] and not runtime_state["stop_requested"]:
-        raise RuntimeError("Pipeline stopped unexpectedly, requesting systemd restart")
+        raise RuntimeError("Пайп зупинено аварійно, потребує systemd restart")
 except Exception as exc:
     print(f"[FATAL] {exc}", file=sys.stderr, flush=True)
     sys.exit(1)
@@ -803,4 +809,4 @@ finally:
         pipeline.set_state(Gst.State.NULL)
         if bus is not None:
             bus.remove_signal_watch()
-    print("[DONE] Streamer stopped.", flush=True)
+    print("[DONE] Стрімер зупинено.", flush=True)

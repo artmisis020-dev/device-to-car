@@ -7,6 +7,22 @@
   .svp-status-line .ok { color:#00c978; }
   .svp-status-line .muted { color:#b8c0cc; }
   .svp-divider { width:1px; height:18px; background:#252c36; }
+  .svp-cameras {
+    display:flex; align-items:center; gap:.45rem; flex-wrap:wrap; min-width:220px;
+  }
+  .svp-camera-label { color:#b8c0cc; font-size:.86rem; }
+  .svp-camera-chip {
+    border:1px solid #303844; background:#151b23; color:#eef5ff;
+    border-radius:6px; padding:.22rem .55rem; font-size:.82rem; line-height:1.2;
+    max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .svp-camera-chip.active {
+    border-color:#20c997; background:#133427; color:#baf7d4; font-weight:700;
+  }
+  button.svp-camera-chip:not(.active):hover {
+    border-color:#00c8ff; color:#9be7ff;
+  }
+  .svp-camera-chip:disabled { opacity:.65; cursor:wait; }
   .svp-card {
     background:#161b22; border:1px solid #252c36; border-radius:8px;
     overflow:hidden; color:#eef5ff;
@@ -50,6 +66,11 @@
   <span class="svp-divider"></span>
   <span>Stream: <strong id="svpStreamName">-</strong></span>
   <span>WebRTC: <strong id="svpWebrtcUrl">-</strong></span>
+  <span class="svp-divider"></span>
+  <span class="svp-cameras">
+    <span class="svp-camera-label">Cameras:</span>
+    <span id="svpCameraList" class="svp-camera-label">Loading...</span>
+  </span>
 </div>
 {% endif %}
 
@@ -84,12 +105,14 @@
 <script>
 (() => {
   const deviceId = "{{ device_id }}";
-  const compact = {{ 'true' if video_player_compact else 'false' }};
+  const compact = {{ video_player_compact|tojson }};
+  const realtimeHttpBase = `${window.location.protocol}//${window.location.hostname}:8090`;
   const fetchNoCsrf = window.sirenaFetchNoCsrf || window.fetch.bind(window);
   let pc = null;
   let statsTimer = null;
   let recordActive = false;
   let lastVideoStats = null;
+  let switchingCamera = false;
 
   const el = id => document.getElementById(id);
   const setText = (id, value) => {
@@ -101,6 +124,64 @@
     if (!overlay) return;
     overlay.textContent = message;
     overlay.classList.toggle('hidden', !visible);
+  };
+  const cameraTitle = camera => {
+    const name = camera.name || camera.path || 'camera';
+    const target = camera.target ? ` -> ${camera.target}` : '';
+    return `${name}${target}`;
+  };
+  const shortCameraName = camera => {
+    const raw = camera.name || camera.path || 'camera';
+    return raw
+      .replace(/^usb-/, '')
+      .replace(/-video-index0$/, '')
+      .replaceAll('_', ' ');
+  };
+  const cameraIsActive = (camera, active) => camera.path === active || camera.target === active;
+  const realtimeCommand = async (command, data = {}, timeoutSec = 30) => {
+    const res = await fetchNoCsrf(`${realtimeHttpBase}/api/devices/${deviceId}/commands`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({command, data, timeout_sec: timeoutSec}),
+    });
+    let payload = {};
+    try {
+      payload = await res.json();
+    } catch (e) {}
+    if (!res.ok || !payload.success) {
+      throw new Error(payload.error || `Realtime command failed (${res.status})`);
+    }
+    return payload.data || payload;
+  };
+  const loadCamerasViaHttp = async () => {
+    const res = await fetch(`/api/video/${deviceId}/cameras`);
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Camera list unavailable');
+    return data;
+  };
+  const switchCameraViaHttp = async cameraPath => {
+    const res = await fetch(`/api/video/${deviceId}/camera`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({camera: cameraPath}),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Camera switch failed');
+    return data;
+  };
+  const loadCamerasFromDevice = async () => {
+    try {
+      return await realtimeCommand('camera.list');
+    } catch (err) {
+      return loadCamerasViaHttp();
+    }
+  };
+  const switchCameraOnDevice = async cameraPath => {
+    try {
+      return await realtimeCommand('camera.switch', {camera: cameraPath}, 35);
+    } catch (err) {
+      return switchCameraViaHttp(cameraPath);
+    }
   };
 
   function waitIceGatheringComplete(peer) {
@@ -200,6 +281,75 @@
     }
   }
 
+  async function loadCameras() {
+    if (compact) return;
+    const list = el('svpCameraList');
+    if (!list) return;
+
+    try {
+      const data = await loadCamerasFromDevice();
+      if (!data.success) throw new Error(data.error || 'Unavailable');
+
+      const active = data.active || '';
+      const cameras = Array.isArray(data.cameras) ? data.cameras.slice() : [];
+      cameras.sort((a, b) => {
+        const aActive = cameraIsActive(a, active) ? 0 : 1;
+        const bActive = cameraIsActive(b, active) ? 0 : 1;
+        if (aActive !== bActive) return aActive - bActive;
+        return (a.name || a.path || '').localeCompare(b.name || b.path || '');
+      });
+
+      list.innerHTML = '';
+      if (!cameras.length) {
+        list.textContent = 'No cameras';
+        return;
+      }
+
+      for (const camera of cameras) {
+        const isActive = cameraIsActive(camera, active);
+        const node = document.createElement(isActive ? 'span' : 'button');
+        node.className = `svp-camera-chip${isActive ? ' active' : ''}`;
+        node.textContent = `${shortCameraName(camera)}${isActive ? ' active' : ''}`;
+        node.title = cameraTitle(camera);
+        if (!isActive) {
+          node.type = 'button';
+          node.disabled = switchingCamera;
+          node.addEventListener('click', () => switchCamera(camera.path));
+        }
+        list.appendChild(node);
+      }
+    } catch (err) {
+      list.textContent = 'Unavailable';
+    }
+  }
+
+  async function switchCamera(cameraPath) {
+    if (!cameraPath || switchingCamera) return;
+    switchingCamera = true;
+    setOverlay('Switching camera...');
+    setText('svpStreamStatus', 'Switching camera');
+    stopPeer();
+    await loadCameras();
+
+    const fallbackTimer = setTimeout(() => {
+      if (switchingCamera) setOverlay('Camera switch is taking longer than expected...');
+    }, 30000);
+
+    try {
+      await switchCameraOnDevice(cameraPath);
+      setOverlay('Reconnecting video...');
+      await loadCameras();
+      setTimeout(connectStream, 1500);
+    } catch (err) {
+      setText('svpStreamStatus', 'Camera switch failed');
+      setOverlay(err.message || 'Camera switch failed');
+    } finally {
+      clearTimeout(fallbackTimer);
+      switchingCamera = false;
+      await loadCameras();
+    }
+  }
+
   function stopPeer() {
     if (statsTimer) clearInterval(statsTimer);
     statsTimer = null;
@@ -280,7 +430,9 @@
   el('svpRecord')?.addEventListener('click', toggleRecord);
   window.addEventListener('beforeunload', stopPeer);
   syncRecordState();
+  loadCameras();
   connectStream();
   if (!compact) setInterval(syncRecordState, 5000);
+  if (!compact) setInterval(loadCameras, 10000);
 })();
 </script>

@@ -1,7 +1,7 @@
 [Unit]
-Description=Sirena Video Relay (auto-detect camera → server)
-After=network.target video-service-manager.service
-Wants=network.target
+Description=Sirena Video Relay (camera target publisher)
+After=network-online.target video-service-manager.service
+Wants=network-online.target video-service-manager.service
 
 [Service]
 Type=simple

@@ -9,6 +9,24 @@ from ..helpers import is_valid, now_str
 from . import repository
 from . import video_service
 
+ONLINE_WINDOW_SEC = 120
+
+
+def _parse_db_time(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def is_online(device, window_sec=ONLINE_WINDOW_SEC):
+    last_seen = _parse_db_time(device.get("last_seen") if isinstance(device, dict) else device["last_seen"])
+    if not last_seen:
+        return False
+    return (datetime.now(timezone.utc) - last_seen).total_seconds() < window_sec
+
 
 def register_device(data, remote_ip):
     device_id = data.get("device_id", "")
@@ -62,7 +80,14 @@ def register_device(data, remote_ip):
     return {"status": "pending", "message": "Device registered, awaiting approval"}, 200
 
 
-def heartbeat_device(device_id):
+def heartbeat_device(data):
+    if isinstance(data, dict):
+        device_id = data.get("device_id", "")
+        ip = str(data.get("ip") or "").strip()
+    else:
+        device_id = str(data or "")
+        ip = ""
+
     if not device_id:
         return {"error": "missing device_id"}, 400
 
@@ -70,7 +95,10 @@ def heartbeat_device(device_id):
     if not device:
         return {"status": "unknown", "message": "Device not registered"}, 404
 
-    repository.update_last_seen(device_id, now_str())
+    if ip:
+        repository.update_last_seen_and_ip(device_id, now_str(), ip)
+    else:
+        repository.update_last_seen(device_id, now_str())
     valid = is_valid(device)
     return {
         "status": "approved" if valid else "revoked",
@@ -82,6 +110,7 @@ def list_devices_with_validity():
     devices = repository.list_devices()
     for device in devices:
         device["is_valid"] = is_valid(device)
+        device["online"] = is_online(device)
     return devices
 
 
@@ -179,6 +208,7 @@ def get_device_detail(device_id):
     return {
         "device": dict(device),
         "is_valid": is_valid(device),
+        "online": is_online(device),
         "telemetry": {
             "active": bool(device["telemetry_active"]),
             "total": telemetry_total,

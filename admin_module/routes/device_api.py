@@ -15,7 +15,7 @@ def api_register():
 
 @device_api_bp.route("/api/heartbeat", methods=["POST"])
 def api_heartbeat():
-    payload, status = device_service.heartbeat_device(json_body().get("device_id", ""))
+    payload, status = device_service.heartbeat_device(json_body())
     return jsonify(payload), status
 
 

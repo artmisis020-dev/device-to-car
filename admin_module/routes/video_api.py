@@ -48,3 +48,17 @@ def api_video_get_stream(device_id):
         "stream_url": stream_url,
         "whep_url": whep_url,
     }), 200
+
+
+@video_api_bp.route("/api/video/<device_id>/cameras", methods=["GET"])
+@require_admin
+def api_video_cameras(device_id):
+    payload, status = video_service.cameras(device_id)
+    return jsonify(payload), status
+
+
+@video_api_bp.route("/api/video/<device_id>/camera", methods=["POST"])
+@require_admin
+def api_video_switch_camera(device_id):
+    payload, status = video_service.switch_camera(device_id, json_body().get("camera", ""))
+    return jsonify(payload), status
