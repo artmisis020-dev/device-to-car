@@ -7,6 +7,7 @@ SERVICE_USER="sirena"
 ROOT_SERVICE="sirena-manager.service"
 ADMIN_SERVER_URL="${1:-${SIRENA_ADMIN_SERVER_URL:-http://127.0.0.1:8080}}"
 SIRENA_SRT_HOST="${SIRENA_SRT_HOST:-10.0.0.1}"
+REBOOT_REQUIRED=0
 
 if [ "${EUID:-$(id -u)}" -ne 0 ]; then
   echo "Run this script as root: sudo bash install_rpi.sh http://<admin-server>:8080"
@@ -37,15 +38,17 @@ fi
 
 if ! grep -q '^enable_uart=1$' "$BOOT_CONFIG"; then
   printf '\n# Sirena UART setup\nenable_uart=1\n' >> "$BOOT_CONFIG"
+  REBOOT_REQUIRED=1
 fi
 
-for overlay in uart2 uart3 uart5; do
+for overlay in uart2 uart3; do
   if ! grep -q "^dtoverlay=${overlay}$" "$BOOT_CONFIG"; then
     printf 'dtoverlay=%s\n' "$overlay" >> "$BOOT_CONFIG"
+    REBOOT_REQUIRED=1
   fi
 done
 
-echo "Updated boot config: $BOOT_CONFIG (uart2, uart3, uart5 enabled)"
+echo "Updated boot config: $BOOT_CONFIG (uart0, uart2, uart3 enabled)"
 
 normalize_shell_script() {
   local script_path="$1"
@@ -118,21 +121,29 @@ SIRENA_VIDEO_MANAGER_HOST=0.0.0.0
 SIRENA_VIDEO_MANAGER_PORT=9000
 SIRENA_VIDEO_MODE=srt
 SIRENA_VIDEO_FPS=30
-SIRENA_VIDEO_BITRATE=1000
-SIRENA_VIDEO_WIDTH=640
-SIRENA_VIDEO_HEIGHT=512
 SIRENA_VIDEO_CONFIG_PATH=/opt/sirena-video/sirena_video_config.json
-SIRENA_MAVLINK_UART_PORT=/dev/ttyAMA5
+SIRENA_MAVLINK_UART_PORT=/dev/ttyAMA0
 SIRENA_UART_GPS_PORT=/dev/ttyAMA2
 SIRENA_UART_FC_PORT=/dev/ttyAMA3
 SIRENA_DTC_IP=127.0.0.1
 SIRENA_STARLINK_IP=192.168.100.1
+SIRENA_STARLINK_TARGET=192.168.100.1:9200
+SIRENA_MAVLINK_FC_URL=/dev/ttyAMA0
+SIRENA_MAVLINK_BAUD=115200
+SIRENA_MAVLINK_SOURCE_SYSTEM=191
+SIRENA_MAVLINK_SOURCE_COMPONENT=191
+SIRENA_STARLINK_GPS_HZ=5
+SIRENA_STARLINK_MAVLINK_GPS_ID=0
+SIRENA_STARLINK_DEFAULT_ACCURACY_M=10
+SIRENA_MAVLINK_TELEMETRY_URL=udpin:0.0.0.0:14562
+SIRENA_LOCAL_TELEMETRY_SOCKET=/tmp/sirena-mavlink.sock
 VIDEO_DEVICE=/dev/video0
 STREAM_FPS=30
 SRT_LATENCY_MS=20
 BITRATE_KBPS=2000
 KEYINT=15
-OSD_MODE=off
+OSD_MODE=hud-lite
+SIRENA_TELEMETRY_SNAPSHOT_PATH=/tmp/sirena_mavlink_snapshot.json
 MAVLINK_ENDPOINT=udp:127.0.0.1:14562
 EOF
 
@@ -151,8 +162,17 @@ systemctl enable "$ROOT_SERVICE"
 systemctl restart "$ROOT_SERVICE"
 
 echo "Verifying worker units..."
-systemctl status mavlink-router telemetry-sender sirena-gps-hub video-service-manager video-relay --no-pager || true
+systemctl status mavlink-router telemetry-sender sirena-gps-hub video-service-manager video-relay video-streamer --no-pager || true
 
 echo "=== Done ==="
 echo "Check root manager: journalctl -u $ROOT_SERVICE -f"
-echo "Check local workers: systemctl status mavlink-router telemetry-sender sirena-gps-hub video-service-manager video-relay"
+echo "Check local workers: systemctl status mavlink-router telemetry-sender sirena-gps-hub video-service-manager video-relay video-streamer"
+
+if [ "$REBOOT_REQUIRED" -eq 1 ]; then
+  echo "Reboot required: UART boot config changed."
+  echo "The system will now reboot..."
+  sudo reboot
+
+else
+  echo "No boot config reboot required by this install."
+fi

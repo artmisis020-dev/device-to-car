@@ -14,7 +14,6 @@ import socket
 import subprocess
 import sys
 import time
-
 import config
 
 logging.basicConfig(
@@ -58,15 +57,10 @@ def _get_device_id() -> str:
 # ─── Main ─────────────────────────────────────────────────────────────────────
 def main():
     try:
-        from pymavlink import mavutil
+        from telemetry_sender import TelemetrySender
+        from mavlink_client import MavlinkClient
     except ImportError:
-        logger.error("pymavlink not installed. Run: pip3 install pymavlink")
-        sys.exit(1)
-
-    try:
-        from telemetry_sender import TelemetrySender, mavmsg_to_dict
-    except ImportError:
-        logger.error("telemetry_sender.py not found in /opt/sirena-video/")
+        logger.error("telemetry sender/client modules not found")
         sys.exit(1)
 
     device_id = _get_device_id()
@@ -77,33 +71,35 @@ def main():
 
     logger.info(f"Telemetry Daemon started | device={device_id[:12]}… | MAVLink={MAVLINK_URL}")
 
+    client = None
+
     def _shutdown(sig, frame):
         logger.info("Shutdown signal received")
+        if client:
+            client.stop()
         sender.stop()
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
 
-    # ── Connect loop ──────────────────────────────────────────────────────────
+    def on_telemetry(msg_type: str, msg_data: dict) -> None:
+        if msg_type == "BAD_DATA" or not msg_data:
+            return
+        sender.enqueue(msg_type, msg_data, time.time())
+
     while True:
         try:
             logger.info(f"Connecting to MAVLink on {MAVLINK_URL} …")
-            mav = mavutil.mavlink_connection(MAVLINK_URL, dialect="ardupilotmega")
+            client = MavlinkClient(MAVLINK_URL, telemetry_callback=on_telemetry)
+            client.connect()
             logger.info("MAVLink connected — streaming telemetry to server")
-
             while True:
-                msg = mav.recv_match(blocking=True, timeout=2.0)
-                if msg is None:
-                    continue
-                msg_type = msg.get_type()
-                if msg_type == "BAD_DATA":
-                    continue
-                fields = mavmsg_to_dict(msg)
-                if fields:
-                    sender.enqueue(msg_type, fields, time.time())
-
+                time.sleep(1.0)
         except Exception as e:
+            if client:
+                client.stop()
+                client = None
             logger.warning(f"MAVLink error: {e} — retrying in {CONNECT_RETRY}s")
             time.sleep(CONNECT_RETRY)
 

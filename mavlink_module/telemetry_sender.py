@@ -45,6 +45,21 @@ def mavmsg_to_dict(msg) -> dict:
         return {}
 
 
+def make_json_safe(value):
+    """Рекурсивно приводить MAVLink значення до типів, які підтримує JSON."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        return value.hex()
+    if hasattr(value, "item"):
+        return value.item()
+    if isinstance(value, dict):
+        return {str(k): make_json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [make_json_safe(item) for item in value]
+    return str(value)
+
+
 class TelemetrySender:
     """
     Two background threads:
@@ -83,7 +98,7 @@ class TelemetrySender:
         """Non-blocking. Called from mavlink_proxy_worker for every FC message."""
         self._last_enqueue_ts = ts   # always track flow, even before active
         if self._active:
-            self._queue.append({"t": round(ts, 3), "m": msg_type, "d": fields})
+            self._queue.append({"t": round(ts, 3), "m": msg_type, "d": make_json_safe(fields)})
 
     # -----------------------------------------------------------------------
     def _poll_worker(self):
@@ -117,17 +132,27 @@ class TelemetrySender:
                     break
                 batch.append(self._queue.popleft())
 
-            if batch:
+            if not batch:
+                continue
+
+            try:
                 self._send_batch(batch)
+            except Exception as e:
+                for item in reversed(batch):
+                    try:
+                        self._queue.appendleft(item)
+                    except Exception:
+                        break
+                logger.warning(f"[Telemetry] Send worker error ({len(batch)} msgs re-queued): {e}")
 
     def _send_batch(self, batch: list):
-        payload = json.dumps({
-            "device_id": self._device_id,
-            "flight_id": self._flight_id,
-            "msgs":      batch,
-        }, separators=(',', ':')).encode()
-
         try:
+            payload = json.dumps({
+                "device_id": self._device_id,
+                "flight_id": self._flight_id,
+                "msgs":      batch,
+            }, separators=(',', ':')).encode()
+
             req = urllib.request.Request(
                 f"{self._server_url}/api/telemetry",
                 data=payload,

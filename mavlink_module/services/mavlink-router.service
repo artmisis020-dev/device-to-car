@@ -1,19 +1,23 @@
 [Unit]
-Description=Sirena MAVLink Python Router (Fallback)
-After=network.target
+Description=Sirena MAVLink Router
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=sirena
 WorkingDirectory=/opt/sirena-telemetry
-ExecStart=/opt/sirena-telemetry/venv/bin/python3 /opt/sirena-telemetry/mavlink_router.py
+ExecStart=/opt/sirena-telemetry/run_mavlink_router.sh
 Restart=on-failure
-RestartSec=10s
+RestartSec=5s
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=mavlink-router
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=/opt/sirena/.env
+Environment=MAVLINK_ROUTER_CONFIG=/opt/sirena-telemetry/mav-router.conf
+Environment=MAVLINK_ROUTER_FALLBACK=/opt/sirena-telemetry/mavlink_router.py
+Environment=MAVLINK_ROUTER_PYTHON=/opt/sirena-telemetry/venv/bin/python3
 
 [Install]
 WantedBy=multi-user.target

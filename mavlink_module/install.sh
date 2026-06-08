@@ -39,6 +39,44 @@ apt-get install -y \
     python3-serial \
     socat
 
+install_mavlink_router_from_source() {
+    local build_root="/tmp/sirena-mavlink-router-build"
+    local repo_dir="$build_root/mavlink-router"
+
+    echo "Пробуємо зібрати mavlink-routerd з source..."
+    apt-get install -y \
+        cmake \
+        git \
+        gcc \
+        g++ \
+        libsystemd-dev \
+        meson \
+        ninja-build \
+        pkg-config \
+        systemd \
+        systemd-dev || return 1
+
+    rm -rf "$build_root" || return 1
+    mkdir -p "$build_root" || return 1
+    git clone --depth 1 https://github.com/mavlink-router/mavlink-router.git "$repo_dir" || return 1
+    cd "$repo_dir" || return 1
+    git submodule update --init --recursive || return 1
+    meson setup build . || return 1
+    ninja -C build || return 1
+    ninja -C build install || return 1
+    ldconfig || return 1
+}
+
+if command -v mavlink-routerd >/dev/null 2>&1; then
+    echo "mavlink-routerd вже встановлено: $(command -v mavlink-routerd)"
+elif apt-get install -y mavlink-router && command -v mavlink-routerd >/dev/null 2>&1; then
+    echo "mavlink-routerd встановлено через apt: $(command -v mavlink-routerd)"
+elif install_mavlink_router_from_source && command -v mavlink-routerd >/dev/null 2>&1; then
+    echo "mavlink-routerd зібрано з source: $(command -v mavlink-routerd)"
+else
+    echo "Попередження: не вдалось встановити mavlink-routerd, буде використано Python fallback."
+fi
+
 # 2. Налаштування користувача, прав та груп для роботи з залізом (UART)
 echo "2. Конфігурація користувача та доступів до заліза..."
 if ! id "$SERVICE_USER" &>/dev/null; then
@@ -61,10 +99,14 @@ mkdir -p "$INSTALL_DIR"
 # Копіюємо ваші Python-файли
 cp -p "$DEPLOY_DIR/telemetry_daemon.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/telemetry_sender.py" "$INSTALL_DIR/"
+cp -p "$DEPLOY_DIR/telemetry_snapshot.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/mavlink_router.py" "$INSTALL_DIR/"
+cp -p "$DEPLOY_DIR/mavlink_client.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/mavlink_bridge.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/config.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/requirements.txt" "$INSTALL_DIR/"
+cp -p "$DEPLOY_DIR/run_mavlink_router.sh" "$INSTALL_DIR/"
+cp -p "$SERVICES_SRC_DIR/mav-router.conf" "$INSTALL_DIR/"
 
 # Динамічно виправляємо жорстко прописаний шлях імпорту в telemetry_daemon.py
 sed -i 's|/opt/sirena-video/|/opt/sirena-telemetry/|g' "$INSTALL_DIR/telemetry_daemon.py"
@@ -98,7 +140,7 @@ if [ -f "$SERVICES_SRC_DIR/telemetry-sender.service" ]; then
     chmod 644 /etc/systemd/system/telemetry-sender.service
     echo "telemetry-sender.service скопійовано."
 else
-    echo "⚠Попередження: telemetry-sender.service не знайдено в папці services."
+    echo "Попередження: telemetry-sender.service не знайдено в папці services."
 fi
 
 if [ -f "$SERVICES_SRC_DIR/mavlink-router.service" ]; then
