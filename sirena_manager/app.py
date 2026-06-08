@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 
 from .config import MANAGER_HOST, MANAGER_PORT
 from .supervisor import SirenaSupervisor
@@ -56,5 +56,14 @@ def create_app() -> Flask:
     @app.post("/api/v1/bootstrap/stop")
     def stop_bootstrap():
         return jsonify(supervisor.stop_boot_sequence())
+
+    @app.get("/api/v1/cameras")
+    def list_cameras():
+        return jsonify(supervisor.list_cameras())
+
+    @app.post("/api/v1/camera")
+    def set_camera():
+        payload = request.get_json(silent=True) or {}
+        return jsonify(supervisor.set_camera(payload.get("camera", "")))
 
     return app

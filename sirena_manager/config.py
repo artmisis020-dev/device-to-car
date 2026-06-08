@@ -10,6 +10,12 @@ MANAGER_PORT = int(os.environ.get("SIRENA_MANAGER_PORT", os.environ.get("MANAGER
 SYSTEMCTL = os.environ.get("SIRENA_SYSTEMCTL", "sudo systemctl")
 ADMIN_SERVER_URL = os.environ.get("SIRENA_ADMIN_SERVER_URL", "http://127.0.0.1:8080")
 SIRENA_VERSION = os.environ.get("SIRENA_VERSION", "dev")
+HEARTBEAT_INTERVAL_SEC = int(os.environ.get("SIRENA_HEARTBEAT_INTERVAL_SEC", "30"))
+WG_INTERFACES = tuple(
+    iface.strip()
+    for iface in os.environ.get("SIRENA_WG_INTERFACES", "wg0,Gerbera").split(",")
+    if iface.strip()
+)
 VIDEO_STATUS_UNIT = "video-streamer.service"
 MAVLINK_ROUTER_UNIT = "mavlink-router.service"
 TELEMETRY_SENDER_UNIT = "telemetry-sender.service"
@@ -18,6 +24,8 @@ VIDEO_MANAGER_UNIT = "video-service-manager.service"
 VIDEO_RELAY_UNIT = "video-relay.service"
 WEBRTC_CAMERA_UNIT = "webrtc-camera.service"
 VIDEO_STREAMER_UNIT = "video-streamer.service"
+ROOT_ENV_PATH = os.environ.get("SIRENA_ROOT_ENV_PATH", "/opt/sirena/.env")
+TELEMETRY_SNAPSHOT_PATH = os.environ.get("SIRENA_TELEMETRY_SNAPSHOT_PATH", "/tmp/sirena_mavlink_snapshot.json")
 
 
 @dataclass(frozen=True)
