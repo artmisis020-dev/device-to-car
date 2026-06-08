@@ -18,6 +18,7 @@ SERVICE_USER="sirena"
 SUDOERS_FILE="/etc/sudoers.d/sirena-navigation-systemd"
 SERVICES_SRC_DIR="$DEPLOY_DIR/services"
 NAV_SERVICE="sirena-gps-hub.service"
+STARLINK_GPS_SERVICE="sirena-starlink-gps.service"
 
 echo "=== Початок встановлення Sirena Navigation ==="
 echo "Джерело файлів: $DEPLOY_DIR"
@@ -85,6 +86,20 @@ if [ -f "$SERVICES_SRC_DIR/$NAV_SERVICE" ]; then
     echo "$NAV_SERVICE скопійовано та оновлено під $INSTALL_DIR."
 else
     echo "Попередження: $NAV_SERVICE не знайдено в папці services."
+fi
+
+echo "6. Копіювання та патч сервісу $STARLINK_GPS_SERVICE..."
+if [ -f "$SERVICES_SRC_DIR/$STARLINK_GPS_SERVICE" ]; then
+    cp "$SERVICES_SRC_DIR/$STARLINK_GPS_SERVICE" /etc/systemd/system/
+    chmod 644 "/etc/systemd/system/$STARLINK_GPS_SERVICE"
+
+    sed -i "s|^WorkingDirectory=.*|WorkingDirectory=$INSTALL_DIR|" "/etc/systemd/system/$STARLINK_GPS_SERVICE"
+    sed -i "s|^ExecStart=.*|ExecStart=$INSTALL_DIR/venv/bin/python $INSTALL_DIR/starlink_gps_service.py|" "/etc/systemd/system/$STARLINK_GPS_SERVICE"
+    sed -i "s|^Environment=PYTHONPATH=.*|Environment=PYTHONPATH=$INSTALL_DIR|" "/etc/systemd/system/$STARLINK_GPS_SERVICE"
+
+    echo "$STARLINK_GPS_SERVICE скопійовано та оновлено під $INSTALL_DIR."
+else
+    echo "Попередження: $STARLINK_GPS_SERVICE не знайдено в папці services."
 fi
 
 systemctl daemon-reload

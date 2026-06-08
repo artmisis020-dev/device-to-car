@@ -22,28 +22,25 @@
   Manual(60s) > Starlink(стабільний) > Forecast(5s) > Beitian
 """
 
-import json
 import math
 import time
 import threading
 import signal
 import logging
 import datetime
-import hashlib
-import socket
-import subprocess
-import urllib.request
-import urllib.error
 from collections import deque
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
 # Локальні модулі (оригінальний Sirena)
 import starlink
-# import dtc
 import mavlink_bridge
 import gps_priority
 import config
+try:
+    from telemetry_snapshot import TelemetrySnapshotPublisher
+except ImportError:
+    TelemetrySnapshotPublisher = None
 
 # StarGPSHandler з satellite-gps-
 import sys
@@ -69,73 +66,6 @@ GPS_STDEV_KOE          = 1.5     # поточна швидкість має бу
 FORECAST_SECONDS       = 5       # тривалість forecast вікна (сек)
 FORECAST_HZ            = 5       # дискретизація forecast (точок/сек)
 
-# ---------------------------------------------------------------------------
-# Sirena Registry — handshake / heartbeat
-# ---------------------------------------------------------------------------
-REGISTRY_URL        = config.REGISTRY_URL
-REGISTRY_ENABLED    = True          # False → вимкнути перевірку (dev mode)
-HANDSHAKE_TIMEOUT   = 300           # сек — максимум чекати approve (5 хв)
-HANDSHAKE_INTERVAL  = 10            # сек — пауза між спробами handshake
-HEARTBEAT_INTERVAL  = 60            # сек — інтервал heartbeat
-SIRENA_VERSION      = config.SIRENA_VERSION
-
-
-def _get_hardware_id() -> str:
-    """Унікальний ідентифікатор пристрою — SHA256 від RPi serial + MAC."""
-    parts = []
-    # RPi serial number
-    try:
-        with open("/proc/cpuinfo") as f:
-            for line in f:
-                if line.startswith("Serial"):
-                    parts.append(line.split(":")[1].strip())
-                    break
-    except Exception:
-        pass
-    # MAC адреса першого мережевого інтерфейсу
-    try:
-        out = subprocess.check_output(["cat", "/sys/class/net/eth0/address"],
-                                      stderr=subprocess.DEVNULL).decode().strip()
-        parts.append(out)
-    except Exception:
-        try:
-            out = subprocess.check_output(["cat", "/sys/class/net/wlan0/address"],
-                                          stderr=subprocess.DEVNULL).decode().strip()
-            parts.append(out)
-        except Exception:
-            pass
-    raw = "|".join(parts) or "unknown"
-    return hashlib.sha256(raw.encode()).hexdigest()
-
-
-def _get_video_version() -> str:
-    """Версія video сервісу."""
-    try:
-        result = subprocess.check_output(
-            ["systemctl", "show", config.VIDEO_STATUS_UNIT, "--property=ActiveState"],
-            stderr=subprocess.DEVNULL).decode().strip()
-        return "active" if "active" in result else "inactive"
-    except Exception:
-        return "unknown"
-
-
-def _registry_request(endpoint: str, payload: dict) -> Optional[dict]:
-    """HTTP POST до registry сервера. Повертає JSON або None при помилці."""
-    try:
-        data = json.dumps(payload).encode()
-        req  = urllib.request.Request(
-            f"{REGISTRY_URL}{endpoint}",
-            data=data,
-            headers={"Content-Type": "application/json"},
-            method="POST"
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read().decode())
-    except Exception as e:
-        logger.debug(f"Registry request {endpoint} failed: {e}")
-        return None
-
-
 class MavLinkGPSHub:
     """
     Головна система управління GPS та MAVLink комунікацією.
@@ -148,9 +78,8 @@ class MavLinkGPSHub:
     - [NEW] StarGPSHandler — статистичний фільтр + forecast
     """
 
-    def __init__(self, conf_file: str = "conf.js"):
+    def __init__(self, starlink_service):
         self.running = False
-        self.conf = {}
         self.last_manual_coords: Optional[Dict[str, float]] = None
         self.last_manual_time: float = 0.0
         self.last_starlink_check = 0.0
@@ -163,16 +92,15 @@ class MavLinkGPSHub:
         self._fc_heartbeat_seen = False
         self.uart_tx_ok = 0
         self.uart_tx_fail = 0
-        self.manual_hold_sec = 45.0
-        self.manual_sats = 12
-        self.manual_alt_max_delta_m = 120.0
+        self.manual_hold_sec = config.MANUAL_HOLD_SEC
+        self.manual_sats = config.MANUAL_SATS
+        self.manual_alt_max_delta_m = config.MANUAL_ALT_MAX_DELTA_M
         self.last_output_alt: Optional[float] = None
-        self.starlink_filter_window = 15
-        self.starlink_pos_jump_max_m = 80.0
-        self.starlink_alt_jump_max_m = 120.0
-        self.starlink_poll_sec = 1.0
-        self.starlink_retry_sec = 60.0
-        self._starlink_samples = deque(maxlen=self.starlink_filter_window)
+        self.starlink_filter_window = config.STARLINK_FILTER_WINDOW
+        self.starlink_pos_jump_max_m = config.STARLINK_POS_JUMP_MAX_M
+        self.starlink_alt_jump_max_m = config.STARLINK_ALT_JUMP_MAX_M
+        self.starlink_poll_sec = config.STARLINK_POLL_SEC
+        self.starlink_retry_sec = config.STARLINK_RETRY_SEC
 
         # --- [NEW] StarGPSHandler стан ---
         self._stargps: StarGPSHandler = StarGPSHandler(maxlen=GPS_QUEUE_SIZE)
@@ -181,85 +109,74 @@ class MavLinkGPSHub:
         self._forecast_list: List[GPSRecord] = []
         self._forecast_time: float = 0.0
 
-        # --- Registry handshake ---
-        self._device_id: str = _get_hardware_id()
-        self._registry_approved: bool = False
-        self._heartbeat_thread: Optional[threading.Thread] = None
-
-        # Завантажуємо конфіг
-        self.load_config(conf_file)
-
-        # Ініціалізуємо параметри з конфігу
-        self.manual_hold_sec = max(30.0, min(60.0, float(self.conf.get("manual_hold_sec", 45.0))))
-        self.manual_sats = max(6, int(self.conf.get("manual_sats", 12)))
-        self.manual_alt_max_delta_m = max(20.0, float(self.conf.get("manual_alt_max_delta_m", 120.0)))
-        self.starlink_filter_window = max(3, int(self.conf.get("starlink_filter_window", 15)))
-        self.starlink_pos_jump_max_m = float(self.conf.get("starlink_pos_jump_max_m", 80.0))
-        self.starlink_alt_jump_max_m = float(self.conf.get("starlink_alt_jump_max_m", 120.0))
-        self.starlink_poll_sec = max(0.5, float(self.conf.get("starlink_poll_sec", 1.0)))
-        self.starlink_retry_sec = max(5.0, float(self.conf.get("starlink_retry_sec", 60.0)))
-        self.starlink_algo = str(self.conf.get("starlink_algo", "ARC4")).upper()
-        self.starlink_max_speed_mps = float(self.conf.get("starlink_max_speed_mps", 40.0))
+        self.starlink_algo = config.STARLINK_ALGO
+        self.starlink_max_speed_mps = config.STARLINK_MAX_SPEED_MPS
         # self.arc4_hyst = Arc4Hysteresis()
         self._starlink_samples = deque(maxlen=self.starlink_filter_window)
 
         self.priority = gps_priority.GPSPriority(
             manual_timeout_sec=self.manual_hold_sec,
-            talker=self.conf.get("talker", "GP")
+            talker=config.NMEA_TALKER
         )
-        conf_mode = str(self.conf.get("source_mode", "AUTO")).upper()
-        if conf_mode in ("AUTO", "STARLINK", "BEITIAN"):
-            self.source_mode = conf_mode
+        if config.SOURCE_MODE in ("AUTO", "STARLINK", "BEITIAN"):
+            self.source_mode = config.SOURCE_MODE
         self.bridge = None
-        # self.dtc_client = dtc.get_client()
+        self.telemetry_snapshot = TelemetrySnapshotPublisher() if TelemetrySnapshotPublisher else None
 
         self.starlink_thread = None
         self.beitian_thread = None
         self.mavlink_thread = None
 
         self.lock = threading.Lock()
+        self.starlink_service = starlink_service
 
-    def load_config(self, conf_file: str):
-        try:
-            conf_path = Path(conf_file)
-            if conf_path.exists():
-                with open(conf_path, 'r') as f:
-                    self.conf = json.load(f)
-                logger.info(f"Конфіг завантажено: {conf_file}")
-            else:
-                logger.warning(f"Конфіг не знайден: {conf_file}")
-                self.conf = {
-                    "dtc_ip": config.DEFAULT_DTC_IP,
-                    "dtc_port": config.DEFAULT_DTC_PORT,
-                    "starlink_ip": config.DEFAULT_STARLINK_IP,
-                    "starlink_port": config.DEFAULT_STARLINK_PORT,
-                    "uart_gps_port": config.DEFAULT_UART_GPS_PORT,
-                    "uart_gps_baud": config.DEFAULT_UART_GPS_BAUD,
-                    "uart_fc_port": config.DEFAULT_UART_FC_PORT,
-                    "uart_fc_baud": config.DEFAULT_UART_FC_BAUD,
-                    "manual_hold_sec": 45,
-                    "manual_sats": 12,
-                    "manual_alt_max_delta_m": 120.0,
-                    "starlink_filter_window": 15,
-                    "starlink_pos_jump_max_m": 80.0,
-                    "starlink_alt_jump_max_m": 120.0,
-                    "starlink_poll_sec": 1.0,
-                    "starlink_retry_sec": 60.0,
-                    "talker": "GP",
-                    "interval_sec": 0.2,
-                    "broadcast": True,
-                    "print_every": 5
-                }
-        except Exception as e:
-            logger.error(f"Помилка завантаження конфіга: {e}")
-            self.conf = {}
+    def _store_manual_coords(self, msg_data: Dict[str, Any], raw_alt: float) -> Dict[str, float]:
+        lat = msg_data.get("latitude")
+        lon = msg_data.get("longitude")
+        if lat is None or lon is None:
+            raise ValueError("manual GPS command missing latitude/longitude")
+
+        with self.lock:
+            prev_alt = self.last_output_alt
+
+        if prev_alt is not None and abs(raw_alt - prev_alt) > self.manual_alt_max_delta_m:
+            manual_alt = prev_alt
+            logger.warning(
+                f"MANUAL altitude clamped: raw={raw_alt:.1f}m, prev={prev_alt:.1f}m"
+            )
+        elif raw_alt == 0.0 and prev_alt is not None:
+            manual_alt = prev_alt
+        else:
+            manual_alt = raw_alt
+
+        manual_coords = {
+            "latitude": float(lat),
+            "longitude": float(lon),
+            "altitude": float(manual_alt),
+            "sats": float(self.manual_sats),
+        }
+        with self.lock:
+            self.last_manual_coords = manual_coords
+            self.last_manual_marker = dict(manual_coords)
+            self.last_manual_time = time.time()
+        logger.info(f"Manual GPS встановилось: {manual_coords}")
+        return manual_coords
+
+    def _send_manual_status(self, manual_coords: Dict[str, float]) -> None:
+        if not self.bridge:
+            return
+        self.bridge.send_statustext(
+            f"GPS Origin Set: {manual_coords['latitude']:.6f}, "
+            f"{manual_coords['longitude']:.6f} alt={manual_coords['altitude']:.1f}",
+            severity=0
+        )
 
     def connect_hardware(self) -> bool:
         try:
-            uart_in_port = self.conf.get("uart_gps_port", config.DEFAULT_UART_GPS_PORT)
-            uart_in_baud = self.conf.get("uart_gps_baud", config.DEFAULT_UART_GPS_BAUD)
-            uart_out_port = self.conf.get("uart_fc_port", config.DEFAULT_UART_FC_PORT)
-            uart_out_baud = self.conf.get("uart_fc_baud", config.DEFAULT_UART_FC_BAUD)
+            uart_in_port = config.UART_GPS_PORT
+            uart_in_baud = config.UART_GPS_BAUD
+            uart_out_port = config.UART_FC_PORT
+            uart_out_baud = config.UART_FC_BAUD
 
             self.bridge = mavlink_bridge.MAVLinkBridge()
 
@@ -276,7 +193,7 @@ class MavLinkGPSHub:
 
             self.bridge.set_gcs_callback(self._handle_gcs_command)
 
-            logger.info("Апаратура успішно підключена ✓")
+            logger.info("Всі пристрої успішно підключена ✓")
             return True
 
         except Exception as e:
@@ -290,37 +207,8 @@ class MavLinkGPSHub:
             if msg_type == "SET_GPS_GLOBAL_ORIGIN":
                 msg_data = self.bridge.handle_set_gps_global_origin(msg) if self.bridge else {}
                 raw_alt = float(msg_data.get("altitude", 0.0) or 0.0)
-
-                with self.lock:
-                    prev_alt = self.last_output_alt
-
-                if prev_alt is not None and abs(raw_alt - prev_alt) > self.manual_alt_max_delta_m:
-                    manual_alt = prev_alt
-                    logger.warning(
-                        f"MANUAL altitude clamped: raw={raw_alt:.1f}m, prev={prev_alt:.1f}m"
-                    )
-                elif raw_alt == 0.0 and prev_alt is not None:
-                    manual_alt = prev_alt
-                else:
-                    manual_alt = raw_alt
-
-                with self.lock:
-                    self.last_manual_coords = {
-                        "latitude": msg_data.get("latitude"),
-                        "longitude": msg_data.get("longitude"),
-                        "altitude": manual_alt,
-                        "sats": self.manual_sats,
-                    }
-                    self.last_manual_marker = dict(self.last_manual_coords)
-                    self.last_manual_time = time.time()
-                logger.info(f"Manual GPS встановилось: {self.last_manual_coords}")
-
-                if self.bridge:
-                    self.bridge.send_statustext(
-                        f"GPS Origin Set: {self.last_manual_coords['latitude']:.6f}, "
-                        f"{self.last_manual_coords['longitude']:.6f} alt={manual_alt:.1f}",
-                        severity=0
-                    )
+                manual_coords = self._store_manual_coords(msg_data, raw_alt)
+                self._send_manual_status(manual_coords)
 
             elif msg_type == "COMMAND_INT":
                 command = int(getattr(msg, "command", -1))
@@ -335,30 +223,8 @@ class MavLinkGPSHub:
                             "altitude": alt,
                         }
                         raw_alt = float(msg_data.get("altitude", 0.0) or 0.0)
-                        with self.lock:
-                            prev_alt = self.last_output_alt
-                        if prev_alt is not None and abs(raw_alt - prev_alt) > self.manual_alt_max_delta_m:
-                            manual_alt = prev_alt
-                        elif raw_alt == 0.0 and prev_alt is not None:
-                            manual_alt = prev_alt
-                        else:
-                            manual_alt = raw_alt
-                        with self.lock:
-                            self.last_manual_coords = {
-                                "latitude": msg_data.get("latitude"),
-                                "longitude": msg_data.get("longitude"),
-                                "altitude": manual_alt,
-                                "sats": self.manual_sats,
-                            }
-                            self.last_manual_marker = dict(self.last_manual_coords)
-                            self.last_manual_time = time.time()
-                        logger.info(f"Manual GPS встановилось: {self.last_manual_coords}")
-                        if self.bridge:
-                            self.bridge.send_statustext(
-                                f"GPS Origin Set: {self.last_manual_coords['latitude']:.6f}, "
-                                f"{self.last_manual_coords['longitude']:.6f} alt={manual_alt:.1f}",
-                                severity=0
-                            )
+                        manual_coords = self._store_manual_coords(msg_data, raw_alt)
+                        self._send_manual_status(manual_coords)
 
             elif msg_type == "LED_CONTROL":
                 msg_data = self.bridge.handle_led_control(msg) if self.bridge else {}
@@ -394,30 +260,8 @@ class MavLinkGPSHub:
                         "altitude": float(p7 or 0.0),
                     }
                     raw_alt = float(msg_data.get("altitude", 0.0) or 0.0)
-                    with self.lock:
-                        prev_alt = self.last_output_alt
-                    if prev_alt is not None and abs(raw_alt - prev_alt) > self.manual_alt_max_delta_m:
-                        manual_alt = prev_alt
-                    elif raw_alt == 0.0 and prev_alt is not None:
-                        manual_alt = prev_alt
-                    else:
-                        manual_alt = raw_alt
-                    with self.lock:
-                        self.last_manual_coords = {
-                            "latitude": msg_data.get("latitude"),
-                            "longitude": msg_data.get("longitude"),
-                            "altitude": manual_alt,
-                            "sats": self.manual_sats,
-                        }
-                        self.last_manual_marker = dict(self.last_manual_coords)
-                        self.last_manual_time = time.time()
-                    logger.info(f"Manual GPS встановилось: {self.last_manual_coords}")
-                    if self.bridge:
-                        self.bridge.send_statustext(
-                            f"GPS Origin Set: {self.last_manual_coords['latitude']:.6f}, "
-                            f"{self.last_manual_coords['longitude']:.6f} alt={manual_alt:.1f}",
-                            severity=0
-                        )
+                    manual_coords = self._store_manual_coords(msg_data, raw_alt)
+                    self._send_manual_status(manual_coords)
 
         except Exception as e:
             logger.error(f"Помилка обробки команди GCS: {e}")
@@ -530,10 +374,11 @@ class MavLinkGPSHub:
 
                         if location and location.get("available"):
                             # 1. Оригінальний фільтр (moving average + outlier rejection)
-                            filtered = self._filter_starlink_location(location)
+                            # filtered = self._filter_starlink_location(location)
+                            filtered = location
                             with self.lock:
                                 self.starlink_available = True
-                                self.last_starlink_data = filtered
+                                self.last_starlink_data = location
 
                             logger.info(
                                 f"Starlink OK(raw→flt): "
@@ -662,7 +507,7 @@ class MavLinkGPSHub:
             return self.last_starlink_data or location
 
     # -----------------------------------------------------------------------
-    # Beitian worker
+    # Beitian worker / Any standart GPS should here implemented
     # -----------------------------------------------------------------------
 
     def beitian_worker(self):
@@ -727,6 +572,8 @@ class MavLinkGPSHub:
                     if (not self._fc_heartbeat_seen) and msg_fc.get_type() == "HEARTBEAT":
                         self._fc_heartbeat_seen = True
                         logger.info("FC HEARTBEAT detected and forwarded to GCS")
+                    if self.telemetry_snapshot:
+                        self.telemetry_snapshot.update_from_msg(msg_fc)
                     self.bridge.send_to_gcs(msg_fc)
 
                 if processed == 0:
@@ -744,6 +591,11 @@ class MavLinkGPSHub:
         """
         Головний цикл: вибір GPS, формування та відправка NMEA.
 
+        TODO: REFACTOR:
+          This is the legacy NMEA GPS hub flow. Keep for fallback/testing, but
+          migrate Starlink GPS injection to MAVLink GPS_INPUT so navigation
+          does not need a separate NMEA UART output to FC.
+
         Розширений пріоритет джерел:
           Manual(60s) > Starlink(stable) > Forecast(5s) > Beitian
         """
@@ -751,8 +603,8 @@ class MavLinkGPSHub:
 
         loop_count    = 0
         last_adsb_time = time.time()
-        interval      = self.conf.get("interval_sec", 0.2)
-        print_every   = self.conf.get("print_every", 5)
+        interval = config.MAIN_LOOP_INTERVAL_SEC
+        print_every = config.PRINT_EVERY
 
         while self.running:
             try:
@@ -828,17 +680,6 @@ class MavLinkGPSHub:
                         altitude=gps_data.get("altitude", 0.0),
                         sats=sats
                     )
-
-                    # Відправляємо на DTC
-                    if self.conf.get("broadcast"):
-                        try:
-                            self.dtc_client.send_nmea(
-                                self.conf.get("dtc_ip", "127.0.0.1"),
-                                self.conf.get("dtc_port", 10110),
-                                gga, rmc
-                            )
-                        except Exception as e:
-                            logger.debug(f"DTC send error: {e}")
 
                     # Відправляємо в FC через UART
                     if self.bridge:
@@ -920,100 +761,13 @@ class MavLinkGPSHub:
                 time.sleep(0.1)
 
     # -----------------------------------------------------------------------
-    # -----------------------------------------------------------------------
-    # Registry — handshake + heartbeat
-    # -----------------------------------------------------------------------
-
-    def handshake(self) -> bool:
-        """
-        Реєструє пристрій на сервері та чекає підтвердження.
-        Повертає True якщо approved, False якщо timeout або registry вимкнений.
-        """
-        if not REGISTRY_ENABLED:
-            logger.info("[Registry] Вимкнено (REGISTRY_ENABLED=False), пропускаємо")
-            return True
-
-        payload = {
-            "device_id":      self._device_id,
-            "hostname":       socket.gethostname(),
-            "hardware":       self._device_id[:16],
-            "sirena_version": SIRENA_VERSION,
-            "video_version":  _get_video_version(),
-        }
-
-        logger.info(f"[Registry] Реєстрація пристрою: {self._device_id[:12]}… на {REGISTRY_URL}")
-        deadline = time.time() + HANDSHAKE_TIMEOUT
-
-        while time.time() < deadline:
-            resp = _registry_request("/api/register", payload)
-            if resp is None:
-                logger.warning("[Registry] Сервер недоступний, повторна спроба через 10 сек…")
-                time.sleep(HANDSHAKE_INTERVAL)
-                continue
-
-            status = resp.get("status", "pending")
-            if status == "approved":
-                logger.info(f"[Registry] ✅ Approved! valid_until={resp.get('valid_until')}")
-                self._registry_approved = True
-                return True
-            elif status == "pending":
-                logger.info(f"[Registry] ⏳ Очікуємо підтвердження на {REGISTRY_URL} …")
-                time.sleep(HANDSHAKE_INTERVAL)
-            else:
-                logger.error(f"[Registry] ❌ Відхилено сервером: {resp}")
-                return False
-
-        logger.error(f"[Registry] ❌ Timeout {HANDSHAKE_TIMEOUT}s — сервіс не підтверджено")
-        return False
-
-    def heartbeat_worker(self):
-        """Фоновий потік — надсилає heartbeat кожні HEARTBEAT_INTERVAL секунд.
-        При revoke переходить в режим очікування і відновлюється автоматично при approve."""
-        if not REGISTRY_ENABLED:
-            return
-
-        logger.info("[Registry] Heartbeat worker запущено")
-        while self.running:
-            time.sleep(HEARTBEAT_INTERVAL)
-            if not self.running:
-                break
-            resp = _registry_request("/api/heartbeat", {"device_id": self._device_id})
-            if resp is None:
-                logger.warning("[Registry] Heartbeat: сервер недоступний")
-                continue
-            status = resp.get("status", "unknown")
-            if status == "approved":
-                if not self._registry_approved:
-                    logger.info("[Registry] ✅ Доступ відновлено — продовжуємо передачу GPS")
-                    self._registry_approved = True
-                else:
-                    logger.debug("[Registry] Heartbeat OK")
-            elif status in ("revoked", "unknown"):
-                if self._registry_approved:
-                    logger.warning(f"[Registry] ⏸ Доступ відкликано ({status}) — призупиняємо передачу GPS")
-                    self._registry_approved = False
-                # Polling faster while suspended
-                logger.info(f"[Registry] Очікуємо відновлення доступу (перевірка кожні {HANDSHAKE_INTERVAL}s)…")
-                while self.running and not self._registry_approved:
-                    time.sleep(HANDSHAKE_INTERVAL)
-                    r2 = _registry_request("/api/heartbeat", {"device_id": self._device_id})
-                    if r2 and r2.get("status") == "approved":
-                        logger.info("[Registry] ✅ Доступ відновлено — продовжуємо передачу GPS")
-                        self._registry_approved = True
-
-    # -----------------------------------------------------------------------
     # Run / Shutdown
     # -----------------------------------------------------------------------
 
-    def run(self):
+    def start(self):
         logger.info("=" * 60)
         logger.info("MavLink GPS Hub — Enhanced (Sirena + satellite-gps-)")
         logger.info("=" * 60)
-
-        # ── Registry handshake ─────────────────────────────────────────────
-        if not self.handshake():
-            logger.error("Сервіс не авторизовано реєстром — зупинка")
-            return False
 
         if not self.connect_hardware():
             logger.error("Не вдалось підключитись до апаратури!")
@@ -1036,11 +790,6 @@ class MavLinkGPSHub:
         )
         self.mavlink_thread.start()
 
-        self._heartbeat_thread = threading.Thread(
-            target=self.heartbeat_worker, daemon=True, name="HeartbeatWorker"
-        )
-        self._heartbeat_thread.start()
-
         logger.info("Робочі потоки запущені")
 
         try:
@@ -1048,9 +797,9 @@ class MavLinkGPSHub:
         except KeyboardInterrupt:
             logger.info("Прийнято Ctrl+C")
         finally:
-            self.shutdown()
+            self.stop()
 
-    def shutdown(self):
+    def stop(self):
         logger.info("Завершення роботи...")
         self.running = False
 
@@ -1069,16 +818,22 @@ class MavLinkGPSHub:
 
         logger.info("Система зупинена.")
 
+def main() -> None:
+    core = MavLinkGPSHub(starlink)
 
-def signal_handler(signum, frame):
-    logger.info(f"Отримано сигнал {signum}, завершую...")
-    if hasattr(signal_handler, 'hub'):
-        signal_handler.hub.shutdown()
+    def shutdown(signum, frame):
+        del frame
+        logger.info(f"Отримано сигнал {signum}, завершую...")
+        core.stop()
+
+    signal.signal(signal.SIGINT, shutdown)
+    signal.signal(signal.SIGTERM, shutdown)
+
+    try:
+        core.start()
+    finally:
+        core.stop()
 
 
 if __name__ == "__main__":
-    hub = MavLinkGPSHub(conf_file="conf.js")
-    signal_handler.hub = hub
-    signal.signal(signal.SIGINT,  signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    hub.run()
+    main()
