@@ -43,7 +43,7 @@ That script copies the RPi-side code to `/opt/sirena`, installs the local worker
 UART mapping used by the installer:
 - `uart2` for Beitian GPS
 - `uart3` for FC GPS/NMEA output
-- `uart5` for FC telemetry on GPIO12/13 (pins 32/33)
+- `uart0` for FC MAVLink telemetry on GPIO14/15 (pins 8/10)
 
 Manual start:
 

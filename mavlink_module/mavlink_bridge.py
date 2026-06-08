@@ -211,6 +211,12 @@ class MAVLinkBridge:
         """
         Пересилає MAVLink команду від GCS до FC.
 
+        TODO: REFACTOR/INVESTIGATE:
+          This writes to self.mav_fc, which is opened as udpin:<FC_RECV_PORT>
+          for packets coming from mavlink_router. mavlink_router listens for
+          back-to-FC packets on ROUTER_BIND_PORT=14556, so command forwarding
+          should be reviewed and made explicit before relying on this path.
+
         ВАЖЛИВО: деякі команди від GCS перехоплюються і НЕ пересилаються FC:
           - SET_GPS_GLOBAL_ORIGIN → обробляємо самі (ручна GPS точка)
           - LED_CONTROL           → обробляємо самі (переключення джерела GPS)
@@ -229,6 +235,11 @@ class MAVLinkBridge:
     def read_uart_nmea(self) -> Optional[str]:
         """
         Читає один рядок NMEA з UART (Beitian GPS).
+
+        TODO: REFACTOR:
+          Legacy NMEA GPS path. The target architecture is MAVLink GPS_INPUT
+          through a dedicated MAVLink service, so this should either be isolated
+          as a fallback module or removed after the MAVLink GPS path is proven.
 
         Повертає рядок типу "$GPGGA,..." або "$GPRMC,...".
         Beitian_worker викликає це в циклі і зберігає тільки GGA/RMC рядки.
@@ -249,6 +260,10 @@ class MAVLinkBridge:
     def write_uart_nmea(self, gga: str, rmc: str) -> bool:
         """
         Записує GGA + RMC в UART FC (5 Hz з main_loop).
+
+        TODO: REFACTOR:
+          Legacy NMEA GPS injection. Prefer MAVLink GPS_INPUT for the new
+          Starlink GPS service and keep this only as an explicit fallback.
 
         FC (ArduPilot) читає цей UART як GPS1 (GPS_TYPE=5 NMEA, 38400 baud).
         Обидва рядки GGA і RMC потрібні — GGA дає позицію+висоту,
