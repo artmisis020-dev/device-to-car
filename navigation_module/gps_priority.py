@@ -238,6 +238,10 @@ class GPSPriority:
         """
         Формує GGA + RMC рядки для відправки в FC через UART.
 
+        TODO: REFACTOR:
+          Legacy NMEA GPS output. The new Starlink path should send MAVLink
+          GPS_INPUT through navigation_module/mavlink_service.py instead.
+
         FC (ArduPilot GPS_TYPE=5 NMEA) читає ці рядки і оновлює свою
         GPS позицію — саме звідси береться координата в Mission Planner
         і використовується для навігації.

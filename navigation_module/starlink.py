@@ -9,140 +9,102 @@
 """
 
 import logging
-from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
+
+import config
 import starlink_grpc
 
 # Налаштування логування
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [starlink]: %(message)s"
+    level=logging.INFO, format="%(asctime)s %(levelname)s [starlink]: %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-# Константи
-DEFAULT_STARLINK_IP = "192.168.100.1"
-DEFAULT_STARLINK_PORT = 9200
-DEFAULT_TARGET = f"{DEFAULT_STARLINK_IP}:{DEFAULT_STARLINK_PORT}"
+# Backwards-compatible alias for existing callers.
+DEFAULT_TARGET = config.DEFAULT_TARGET
+
+
+def _get_nested(obj: Any, *path: str, default: Any = None) -> Any:
+    current = obj
+    for name in path:
+        try:
+            if isinstance(current, dict):
+                current = current[name]
+            else:
+                current = getattr(current, name)
+        except (AttributeError, KeyError, TypeError, ValueError):
+            return default
+    return current
+
 
 class StarlinkClient:
     """
     Клієнт для роботи з Starlink gRPC API.
-    
+
     Надає методи для отримання координат, статусу, керування dish.
     Включає кешування при помилках зв'язку.
     """
-    
-    def __init__(self, starlink_grpc_module: Any = None):
+
+    def __init__(self, starlink_grpc_module: Any = None, target: str = ""):
         """
         Ініціалізувати клієнт Starlink.
-        
+
         Args:
-            starlink_grpc_module: Модуль starlink_grpc з starlink-grpc-tools.
-                                 Якщо None, буде автоматично завантажен.
+            starlink_grpc_module: Optional fake/test module. Production uses
+                                  the installed starlink_grpc package.
+            target: Starlink dish Address
         """
-        self.grpc = starlink_grpc_module or self._import_starlink_grpc()
-        # Кеш для зберігання останніх успішних даних
-        self._location_cache = None
-        self._status_cache = None
-    
-    @staticmethod
-    def _import_starlink_grpc() -> Any:
-        """Завантажити модуль starlink_grpc з starlink-grpc-tools."""
-        return starlink_grpc
-        # base = Path(__file__).resolve().parent
-        # tools_dir = base / "starlink-grpc-tools"
-        
-        # if not (tools_dir / "starlink_grpc.py").exists():
-        #     raise FileNotFoundError(f"Не знайдено {tools_dir / 'starlink_grpc.py'}")
-        
-        # sys.path.insert(0, str(tools_dir))
-        # try:
-        #     import starlink_grpc  # type: ignore
-        #     logger.info("Модуль starlink_grpc успішно завантажено")
-        #     return starlink_grpc
-        # except ImportError as e:
-        #     logger.error(f"Не вдалось завантажити starlink_grpc: {e}")
-        #     raise
-    
-    def get_location(self, target: str = DEFAULT_TARGET) -> Dict[str, Any]:
+        self.grpc = starlink_grpc_module
+        self.target = target
+        self.context = self.grpc.ChannelContext(target=self.target)
+
+    def get_location(self) -> Dict[str, Any] | None:
         """
         Отримати координати та статус GPS з Starlink dish.
-        
-        Args:
-            target: Адреса у форматі "IP:PORT" (default: 192.168.100.1:9200)
-        
+
         Returns:
             Dict з ключами:
             - latitude: Широта (float або None)
             - longitude: Довгота (float або None)
             - altitude: Висота в метрах (float або None)
-            - gps_enabled: Чи увімкнена GPS на dish (bool)
-            - gps_ready: Чи готова GPS для позиціювання (bool)
-            - gps_sats: Кількість використаних супутників (int)
-            
-            При помилці повертає кешовані дані (якщо є) або None-значення.
         """
         try:
-            ctx = self.grpc.ChannelContext(target=target)
-            status, _, _ = self.grpc.status_data(context=ctx)
-            location = self.grpc.location_data(context=ctx) or {}
-            
+            location = self.grpc.location_data(context=self.context) or {}
             data = {
                 "latitude": location.get("latitude"),
                 "longitude": location.get("longitude"),
                 "altitude": location.get("altitude"),
-                "gps_enabled": status.get("gps_enabled"),
-                "gps_ready": status.get("gps_ready"),
-                "gps_sats": status.get("gps_sats") or 0,
                 "available": True,
             }
-            
-            # Кешуємо успішні дані
-            self._location_cache = data
-            logger.debug(f"GPS останні дані: lat={data['latitude']}, lon={data['longitude']}, sats={data['gps_sats']}")
-            
+
+            logger.debug(
+                f"GPS останні дані: lat={data['latitude']}, lon={data['longitude']}, sats={data['gps_sats']}"
+            )
+
             return data
-            
+
         except Exception as e:
             logger.warning(f"Не вдалось отримати координати від Starlink: {e}")
-            
-            # Повертаємо кеш при помилці
-            if self._location_cache:
-                logger.info("Використовуємо кешовані координати")
-                return self._location_cache
-            
-            # Якщо кеш відсутній, повертаємо структуру з None-значеннями
-            return {
-                "latitude": None,
-                "longitude": None,
-                "altitude": None,
-                "gps_enabled": None,
-                "gps_ready": None,
-                "gps_sats": 0,
-                "available": False,
-            }
-    
-    def get_status(self, target: str = DEFAULT_TARGET) -> Dict[str, Any]:
+            return None
+
+    def get_status(self) -> Dict[str, Any]:
         """
         Отримати повний статус Starlink dish.
-        
-        Args:
-            target: Адреса у форматі "IP:PORT"
-        
+
         Returns:
             Dict з повною інформацією про dish (див. starlink_grpc.py документацію).
             При помилці повертає кешовані дані або пусту структуру.
         """
         try:
-            ctx = self.grpc.ChannelContext(target=target)
+            ctx = self.grpc.ChannelContext(target=self.context)
             status, _, _ = self.grpc.status_data(context=ctx)
-            
+
             data = {
                 "available": True,
                 "id": status.get("id"),
                 "hardware_version": status.get("hardware_version"),
                 "software_version": status.get("software_version"),
+                "software_update": self.get_software_update_status(self.target),
                 "state": status.get("state"),
                 "uptime": status.get("uptime"),
                 "snr": status.get("snr"),
@@ -155,146 +117,157 @@ class StarlinkClient:
                 "gps_ready": status.get("gps_ready"),
                 "gps_sats": status.get("gps_sats"),
             }
-            
+
             self._status_cache = data
-            logger.debug(f"Статус Starlink: state={data['state']}, uptime={data['uptime']}s")
-            
+            logger.debug(
+                f"Статус Starlink: state={data['state']}, uptime={data['uptime']}s"
+            )
+
             return data
-            
+
         except Exception as e:
             logger.warning(f"Не вдалось отримати статус Starlink: {e}")
-            
-            if self._status_cache:
-                logger.info("Використовуємо кешований статус")
-                return self._status_cache
-            
             return {"available": False}
-    
-    def reboot(self, target: str = DEFAULT_TARGET) -> bool:
+
+    # TODO: REVIEW THIS!
+    def get_software_update_status(
+        self, target: str = DEFAULT_TARGET
+    ) -> Dict[str, Any]:
         """
-        Перезавантажити Starlink dish.
-        
-        Args:
-            target: Адреса у форматі "IP:PORT"
-        
-        Returns:
-            True при успіху, False при помилці.
+        Перевірити, чи очікує Starlink dish встановлення software update.
+
+        Логіка базується на dish_check_update.py з starlink-grpc-tools:
+        перевіряємо кілька дубльованих прапорців, бо частина з них може
+        зникати/змінюватись між версіями dish firmware.
         """
         try:
-            from yagrc import reflector as yagrc_reflector
-            import grpc
-            
-            reflector = yagrc_reflector.GrpcReflectionClient()
-            
-            with grpc.insecure_channel(target) as channel:
-                reflector.load_protocols(channel, symbols=["SpaceX.API.Device.Device"])
-                stub = reflector.service_stub_class("SpaceX.API.Device.Device")(channel)
-                request_class = reflector.message_class("SpaceX.API.Device.Request")
-                
-                request = request_class(reboot={})
-                response = stub.Handle(request, timeout=10)
-                
-                logger.info("Dish успішно перезавантажено")
-                return True
-                
+            ctx = self.grpc.ChannelContext(target=target)
+            try:
+                status = self.grpc.get_status(context=ctx)
+            except TypeError:
+                status = self.grpc.get_status(ctx)
+
+            alert_flag = _get_nested(status, "alerts", "install_pending")
+            state = _get_nested(status, "software_update_state")
+            stats_state = _get_nested(
+                status, "software_update_stats", "software_update_state"
+            )
+            ready_flag = _get_nested(status, "swupdate_reboot_ready")
+            sw_version = _get_nested(
+                status, "device_info", "software_version", default="UNKNOWN"
+            )
+
+            state_flag = (
+                None if state is None else state == config.SOFTWARE_UPDATE_REBOOT_REQUIRED
+            )
+            stats_flag = (
+                None
+                if stats_state is None
+                else stats_state == config.SOFTWARE_UPDATE_REBOOT_REQUIRED
+            )
+            state_disabled = (
+                None if state is None else state == config.SOFTWARE_UPDATE_DISABLED
+            )
+            stats_disabled = (
+                None if stats_state is None else stats_state == config.SOFTWARE_UPDATE_DISABLED
+            )
+
+            if alert_flag is None and state_flag is None and stats_flag is None:
+                install_pending = bool(ready_flag)
+            else:
+                install_pending = bool(alert_flag or state_flag or stats_flag)
+
+            return {
+                "available": True,
+                "software_version": sw_version,
+                "install_pending": install_pending,
+                "updates_disabled": bool(state_disabled or stats_disabled),
+                "reboot_required": install_pending,
+                "flags": {
+                    "alerts_install_pending": alert_flag,
+                    "software_update_state_reboot_required": state_flag,
+                    "software_update_stats_reboot_required": stats_flag,
+                    "swupdate_reboot_ready": ready_flag,
+                    "software_update_state_disabled": state_disabled,
+                    "software_update_stats_disabled": stats_disabled,
+                },
+                "raw": {
+                    "software_update_state": state,
+                    "software_update_stats_state": stats_state,
+                },
+            }
         except Exception as e:
-            logger.error(f"Не вдалось перезавантажити Starlink: {e}")
-            return False
-    
-    def set_gps(self, target: str = DEFAULT_TARGET, 
-                enable: bool = True) -> bool:
+            logger.warning(f"Не вдалось перевірити Starlink software update: {e}")
+            return {"available": False, "error": str(e)}
+
+    def reboot(self) -> None:
+        """
+        Перезавантажити Starlink dish.
+
+        Returns:
+            None
+        """
+        status, _, _ = self.grpc.reboot(context=self.context)
+
+        return status
+
+    def set_gps(self, enable: bool = True) -> bool:
         """
         Включити або вимкнути GPS на Starlink dish.
-        
+
         Args:
-            target: Адреса у форматі "IP:PORT"
             enable: True для включення, False для вимкнення
-        
+
         Returns:
             True при успіху, False при помилці.
-        
+
         Note:
             Це налаштування не впливає на доступність location_data через gRPC.
             Впливає лише на interno використання GPS dish.
         """
         try:
-            from yagrc import reflector as yagrc_reflector
-            import grpc
-            
-            reflector = yagrc_reflector.GrpcReflectionClient()
-            
-            with grpc.insecure_channel(target) as channel:
-                reflector.load_protocols(channel, symbols=["SpaceX.API.Device.Device"])
-                stub = reflector.service_stub_class("SpaceX.API.Device.Device")(channel)
-                request_class = reflector.message_class("SpaceX.API.Device.Request")
-                
-                request = request_class(dish_inhibit_gps={"inhibit_gps": not enable})
-                response = stub.Handle(request, timeout=10)
-                
-                status_str = "увімкнена" if enable else "вимкнена"
-                logger.info(f"GPS на dish {status_str}")
-                return True
-                
+            self.grpc.set_gps_config(enable, context=self.context)
+            status_str = "увімкнена" if enable else "вимкнена"
+            logger.info(f"GPS на dish {status_str}")
+            return True
         except Exception as e:
             logger.error(f"Не вдалось встановити GPS: {e}")
             return False
 
+    def close(self):
+        self.context.close()
+
 
 # Глобальний клієнт для одноразового використання
-_global_client: Optional[StarlinkClient] = None
+starlink_client = StarlinkClient(starlink_grpc, DEFAULT_TARGET)
 
 
 def get_client() -> StarlinkClient:
-    """Отримати або створити глобальний клієнт Starlink."""
-    global _global_client
-    if _global_client is None:
-        _global_client = StarlinkClient()
-    return _global_client
+    return starlink_client
 
 
-def get_location(target: str = f"{DEFAULT_STARLINK_IP}:{DEFAULT_STARLINK_PORT}") -> Dict[str, Any]:
-    """Отримати координати з Starlink (функція-обгортка)."""
-    return get_client().get_location(target)
+# if __name__ == "__main__":
+#     """Тестування модуля."""
+#     logger.info("Тест modulu starlink.py")
 
+#     try:
+#         client = get_client()
 
-def get_status(target: str = f"{DEFAULT_STARLINK_IP}:{DEFAULT_STARLINK_PORT}") -> Dict[str, Any]:
-    """Отримати статус Starlink (функція-обгортка)."""
-    return get_client().get_status(target)
+#         # Тест get_location
+#         print("\n=== Тест get_location ===")
+#         loc = client.get_location()
+#         print(f"Available: {loc.get('available')}")
+#         print(f"Latitude: {loc.get('latitude')}")
+#         print(f"Longitude: {loc.get('longitude')}")
+#         print(f"Altitude: {loc.get('altitude')}")
+#         print(f"GPS Sats: {loc.get('gps_sats')}")
 
+#         # Тест get_status
+#         print("\n=== Тест get_status ===")
+#         status = client.get_status()
+#         print(f"Available: {status.get('available')}")
+#         print(f"State: {status.get('state')}")
+#         print(f"Uptime: {status.get('uptime')}")
 
-def reboot(target: str = f"{DEFAULT_STARLINK_IP}:{DEFAULT_STARLINK_PORT}") -> bool:
-    """Перезавантажити Starlink (функція-обгортка)."""
-    return get_client().reboot(target)
-
-
-def set_gps(target: str = DEFAULT_TARGET, 
-            enable: bool = True) -> bool:
-    """Встановити GPS на Starlink (функція-обгортка)."""
-    return get_client().set_gps(target, enable)
-
-
-if __name__ == "__main__":
-    """Тестування модуля."""
-    logger.info("Тест modulu starlink.py")
-    
-    try:
-        client = get_client()
-        
-        # Тест get_location
-        print("\n=== Тест get_location ===")
-        loc = client.get_location()
-        print(f"Available: {loc.get('available')}")
-        print(f"Latitude: {loc.get('latitude')}")
-        print(f"Longitude: {loc.get('longitude')}")
-        print(f"Altitude: {loc.get('altitude')}")
-        print(f"GPS Sats: {loc.get('gps_sats')}")
-        
-        # Тест get_status
-        print("\n=== Тест get_status ===")
-        status = client.get_status()
-        print(f"Available: {status.get('available')}")
-        print(f"State: {status.get('state')}")
-        print(f"Uptime: {status.get('uptime')}")
-        
-    except Exception as e:
-        logger.error(f"Тест завершено з помилкою: {e}")
+#     except Exception as e:
+#         logger.error(f"Тест завершено з помилкою: {e}")
