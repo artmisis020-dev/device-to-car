@@ -153,3 +153,70 @@ def whep_url(device_id):
     if not stream:
         return None
     return f"{stream.rstrip('/')}/whep"
+
+
+def _device_manager_base_urls(device_id):
+    row = repository.get_device(device_id)
+    if not row:
+        return [], {"error": "device not found"}, 404
+
+    urls = []
+    ip = str(row["ip"] or "").strip()
+    if ip:
+        urls.append(f"http://{ip}:9070")
+
+    hostname = str(row["hostname"] or "").strip()
+    if hostname:
+        urls.append(f"http://{hostname}.local:9070")
+
+    seen = set()
+    unique_urls = []
+    for url in urls:
+        if url not in seen:
+            seen.add(url)
+            unique_urls.append(url)
+
+    if not unique_urls:
+        return [], {"error": "device manager address not found"}, 404
+
+    return unique_urls, None, 200
+
+
+def cameras(device_id):
+    base_urls, error, status = _device_manager_base_urls(device_id)
+    if error:
+        return error, status
+
+    errors = []
+    for base_url in base_urls:
+        try:
+            response = requests.get(f"{base_url}/api/v1/cameras", timeout=5)
+            response.raise_for_status()
+            return response.json(), 200
+        except Exception as exc:
+            errors.append(f"{base_url}: {exc}")
+    return {"error": "camera manager unavailable", "detail": "; ".join(errors)}, 502
+
+
+def switch_camera(device_id, camera_path):
+    camera_path = str(camera_path or "").strip()
+    if not camera_path:
+        return {"error": "missing camera path"}, 400
+
+    base_urls, error, status = _device_manager_base_urls(device_id)
+    if error:
+        return error, status
+
+    errors = []
+    for base_url in base_urls:
+        try:
+            response = requests.post(
+                f"{base_url}/api/v1/camera",
+                json={"camera": camera_path},
+                timeout=25,
+            )
+            payload = response.json() if response.content else {}
+            return payload, response.status_code
+        except Exception as exc:
+            errors.append(f"{base_url}: {exc}")
+    return {"error": "camera switch failed", "detail": "; ".join(errors)}, 502

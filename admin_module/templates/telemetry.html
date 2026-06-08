@@ -173,7 +173,7 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
 <script>
 const DEVICE_ID = "{{ device_id }}";
 let telActive   = false;
-let lastTs      = Date.now()/1000 - 300; // load last 5 min on page open
+let lastTs      = Date.now()/1000 - 300;
 let msgCounts   = {};
 let msgTimes    = {};
 let msgTotal    = 0;
@@ -182,7 +182,6 @@ let prevMsgTotal= 0;
 let gpsTrack    = [];
 let currentFlight = null;
 
-// Map
 const map = L.map('map').setView([0,0], 2);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution:'© OpenStreetMap', maxZoom:19
@@ -196,7 +195,7 @@ const droneIcon = L.divIcon({
 
 function clearTrack() { gpsTrack=[]; trackLine.setLatLngs([]); }
 
-// ─── Telemetry toggle ────────────────────────────────────────────────────────
+// ─── Перемикач запису телеметрії на сервері ─────────────────────────────────
 async function toggleTelemetry() {
   const endpoint = telActive
     ? '/api/devices/'+DEVICE_ID+'/telemetry/stop'
@@ -224,7 +223,7 @@ function updateToggleBtn() {
   }
 }
 
-// ─── Check telemetry active state from server ─────────────────────────────────
+// ─── Синхронізація стану з HTTP API ──────────────────────────────────────────
 async function syncActiveState() {
   try {
     const r = await fetch('/api/telemetry/status/'+DEVICE_ID);
@@ -233,7 +232,7 @@ async function syncActiveState() {
   } catch(e) {}
 }
 
-// ─── Process incoming messages ────────────────────────────────────────────────
+// ─── Обробка MAVLink повідомлень з HTTP polling API ──────────────────────────
 const FIX_TYPES = ['No GPS','No Fix','2D Fix','3D Fix','DGPS','RTK Float','RTK Fixed'];
 const STATUS_NAMES = {0:'Uninit',1:'Boot',2:'Calibrating',3:'Standby',4:'Active',5:'Critical',6:'Emergency',7:'Poweroff'};
 
@@ -321,7 +320,7 @@ function updateMsgTable() {
   document.getElementById('msgTypes').innerHTML = rows;
 }
 
-// ─── Polling loop ─────────────────────────────────────────────────────────────
+// ─── HTTP polling loop та історія з БД ───────────────────────────────────────
 let pollErrors = 0;
 async function poll() {
   try {
@@ -335,7 +334,7 @@ async function poll() {
     }
   } catch(e) { pollErrors++; }
 
-  // Update status
+  // Оновлення стану підключення
   const now = Date.now()/1000;
   const alive = (now - lastMsgTime) < 5 && lastMsgTime > 0;
   const dot = document.getElementById('statusDot');
@@ -347,22 +346,20 @@ async function poll() {
     document.getElementById('lastSeen').textContent = age<2 ? '🟢 Live now' : `Last: ${age.toFixed(0)}s ago`;
   }
 
-  // Rate (over last 2s)
+  // Швидкість повідомлень за останню секунду
   const rate = (msgTotal - prevMsgTotal) / 1;
   prevMsgTotal = msgTotal;
   document.getElementById('msgRate').textContent = rate.toFixed(0);
 
   document.getElementById('statusText').textContent = alive
-    ? (telActive ? '🟢 Streaming' : '🟡 Active (server not requesting)')
-    : (telActive ? '🟡 Waiting for device…' : '⚫ Telemetry off');
+    ? (telActive ? '🟢 Стрім йде' : '🟡 Active (server not requesting)')
+    : (telActive ? '🟡 Очікування пристрою…' : '⚫ Телеметрія вимкнена');
 
   updateMsgTable();
 }
 
-// Sync active state every 5s
 setInterval(syncActiveState, 5000);
 
-// Init — load last known state from DB (last 5 min), then start polling
 async function loadInitialState() {
   const dbg = document.getElementById('dbgLine');
   try {

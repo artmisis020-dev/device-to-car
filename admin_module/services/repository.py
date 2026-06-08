@@ -44,6 +44,12 @@ def update_last_seen(device_id, last_seen):
         db.commit()
 
 
+def update_last_seen_and_ip(device_id, last_seen, ip):
+    with get_db() as db:
+        db.execute("UPDATE devices SET last_seen=?, ip=? WHERE device_id=?", (last_seen, ip, device_id))
+        db.commit()
+
+
 def approve_device(device_id, hours, valid_until):
     with get_db() as db:
         db.execute(
