@@ -8,9 +8,41 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
 .card-body { color:#eef5ff; }
 .card-header { background:#1c2128 !important; border-bottom:1px solid #21262d; color:#eef5ff !important; font-weight:600; padding:.6rem 1rem; font-size:.85rem; }
 .metric-label { font-size:.68rem; color:#b8c0cc; text-transform:uppercase; letter-spacing:.05em; }
-.metric-value { font-size:1.6rem; font-weight:700; line-height:1.1; color:#f3f7fc; }
+.metric-value { display:block; min-height:1.8rem; font-size:1.6rem; font-weight:700; line-height:1.1; color:#f3f7fc; overflow-wrap:anywhere; }
 .metric-unit  { font-size:.75rem; color:#cbd5e1; }
 .fw-bold { color:#f3f7fc; }
+.metric-value,
+.metric-readout,
+.status-readout {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.metric-readout,
+.status-readout {
+  display:inline-block;
+  min-width:5.5ch;
+  white-space:nowrap;
+}
+.status-readout-wide { min-width:8ch; }
+.metric-row-item { min-width:5.75rem; }
+#gpsLat,
+#gpsLon { min-width:12ch; }
+#gpsAlt { min-width:8ch; }
+#gpsSats,
+#gpsFix { min-width:6ch; }
+#attRoll,
+#attPitch,
+#attYaw,
+#vfrSpeed,
+#vfrHdg,
+#vfrClimb,
+#throttleVal,
+#batPct,
+#batCurr { min-width:6ch; }
+#batVolt { min-width:7ch; }
+#msgCount { min-width:7ch; }
+#msgRate { min-width:4ch; }
+#flightId { display:inline-block; min-width:8ch; }
 .small { color:#dbe7f3; }
 .text-muted { color:#b8c0cc !important; }
 .text-warning { color:#ffd66b !important; }
@@ -22,9 +54,6 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
 .dot-off    { background:#6e7681; }
 @keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(63,185,80,.4)} 70%{box-shadow:0 0 0 6px rgba(63,185,80,0)} }
 #map { height:320px; border-radius:6px; }
-.msg-table { font-size:.75rem; }
-.msg-table td, .msg-table th { padding:.25rem .5rem !important; }
-.rate-bar { height:4px; background:#388bfd; border-radius:2px; transition:width .3s; }
 .navbar { background:#161b22 !important; border-bottom:1px solid #21262d; }
 </style>
 {% endblock %}
@@ -48,8 +77,8 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
   <div class="d-flex gap-3 mb-3 align-items-center flex-wrap">
     <span id="statusText" class="text-muted small">Очікування телеметрії…</span>
     <span class="text-muted small">|</span>
-    <span class="small">Msgs: <strong id="msgCount">0</strong></span>
-    <span class="small">Rate: <strong id="msgRate">0</strong> msg/s</span>
+    <span class="small">Кількість повідомлень: <strong id="msgCount" class="status-readout status-readout-wide">0</strong></span>
+    <span class="small">Швидкість: <strong id="msgRate" class="status-readout">0</strong> повід/с</span>
     <span class="small">Flight: <code id="flightId" class="text-info">—</code></span>
     <span class="small" id="lastSeen"></span>
     <span class="small text-warning" id="dbgLine"></span>
@@ -66,9 +95,9 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
           <div class="metric-label mt-1">Longitude(Довгота)</div>
           <div class="metric-value" id="gpsLon">—</div>
           <div class="d-flex gap-3 mt-2">
-            <div><div class="metric-label">Alt (m)</div><div id="gpsAlt" class="fw-bold">—</div></div>
-            <div><div class="metric-label">Sats(Супутники)</div><div id="gpsSats" class="fw-bold">—</div></div>
-            <div><div class="metric-label">Fix</div><div id="gpsFix" class="fw-bold">—</div></div>
+            <div class="metric-row-item"><div class="metric-label">Alt (m)</div><div id="gpsAlt" class="fw-bold metric-readout">—</div></div>
+            <div class="metric-row-item"><div class="metric-label">Sats(Супутники)</div><div id="gpsSats" class="fw-bold metric-readout">—</div></div>
+            <div class="metric-row-item"><div class="metric-label">Fix</div><div id="gpsFix" class="fw-bold metric-readout">—</div></div>
           </div>
         </div>
       </div>
@@ -79,21 +108,21 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
         <div class="card-header">✈ Attitude</div>
         <div class="card-body p-2">
           <div class="row g-1 text-center">
-            <div class="col-4"><div class="metric-label">Roll</div><div class="fw-bold" id="attRoll">—</div></div>
-            <div class="col-4"><div class="metric-label">Pitch</div><div class="fw-bold" id="attPitch">—</div></div>
-            <div class="col-4"><div class="metric-label">Yaw</div><div class="fw-bold" id="attYaw">—</div></div>
+            <div class="col-4"><div class="metric-label">Roll</div><div class="fw-bold metric-readout" id="attRoll">—</div></div>
+            <div class="col-4"><div class="metric-label">Pitch</div><div class="fw-bold metric-readout" id="attPitch">—</div></div>
+            <div class="col-4"><div class="metric-label">Yaw</div><div class="fw-bold metric-readout" id="attYaw">—</div></div>
           </div>
           <hr class="my-2" style="border-color:#21262d">
           <div class="row g-1 text-center">
-            <div class="col-6"><div class="metric-label">Speed m/s</div><div class="fw-bold" id="vfrSpeed">—</div></div>
-            <div class="col-6"><div class="metric-label">Heading</div><div class="fw-bold" id="vfrHdg">—</div></div>
+            <div class="col-6"><div class="metric-label">Speed m/s</div><div class="fw-bold metric-readout" id="vfrSpeed">—</div></div>
+            <div class="col-6"><div class="metric-label">Heading</div><div class="fw-bold metric-readout" id="vfrHdg">—</div></div>
           </div>
           <div class="mt-1 text-center">
             <div class="metric-label">Throttle</div>
             <div class="progress mt-1" style="height:6px;background:#21262d">
               <div class="progress-bar bg-info" id="throttleBar" style="width:0%"></div>
             </div>
-            <div class="small text-muted" id="throttleVal">0%</div>
+            <div class="small text-muted metric-readout" id="throttleVal">0%</div>
           </div>
         </div>
       </div>
@@ -110,13 +139,13 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
               <div class="progress-bar" id="batBar" style="width:0%;background:#3fb950"></div>
             </div>
             <div class="d-flex justify-content-between mt-1">
-              <span class="small text-muted" id="batPct">—%</span>
-              <span class="small text-muted" id="batCurr">— A</span>
+              <span class="small text-muted metric-readout" id="batPct">—%</span>
+              <span class="small text-muted metric-readout" id="batCurr">— A</span>
             </div>
           </div>
           <div class="mt-2">
-            <div class="metric-label">Статус системи</div>
-            <div class="fw-bold" id="sysStatus">—</div>
+            <div class="metric-label">Стан батареї</div>
+            <div class="fw-bold metric-readout" id="sysStatus">—</div>
           </div>
         </div>
       </div>
@@ -133,7 +162,7 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
           <div class="metric-label">Status Text</div>
           <div class="small text-warning" id="lastStatusText">—</div>
           <div class="metric-label mt-1">Climb m/s</div>
-          <div class="fw-bold" id="vfrClimb">—</div>
+          <div class="fw-bold metric-readout" id="vfrClimb">—</div>
         </div>
       </div>
     </div>
@@ -150,17 +179,13 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
         <div class="card-body p-1"><div id="map"></div></div>
       </div>
     </div>
-    <!-- Message stats -->
+    <!-- Video stream -->
     <div class="col-md-5">
       <div class="card h-100">
-        <div class="card-header">📊 Message Types</div>
-        <div class="card-body p-0" style="max-height:340px;overflow-y:auto">
-          <table class="table table-sm msg-table mb-0" style="color:#c9d1d9">
-            <thead style="background:#1c2128;position:sticky;top:0">
-              <tr><th>Type</th><th>Count</th><th>Last</th><th class="w-25">Rate</th></tr>
-            </thead>
-            <tbody id="msgTypes"></tbody>
-          </table>
+        <div class="card-header">Відео стрім</div>
+        <div class="card-body p-2">
+          {% set video_player_compact = true %}
+          {% include "_video_player.html" %}
         </div>
       </div>
     </div>
@@ -206,7 +231,7 @@ async function toggleTelemetry() {
 }
 
 async function clearTelemetry() {
-  if (!confirm('Clear all stored telemetry for this device?')) return;
+  if (!confirm('Очистити всю збережену телеметрію для цього пристрою?')) return;
   await fetch('/api/devices/'+DEVICE_ID+'/telemetry/clear', {
     method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'
   });
@@ -217,9 +242,9 @@ async function clearTelemetry() {
 function updateToggleBtn() {
   const btn = document.getElementById('btnToggle');
   if (telActive) {
-    btn.textContent='⏹ Stop'; btn.className='btn btn-sm btn-danger';
+    btn.textContent='⏹ Стоп'; btn.className='btn btn-sm btn-danger';
   } else {
-    btn.textContent='▶ Start'; btn.className='btn btn-sm btn-success';
+    btn.textContent='▶ Старт'; btn.className='btn btn-sm btn-success';
   }
 }
 
@@ -302,24 +327,6 @@ function processMsgs(msgs) {
   }
 }
 
-function updateMsgTable() {
-  const now = Date.now()/1000;
-  const rows = Object.entries(msgCounts)
-    .sort((a,b)=>b[1]-a[1])
-    .map(([type,cnt]) => {
-      const age = now - (msgTimes[type]||0);
-      const ageTxt = age<2?'now':age<60?Math.round(age)+'s ago':'>1m';
-      const barW = Math.min(100, cnt/Math.max(...Object.values(msgCounts))*100);
-      return `<tr>
-        <td><code>${type}</code></td>
-        <td>${cnt}</td>
-        <td class="text-muted">${ageTxt}</td>
-        <td><div class="rate-bar" style="width:${barW}%"></div></td>
-      </tr>`;
-    }).join('');
-  document.getElementById('msgTypes').innerHTML = rows;
-}
-
 // ─── HTTP polling loop та історія з БД ───────────────────────────────────────
 let pollErrors = 0;
 async function poll() {
@@ -343,7 +350,7 @@ async function poll() {
   document.getElementById('msgCount').textContent = msgTotal;
   if (lastMsgTime > 0) {
     const age = now - lastMsgTime;
-    document.getElementById('lastSeen').textContent = age<2 ? '🟢 Live now' : `Last: ${age.toFixed(0)}s ago`;
+    document.getElementById('lastSeen').textContent = age<2 ? '🟢 Наживо' : `Останнє: ${age.toFixed(0)}с тому`;
   }
 
   // Швидкість повідомлень за останню секунду
@@ -352,10 +359,9 @@ async function poll() {
   document.getElementById('msgRate').textContent = rate.toFixed(0);
 
   document.getElementById('statusText').textContent = alive
-    ? (telActive ? '🟢 Стрім йде' : '🟡 Active (server not requesting)')
+    ? (telActive ? '🟢 Стрім йде' : '🟡 Дані надходять, запис вимкнено')
     : (telActive ? '🟡 Очікування пристрою…' : '⚫ Телеметрія вимкнена');
 
-  updateMsgTable();
 }
 
 setInterval(syncActiveState, 5000);

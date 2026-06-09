@@ -27,6 +27,11 @@
     background:#161b22; border:1px solid #252c36; border-radius:8px;
     overflow:hidden; color:#eef5ff;
   }
+  .svp-compact {
+    height:100%;
+    display:flex;
+    flex-direction:column;
+  }
   .svp-head {
     display:flex; justify-content:space-between; align-items:center; gap:.75rem;
     padding:.75rem 1.1rem; background:#1c2128; border-bottom:1px solid #252c36;
@@ -76,29 +81,25 @@
 
 <div class="svp-card{% if video_player_compact %} svp-compact{% endif %}">
   <div class="svp-head">
-    <span>Live Stream</span>
+    <span>Живий стрім</span>
     <div class="svp-actions">
-      <button id="svpReconnect" class="btn btn-sm btn-outline-info" type="button">Перепідключити</button>
-      {% if not video_player_compact %}
-      <button id="svpRecord" class="btn btn-sm btn-outline-danger" type="button">REC</button>
-      <span class="svp-rec-state"><span id="svpRecDot" class="svp-rec-dot"></span><span>REC</span></span>
-      {% endif %}
+      <button id="svpReconnect" class="btn btn-sm btn-outline-info" type="button">Перезавантажити</button>
     </div>
   </div>
   <div class="svp-video-shell">
     <video id="svpVideo" class="svp-video" autoplay playsinline muted controls></video>
-    <div id="svpOverlay" class="svp-overlay">Waiting for WebRTC stream...</div>
+    <div id="svpOverlay" class="svp-overlay">Очікування WebRTC стріму...</div>
   </div>
   <div class="svp-stats-grid">
-    <div class="svp-stat"><div class="svp-stat-label">Connection</div><div class="svp-stat-value" id="svpStatConn">-</div></div>
+    <div class="svp-stat"><div class="svp-stat-label">З'єднання</div><div class="svp-stat-value" id="svpStatConn">-</div></div>
     <div class="svp-stat"><div class="svp-stat-label">FPS</div><div class="svp-stat-value" id="svpStatFps">-</div></div>
-    <div class="svp-stat"><div class="svp-stat-label">Bitrate</div><div class="svp-stat-value" id="svpStatBitrate">-</div></div>
+    <div class="svp-stat"><div class="svp-stat-label">Бітрейт</div><div class="svp-stat-value" id="svpStatBitrate">-</div></div>
     <div class="svp-stat"><div class="svp-stat-label">RTT</div><div class="svp-stat-value" id="svpStatRtt">-</div></div>
     <div class="svp-stat"><div class="svp-stat-label">Jitter</div><div class="svp-stat-value" id="svpStatJitter">-</div></div>
-    <div class="svp-stat"><div class="svp-stat-label">Resolution</div><div class="svp-stat-value" id="svpStatRes">-</div></div>
+    <div class="svp-stat"><div class="svp-stat-label">Роздільна здатність</div><div class="svp-stat-value" id="svpStatRes">-</div></div>
   </div>
   {% if video_player_compact %}
-  <div class="svp-compact-link">Player source: <a href="/video/{{ device_id }}" class="link-info">open full video page</a></div>
+  <div class="svp-compact-link">Джерело плеєра: <a href="/video/{{ device_id }}" class="link-info">Відкрити повну сторінку відео</a></div>
   {% endif %}
 </div>
 
@@ -149,14 +150,14 @@
       payload = await res.json();
     } catch (e) {}
     if (!res.ok || !payload.success) {
-      throw new Error(payload.error || `Realtime command failed (${res.status})`);
+      throw new Error(payload.error || `Команда realtime не виконалась (${res.status})`);
     }
     return payload.data || payload;
   };
   const loadCamerasViaHttp = async () => {
     const res = await fetch(`/api/video/${deviceId}/cameras`);
     const data = await res.json();
-    if (!res.ok || !data.success) throw new Error(data.error || 'Camera list unavailable');
+    if (!res.ok || !data.success) throw new Error(data.error || 'Список камер недоступний');
     return data;
   };
   const switchCameraViaHttp = async cameraPath => {
@@ -166,7 +167,7 @@
       body: JSON.stringify({camera: cameraPath}),
     });
     const data = await res.json();
-    if (!res.ok || !data.success) throw new Error(data.error || 'Camera switch failed');
+    if (!res.ok || !data.success) throw new Error(data.error || 'Не вдалось перемкнути камеру');
     return data;
   };
   const loadCamerasFromDevice = async () => {
@@ -200,7 +201,7 @@
   async function loadStreamInfo() {
     const res = await fetch(`/api/video/${deviceId}/stream`);
     if (!res.ok) {
-      let errorText = 'Stream metadata unavailable';
+      let errorText = 'Метадані стріму недоступні';
       try {
         const payload = await res.json();
         if (payload && payload.error) errorText = payload.error;
@@ -208,7 +209,7 @@
       throw new Error(errorText);
     }
     const data = await res.json();
-    if (!data.stream_url) throw new Error('Stream URL is not configured');
+    if (!data.stream_url) throw new Error('URL стріму не налаштований');
     data.whep_url = data.whep_url || (data.stream_url.replace(/\/$/, '') + '/whep');
     return data;
   }
@@ -220,8 +221,8 @@
 
   async function connectStream() {
     stopPeer();
-    setOverlay('Connecting WebRTC stream...');
-    setText('svpStreamStatus', 'Connecting');
+    setOverlay('Підключення WebRTC стріму...');
+    setText('svpStreamStatus', 'Підключення');
     setText('svpStatConn', 'new');
 
     try {
@@ -236,7 +237,7 @@
       pc.ontrack = event => {
         el('svpVideo').srcObject = event.streams[0];
         setOverlay('', false);
-        setText('svpStreamStatus', 'WebRTC connected');
+        setText('svpStreamStatus', 'WebRTC підключено');
         const status = el('svpStreamStatus');
         if (status) status.className = 'ok';
       };
@@ -244,7 +245,7 @@
       pc.onconnectionstatechange = () => {
         setText('svpStatConn', pc.connectionState);
         if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
-          setOverlay('WebRTC stream disconnected');
+          setOverlay('WebRTC стрім відключено');
           const status = el('svpStreamStatus');
           if (status) status.className = 'muted';
         }
@@ -269,15 +270,15 @@
           });
         }
       }
-      if (!answer.ok) throw new Error(`MediaMTX WHEP failed (${answer.status})`);
+      if (!answer.ok) throw new Error(`MediaMTX WHEP не відповів (${answer.status})`);
 
       await pc.setRemoteDescription({type: 'answer', sdp: await answer.text()});
       statsTimer = setInterval(updateStats, 1000);
     } catch (err) {
       stopPeer();
-      setText('svpStreamStatus', 'Offline');
+      setText('svpStreamStatus', 'Офлайн');
       setText('svpStatConn', '-');
-      setOverlay(err.message || 'WebRTC stream unavailable');
+      setOverlay(err.message || 'WebRTC стрім недоступний');
     }
   }
 
@@ -309,7 +310,7 @@
         const isActive = cameraIsActive(camera, active);
         const node = document.createElement(isActive ? 'span' : 'button');
         node.className = `svp-camera-chip${isActive ? ' active' : ''}`;
-        node.textContent = `${shortCameraName(camera)}${isActive ? ' active' : ''}`;
+        node.textContent = `${shortCameraName(camera)}${isActive ? ' активна' : ''}`;
         node.title = cameraTitle(camera);
         if (!isActive) {
           node.type = 'button';
@@ -326,23 +327,23 @@
   async function switchCamera(cameraPath) {
     if (!cameraPath || switchingCamera) return;
     switchingCamera = true;
-    setOverlay('Switching camera...');
-    setText('svpStreamStatus', 'Switching camera');
+    setOverlay('Перемикання камери...');
+    setText('svpStreamStatus', 'Перемикання камери');
     stopPeer();
     await loadCameras();
 
     const fallbackTimer = setTimeout(() => {
-      if (switchingCamera) setOverlay('Camera switch is taking longer than expected...');
+      if (switchingCamera) setOverlay('Перемикання камери триває довше, ніж очікувалось...');
     }, 30000);
 
     try {
       await switchCameraOnDevice(cameraPath);
-      setOverlay('Reconnecting video...');
+      setOverlay('Повторне підключення відео...');
       await loadCameras();
       setTimeout(connectStream, 1500);
     } catch (err) {
-      setText('svpStreamStatus', 'Camera switch failed');
-      setOverlay(err.message || 'Camera switch failed');
+      setText('svpStreamStatus', 'Не вдалось перемкнути камеру');
+      setOverlay(err.message || 'Не вдалось перемкнути камеру');
     } finally {
       clearTimeout(fallbackTimer);
       switchingCamera = false;
@@ -417,14 +418,14 @@
     } catch (err) {}
   }
 
-  function updateRecordBtn() {
-    const btn = el('svpRecord');
-    const dot = el('svpRecDot');
-    if (!btn || !dot) return;
-    btn.className = recordActive ? 'btn btn-sm btn-danger' : 'btn btn-sm btn-outline-danger';
-    btn.textContent = recordActive ? 'Stop REC' : 'REC';
-    dot.classList.toggle('on', recordActive);
-  }
+  // function updateRecordBtn() {
+  //   const btn = el('svpRecord');
+  //   const dot = el('svpRecDot');
+  //   if (!btn || !dot) return;
+  //   btn.className = recordActive ? 'btn btn-sm btn-danger' : 'btn btn-sm btn-outline-danger';
+  //   btn.textContent = recordActive ? 'Stop REC' : 'REC';
+  //   dot.classList.toggle('on', recordActive);
+  // }
 
   el('svpReconnect')?.addEventListener('click', connectStream);
   el('svpRecord')?.addEventListener('click', toggleRecord);
