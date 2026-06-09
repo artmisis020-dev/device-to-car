@@ -81,33 +81,38 @@ class MAVLinkBridge:
         self._recv_fc_callback:  Optional[Callable] = None
 
     def connect_mavlink(self) -> bool:
-        """
-        Відкриває два UDP сокети для MAVLink.
-
-        FC сторона (mav_fc):
-          udpin:127.0.0.1:14551 — слухаємо пакети від mavlink_router.
-          source_system=1 — ідентифікуємо себе як GCS (system ID 1).
-
-        GCS сторона (mav_gcs):
-          udpin:0.0.0.0:14550 — слухаємо команди від будь-якого GCS у мережі.
-          Mission Planner типово відправляє heartbeat і команди сюди.
-
-        Повертає False якщо не вдалось — система продовжить в обмеженому режимі
-        (тільки GPS, без MAVLink проксі).
-        """
         try:
             logger.info(f"Підключення до FC на {FC_RECV_ADDR}:{FC_RECV_PORT} (udpin)")
             self.mav_fc = mavutil.mavlink_connection(
                 f'udpin:{FC_RECV_ADDR}:{FC_RECV_PORT}',
-                source_system=1,
-                source_component=191
+                source_system=1
             )
 
             logger.info(f"Запускаємо GCS proxy на 0.0.0.0:{GCS_LISTEN_PORT} (udpin)")
             self.mav_gcs = mavutil.mavlink_connection(
                 f'udpin:0.0.0.0:{GCS_LISTEN_PORT}',
-                source_system=1,
-                source_component=191
+                source_system=1
+            )
+
+            logger.info("✅ MAVLink з'єднання успішно встановлено")
+            return True
+        except Exception as e:
+            logger.error(f"Помилка при підключенні до MAVLink: {e}")
+            return False
+        """
+        Відкриває два UDP сокети для MAVLink.
+        """
+        try:
+            logger.info("Підключення до роутера FC на 127.0.0.1:14551 (udpout)")
+            self.mav_fc = mavutil.mavlink_connection(
+                'udpout:127.0.0.1:14551',
+                source_system=1
+            )
+
+            logger.info("Підключення до GCS проксі на 127.0.0.1:14552 (udpout)")
+            self.mav_gcs = mavutil.mavlink_connection(
+                'udpout:127.0.0.1:14552',
+                source_system=1
             )
 
             logger.info("✅ MAVLink з'єднання успішно встановлено")
@@ -154,24 +159,15 @@ class MAVLinkBridge:
             return False
 
     def recv_from_gcs(self) -> Optional[Any]:
-        """
-        Неблокуюче читання одного MAVLink повідомлення від GCS.
-
-        Якщо встановлений _recv_gcs_callback — викликає його синхронно.
-        У main.py callback = MavLinkGPSHub._handle_gcs_command() — обробляє
-        SET_GPS_GLOBAL_ORIGIN (ручна точка) та LED_CONTROL (переключення GPS).
-
-        Повертає None якщо черга порожня (non-blocking).
-        """
         try:
             if self.mav_gcs is None:
                 return None
             msg = self.mav_gcs.recv_match(blocking=False)
             if msg:
-                logger.warning(f"Дата з ground station: {msg}")
                 if msg.get_type() == 'BAD_DATA':
                     return None
 
+                logger.warning(f"Дата з ground station: {msg}")
                 if self._recv_gcs_callback:
                     self._recv_gcs_callback(msg)
                 return msg
@@ -179,7 +175,7 @@ class MAVLinkBridge:
         except Exception as e:
             logger.warning(f"Помилка при читанні з GCS: {e}")
             return None
-
+        
     def recv_from_fc(self) -> Optional[Any]:
         """
         Неблокуюче читання одного MAVLink повідомлення від FC.
