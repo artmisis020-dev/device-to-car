@@ -165,8 +165,13 @@ class MAVLinkBridge:
             if self.mav_gcs is None:
                 return None
             msg = self.mav_gcs.recv_match(blocking=False)
-            if msg and self._recv_gcs_callback:
-                self._recv_gcs_callback(msg)
+            if msg:
+                if msg.get_type() == 'BAD_DATA':
+                    return None
+
+                if self._recv_gcs_callback:
+                    self._recv_gcs_callback(msg)
+                return msg
             return msg
         except Exception as e:
             logger.warning(f"Помилка при читанні з GCS: {e}")
