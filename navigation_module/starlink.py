@@ -74,6 +74,7 @@ class StarlinkClient:
                 "latitude": location.get("latitude"),
                 "longitude": location.get("longitude"),
                 "altitude": location.get("altitude"),
+                "gps_sats": location.get("gps_sats", 0),
                 "available": True,
             }
 

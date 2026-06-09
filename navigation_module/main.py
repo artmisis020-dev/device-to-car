@@ -275,7 +275,7 @@ class MavLinkGPSHub:
         Перевіряє якість Starlink GPS за допомогою обраного алгоритму фільтрації.
         """
         h = self._stargps
-        
+
         # Spoof-детекція: великий стрибок між двома сусідніми точками
         if h.last_dist_diff > GPS_SPOOF_METERS_THRE and len(h) > 10:
             self.starlink_spoofed = not self.starlink_spoofed
@@ -283,7 +283,7 @@ class MavLinkGPSHub:
                 f"[SPOOF] Starlink jump {h.last_dist_diff:.0f}m > {GPS_SPOOF_METERS_THRE:.0f}m, "
                 f"spoofed={self.starlink_spoofed}"
             )
-        
+
         if self.starlink_spoofed:
             return False
 
@@ -326,7 +326,7 @@ class MavLinkGPSHub:
             # LINEAR_STD (оригінальний алгоритм)
             if len(h) < GPS_QUEUE_SIZE:
                 return False
-                
+
             std_spd = h.std_speed
             std_az  = h.std_azimuth
             avg_spd = h.avg_speed
@@ -370,7 +370,8 @@ class MavLinkGPSHub:
                     self.last_starlink_check = now
 
                     try:
-                        location = starlink.get_location()
+                        # location = starlink.get_location()
+                        location = starlink.starlink_client.get_location()
 
                         if location and location.get("available"):
                             # 1. Оригінальний фільтр (moving average + outlier rejection)
@@ -391,7 +392,7 @@ class MavLinkGPSHub:
                             # 2. [NEW] Подаємо RAW точку в StarGPSHandler
                             if location.get("latitude") is not None:
                                 rec = GPSRecord(
-                                    timestamp=datetime.datetime.utcnow(),
+                                    timestamp=datetime.datetime.now(datetime.UTC),
                                     lat=float(location["latitude"]),
                                     lon=float(location["longitude"]),
                                     alt=float(location.get("altitude", 0.0)),
@@ -461,12 +462,12 @@ class MavLinkGPSHub:
                 prev   = self._starlink_samples[-1]
                 dist_m = self._approx_distance_m(prev["latitude"], prev["longitude"], lat, lon)
                 d_alt  = abs(alt - float(prev.get("altitude", 0.0)))
-                
+
                 # Розрахунок реального dt та швидкості
                 prev_t = prev.get("time", now_t - 0.08) # за замовчуванням 0.08с (~12 Гц)
                 dt = now_t - prev_t
                 speed_mps = dist_m / dt if dt > 0.0001 else 0.0
-                
+
                 # Якщо точки затримались або відсутні більше 2.0 секунд, скидаємо фільтр відстані
                 # для уникнення зависання (Filter Lock) під час швидкого польоту
                 if dt > 2.0:
@@ -477,8 +478,8 @@ class MavLinkGPSHub:
                     self._starlink_samples.append({"latitude": lat, "longitude": lon,
                                                     "altitude": alt, "gps_sats": sats, "time": now_t})
                 # Фільтрація
-                elif (dist_m > self.starlink_pos_jump_max_m 
-                        or d_alt > self.starlink_alt_jump_max_m 
+                elif (dist_m > self.starlink_pos_jump_max_m
+                        or d_alt > self.starlink_alt_jump_max_m
                         or speed_mps > self.starlink_max_speed_mps):
                     logger.warning(
                         f"Starlink outlier rejected: dist={dist_m:.1f}m, speed={speed_mps:.1f}m/s (dt={dt:.3f}s), dAlt={d_alt:.1f}m"
@@ -584,30 +585,11 @@ class MavLinkGPSHub:
                     now = time.time()
                     if now - last_gps_send_ts >= gps_send_interval:
                         last_gps_send_ts = now
-
-                        # Перевіряємо наявність даних у вікні та чи ініціалізовано порт GCS
-                        if self._stargps and self._stargps._data and self.bridge.mav_gcs:
+                        if self._stargps and self._stargps._data:
                             last_rec = self._stargps._data[-1]
 
-                            lat_int = int(last_rec.lat * 1e7)
-                            lon_int = int(last_rec.lon * 1e7)
-                            alt_mm = int(last_rec.alt * 1000)
-                            boot_us = int(time.monotonic() * 1e6)
-
-                            self.bridge.mav_gcs.mav.gps_input_send(
-                                boot_us,
-                                1,  # gps_id (1 = Starlink)
-                                0,
-                                0,
-                                0,
-                                3,
-                                lat_int, lon_int, alt_mm,
-                                1.0, 1.0,
-                                0.0, 0.0, 0.0,
-                                0.0, 0.0, 0.0,
-                                15,
-                                0
-                            )
+                            self.send_starlink_to_server(last_rec)
+                            logger.info(f"Starlink telemetry sent to server: {last_rec.lat}, {last_rec.lon}")
 
                 if processed == 0:
                     time.sleep(0.002)
@@ -615,7 +597,21 @@ class MavLinkGPSHub:
             except Exception as e:
                 logger.warning(f"MAVLink proxy worker помилка: {e}")
                 time.sleep(0.01)
+    def send_starlink_to_server(self, last_rec):
+        """Пряма відправка стандартною командою pymavlink."""
+        if self.bridge and self.bridge.mav_gcs:
+            ts = int(time.time() * 1000) & 0xffffffff
 
+            self.bridge.mav_gcs.mav.named_value_float_send(
+                ts,
+                b'STRLNK_LAT',  # Передаємо явно як байти
+                float(last_rec.lat)
+            )
+            self.bridge.mav_gcs.mav.named_value_float_send(
+                ts,
+                b'STRLNK_LON',
+                float(last_rec.lon)
+            )
     # -----------------------------------------------------------------------
     # Main loop
     # -----------------------------------------------------------------------

@@ -3,10 +3,11 @@ import math
 import os
 import time
 from pathlib import Path
-
+import logging
 
 SNAPSHOT_PATH = Path(os.environ.get("SIRENA_TELEMETRY_SNAPSHOT_PATH", "/tmp/sirena_mavlink_snapshot.json"))
 
+logger = logging.getLogger(__name__)
 
 class TelemetrySnapshotPublisher:
     def __init__(self, path: Path = SNAPSHOT_PATH, min_interval_s: float = 0.1):
@@ -31,12 +32,22 @@ class TelemetrySnapshotPublisher:
 
     def update_from_msg(self, msg):
         mtype = msg.get_type()
-        msg_data = {}
         try:
             msg_data = msg.to_dict()
-        except Exception:
-            pass
-        self.update_message(mtype, msg_data)
+            def clean_data(data):
+                if isinstance(data, dict):
+                    return {k: clean_data(v) for k, v in data.items()}
+                elif isinstance(data, list):
+                    return [clean_data(i) for i in data]
+                elif isinstance(data, (bytes, bytearray)):
+                    return data.decode('utf-8', errors='ignore').rstrip('\x00')
+                return data
+
+            clean_msg_data = clean_data(msg_data)
+            self.update_message(mtype, clean_msg_data)
+
+        except Exception as e:
+            logger.error(f"Помилка обробки повідомлення {mtype}: {e}")
 
     def update_message(self, msg_type: str, msg_data: dict, ts: float | None = None):
         ts = ts or time.time()
