@@ -12,9 +12,16 @@ body { background:#0b1220; color:#d7e1ea; }
 .kv { display:grid; grid-template-columns:120px 1fr; gap:.35rem .75rem; font-size:.9rem; }
 .kv div:nth-child(odd) { color:#b8c9df; }
 .kv div:nth-child(even) { color:#f3f7fc; font-weight:600; overflow-wrap:anywhere; }
-.msg-table td, .msg-table th { padding:.35rem .5rem !important; font-size:.78rem; border-color:#1e2b40 !important; }
-.msg-table td { color:#eef5ff; }
-.msg-table code { color:#f3f7fc; }
+	.msg-table {
+		--bs-table-bg:#0f1a2b;
+		--bs-table-color:#e8eef5;
+		--bs-table-border-color:#263a59;
+		--bs-table-striped-bg:#142139;
+		--bs-table-striped-color:#eef5ff;
+	}
+	.msg-table td, .msg-table th { padding:.35rem .5rem !important; font-size:.78rem; border-color:#263a59 !important; color:#e8eef5 !important; }
+	.msg-table thead th { background:#192840 !important; color:#f4f8fc !important; }
+	.msg-table code { color:#dbeafe; white-space:pre-wrap; overflow-wrap:anywhere; }
 .cmd-btn { min-width:88px; }
 </style>
 {% endblock %}
@@ -23,9 +30,9 @@ body { background:#0b1220; color:#d7e1ea; }
   <div class="container-fluid">
     <span class="navbar-brand fw-semibold">🧭 {{ hostname }} / {{ device_id[:12] }}</span>
     <div class="d-flex gap-2">
-      <a href="/telemetry/{{ device_id }}" class="btn btn-sm btn-outline-success">Telemetry</a>
-      <a href="/video/{{ device_id }}" class="btn btn-sm btn-outline-info">Video</a>
-      <a href="/" class="btn btn-sm btn-outline-secondary">Back</a>
+      <a href="/telemetry/{{ device_id }}" class="btn btn-sm btn-light">Телеметрія</a>
+      <a href="/video/{{ device_id }}" class="btn btn-sm btn-light">Відео</a>
+      <a href="/" class="btn btn-sm btn-light">Назад до списку пристроїв</a>
     </div>
   </div>
 </nav>
@@ -34,22 +41,22 @@ body { background:#0b1220; color:#d7e1ea; }
   <div class="row g-3 mb-3">
     <div class="col-xl-4">
       <div class="card h-100">
-        <div class="card-header">Drone Profile</div>
+        <div class="card-header">Профайл літака</div>
         <div class="card-body">
-          <div class="kv" id="profileBox">Loading…</div>
+          <div class="kv" id="profileBox">Завантаження…</div>
         </div>
       </div>
     </div>
-    <div class="col-xl-4">
+    <div class="col-xl-8">
       <div class="card h-100">
-        <div class="card-header">Live Video</div>
+        <div class="card-header">Відео стрім</div>
         <div class="card-body p-2">
           {% set video_player_compact = true %}
           {% include "_video_player.html" %}
         </div>
       </div>
     </div>
-    <div class="col-xl-4">
+    <!-- <div class="col-xl-4">
       <div class="card h-100">
         <div class="card-header d-flex justify-content-between align-items-center">
           FC Commands
@@ -71,24 +78,24 @@ body { background:#0b1220; color:#d7e1ea; }
           </div>
         </div>
       </div>
-    </div>
+    </div> -->
   </div>
 
   <div class="row g-3">
     <div class="col-xl-7">
       <div class="card h-100">
-        <div class="card-header">Map</div>
+        <div class="card-header">Мапа</div>
         <div class="card-body"><div id="map"></div></div>
       </div>
     </div>
     <div class="col-xl-5">
       <div class="card h-100">
-        <div class="card-header">Telemetry Snapshot</div>
+        <div class="card-header">Телеметрія</div>
         <div class="card-body p-0">
           <div class="table-responsive">
             <table class="table table-sm msg-table mb-0">
-              <thead><tr><th>Type</th><th>Count</th><th>Data</th></tr></thead>
-              <tbody id="latestTelemetry"><tr><td colspan="3" class="text-center soft py-3">Loading…</td></tr></tbody>
+              <thead><tr><th>Тип</th><th>Кількість</th><th>Дані</th></tr></thead>
+              <tbody id="latestTelemetry"><tr><td colspan="3" class="text-center soft py-3">Завантаження…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -123,16 +130,16 @@ async function loadDetail() {
 
   const device = data.device;
   const profile = [
-    ['Device ID', device.device_id],
+    ['ID Пристрою', device.device_id],
     ['Hostname', device.hostname || '—'],
     ['IP', device.ip || '—'],
     ['Hardware', device.hardware || '—'],
-    ['Sirena', device.sirena_version || '—'],
-    ['Video', device.video_version || '—'],
-    ['Approved', data.is_valid ? 'yes' : 'no'],
-    ['Last seen', device.last_seen || '—'],
-    ['Telemetry', data.telemetry.active ? 'on' : 'off'],
-    ['Video', data.video.active ? 'on' : 'off'],
+    ['Версія Sirena', device.sirena_version || '—'],
+    ['Версія Відео', device.video_version || '—'],
+    ['Активовано', data.is_valid ? 'Так' : 'Ні'],
+    ['Останнє з\'єднання', device.last_seen || '—'],
+    ['Телеметрія', data.telemetry.active ? 'Вкл' : 'Вимк'],
+    ['Стрім', data.video.active ? 'Вкл' : 'Вимк'],
   ];
   document.getElementById('profileBox').innerHTML = profile.map(([k, v]) => `<div>${k}</div><div>${fmt(v)}</div>`).join('');
 
