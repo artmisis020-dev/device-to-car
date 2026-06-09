@@ -161,19 +161,33 @@ function fmt(value) {
 	  return result;
 	}
 
-	function ageText(ts) {
-	  const age = Date.now() / 1000 - Number(ts || 0);
-	  if (!Number.isFinite(age) || age < 0) return '—';
-	  if (age < 2) return 'зараз';
-	  if (age < 60) return `${age.toFixed(0)}с`;
-	  if (age < 3600) return `${(age / 60).toFixed(0)}хв`;
-	  return `${(age / 3600).toFixed(1)}г`;
-	}
+function ageText(ts) {
+  const age = Date.now() / 1000 - Number(ts || 0);
+  if (!Number.isFinite(age) || age < 0) return '—';
+  if (age < 2) return 'зараз';
+  if (age < 60) return `${age.toFixed(0)}с`;
+  if (age < 3600) return `${(age / 60).toFixed(0)}хв`;
+  return `${(age / 3600).toFixed(1)}г`;
+}
 
-	function numberText(value, digits = 1) {
-	  const n = Number(value);
-	  return Number.isFinite(n) ? n.toFixed(digits) : '—';
-	}
+function utcToLocalText(value) {
+  if (!value) return '—';
+  const date = new Date(String(value).replace('T', ' ') + ' UTC');
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+function numberText(value, digits = 1) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(digits) : '—';
+}
 
 	function tile(label, value, hint = '') {
 	  return `<div class="telemetry-tile"><div class="telemetry-label">${label}</div><div class="telemetry-value">${value}</div>${hint ? `<div class="telemetry-hint">${hint}</div>` : ''}</div>`;
@@ -274,7 +288,7 @@ async function loadDetail() {
     ['Версія Sirena', device.sirena_version || '—'],
     ['Версія Відео', device.video_version || '—'],
     ['Активовано', data.is_valid ? 'Так' : 'Ні'],
-    ['Час останнього пінгу', device.last_seen || '—'],
+    ['Час останнього пінгу', utcToLocalText(device.last_seen)],
     ['Телеметрія', data.telemetry.active ? 'Вкл' : 'Вимк'],
     ['Стрім', data.video.active ? 'Вкл' : 'Вимк'],
   ];
@@ -296,7 +310,7 @@ async function loadDetail() {
 
   const commands = data.commands || [];
   document.getElementById('commandBody').innerHTML = commands.length
-    ? commands.map(cmd => `<tr><td>${cmd.created_at}</td><td>${cmd.command}</td><td>${cmd.status}</td></tr>`).join('')
+    ? commands.map(cmd => `<tr><td title="UTC: ${escapeHtml(cmd.created_at || '—')}">${escapeHtml(utcToLocalText(cmd.created_at))}</td><td>${escapeHtml(cmd.command)}</td><td>${escapeHtml(cmd.status)}</td></tr>`).join('')
     : '<tr><td colspan="3" class="text-center soft py-3">No commands queued</td></tr>';
 }
 

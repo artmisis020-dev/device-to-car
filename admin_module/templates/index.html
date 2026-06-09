@@ -148,6 +148,20 @@ function lastSeenClass(ls) {
   return (new Date() - new Date(ls + ' UTC')) > 5*60*1000 ? 'last-seen-old' : '';
 }
 
+function utcToLocalText(value) {
+  if (!value) return '-';
+  const date = new Date(String(value).replace('T', ' ') + ' UTC');
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
 function shortId(id) { return id.substring(0, 12) + '...'; }
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({
@@ -197,8 +211,8 @@ async function loadDevices() {
       <td>${esc(d.ip || '-')}</td>
       <td><code title="${esc(d.device_id)}">${shortId(d.device_id)}</code></td>
       <td><span class="badge bg-secondary">${esc(d.sirena_version || '-')}</span></td>
-      <td class="small ${lastSeenClass(d.last_seen)}">${esc((d.last_seen||'-').replace('T',' '))}</td>
-      <td class="small">${esc(d.valid_until||'-')}</td>
+      <td class="small ${lastSeenClass(d.last_seen)}" title="UTC: ${esc((d.last_seen||'-').replace('T',' '))}">${esc(utcToLocalText(d.last_seen))}</td>
+      <td class="small" title="UTC: ${esc(d.valid_until||'-')}">${esc(utcToLocalText(d.valid_until))}</td>
       <td>
         <a href="/devices/${d.device_id}" class="btn btn-sm action-btn icon-only py-0 px-2 me-1 actions-btn" title="Open detail page">Дашборд</a>
         <a href="/telemetry/${d.device_id}" class="btn btn-sm action-btn py-0 px-2 me-1 actions-btn" title="Телеметрія">${telBadge}</a>
@@ -248,7 +262,7 @@ async function deleteDevice(id, hostname) {
 }
 
 setInterval(() => {
-  document.getElementById('clock').textContent = new Date().toUTCString().slice(0,25) + ' UTC';
+  document.getElementById('clock').textContent = new Date().toLocaleString();
 }, 1000);
 setInterval(loadDevices, 15000);
 loadDevices();
