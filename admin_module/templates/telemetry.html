@@ -36,9 +36,9 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
       📡 {{ hostname }} — Telemetry
     </span>
     <div class="d-flex gap-2">
-      <button id="btnToggle" class="btn btn-sm btn-success" onclick="toggleTelemetry()">▶ Start</button>
-      <button class="btn btn-sm btn-outline-warning" onclick="clearTelemetry()">🗑 Clear</button>
-      <a href="/" class="btn btn-sm btn-outline-secondary">← Registry</a>
+      <button id="btnToggle" class="btn btn-sm btn-success" onclick="toggleTelemetry()">▶ Старт</button>
+      <button class="btn btn-sm btn-outline-warning" onclick="clearTelemetry()">🗑 Очистити</button>
+      <a href="/" class="btn btn-sm btn-outline-secondary">← Назад</a>
     </div>
   </div>
 </nav>
@@ -46,7 +46,7 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
 <div class="container-fluid">
   <!-- Status bar -->
   <div class="d-flex gap-3 mb-3 align-items-center flex-wrap">
-    <span id="statusText" class="text-muted small">Waiting for telemetry…</span>
+    <span id="statusText" class="text-muted small">Очікування телеметрії…</span>
     <span class="text-muted small">|</span>
     <span class="small">Msgs: <strong id="msgCount">0</strong></span>
     <span class="small">Rate: <strong id="msgRate">0</strong> msg/s</span>
@@ -61,13 +61,13 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
       <div class="card h-100">
         <div class="card-header">🛰 GPS</div>
         <div class="card-body p-2">
-          <div class="metric-label">Latitude</div>
+          <div class="metric-label">Latitude(Широта)</div>
           <div class="metric-value" id="gpsLat">—</div>
-          <div class="metric-label mt-1">Longitude</div>
+          <div class="metric-label mt-1">Longitude(Довгота)</div>
           <div class="metric-value" id="gpsLon">—</div>
           <div class="d-flex gap-3 mt-2">
             <div><div class="metric-label">Alt (m)</div><div id="gpsAlt" class="fw-bold">—</div></div>
-            <div><div class="metric-label">Sats</div><div id="gpsSats" class="fw-bold">—</div></div>
+            <div><div class="metric-label">Sats(Супутники)</div><div id="gpsSats" class="fw-bold">—</div></div>
             <div><div class="metric-label">Fix</div><div id="gpsFix" class="fw-bold">—</div></div>
           </div>
         </div>
@@ -101,7 +101,7 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
     <!-- Battery -->
     <div class="col-6 col-md-3">
       <div class="card h-100">
-        <div class="card-header">🔋 Battery</div>
+        <div class="card-header">🔋 Батарея</div>
         <div class="card-body p-2">
           <div class="metric-value" id="batVolt">—<span class="metric-unit"> V</span></div>
           <div class="metric-label mt-1">Voltage</div>
@@ -115,7 +115,7 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
             </div>
           </div>
           <div class="mt-2">
-            <div class="metric-label">System Status</div>
+            <div class="metric-label">Статус системи</div>
             <div class="fw-bold" id="sysStatus">—</div>
           </div>
         </div>

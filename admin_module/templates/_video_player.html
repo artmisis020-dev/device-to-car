@@ -62,14 +62,14 @@
 
 {% if not video_player_compact %}
 <div class="svp-status-line">
-  <span id="svpStreamStatus" class="muted">Loading stream</span>
+  <span id="svpStreamStatus" class="muted">Завантаження стріму</span>
   <span class="svp-divider"></span>
-  <span>Stream: <strong id="svpStreamName">-</strong></span>
+  <span>Стрім: <strong id="svpStreamName">-</strong></span>
   <span>WebRTC: <strong id="svpWebrtcUrl">-</strong></span>
   <span class="svp-divider"></span>
   <span class="svp-cameras">
-    <span class="svp-camera-label">Cameras:</span>
-    <span id="svpCameraList" class="svp-camera-label">Loading...</span>
+    <span class="svp-camera-label">Камери:</span>
+    <span id="svpCameraList" class="svp-camera-label">Завантаження...</span>
   </span>
 </div>
 {% endif %}
@@ -78,7 +78,7 @@
   <div class="svp-head">
     <span>Live Stream</span>
     <div class="svp-actions">
-      <button id="svpReconnect" class="btn btn-sm btn-outline-info" type="button">Reconnect</button>
+      <button id="svpReconnect" class="btn btn-sm btn-outline-info" type="button">Перепідключити</button>
       {% if not video_player_compact %}
       <button id="svpRecord" class="btn btn-sm btn-outline-danger" type="button">REC</button>
       <span class="svp-rec-state"><span id="svpRecDot" class="svp-rec-dot"></span><span>REC</span></span>
