@@ -536,6 +536,10 @@ class MavLinkGPSHub:
 
     def mavlink_proxy_worker(self):
         logger.info("MAVLink proxy worker запущен (high-rate)")
+
+        last_gps_send_ts = 0.0
+        gps_send_interval = 0.5  # Частота відправки — 2 Гц
+
         while self.running:
             try:
                 if not self.bridge:
@@ -575,6 +579,35 @@ class MavLinkGPSHub:
                     if self.telemetry_snapshot:
                         self.telemetry_snapshot.update_from_msg(msg_fc)
                     self.bridge.send_to_gcs(msg_fc)
+
+                    # === ТОЧКОВА ІН'ЄКЦІЯ STARLINK ===
+                    now = time.time()
+                    if now - last_gps_send_ts >= gps_send_interval:
+                        last_gps_send_ts = now
+
+                        # Перевіряємо наявність даних у вікні та чи ініціалізовано порт GCS
+                        if self._stargps and self._stargps._data and self.bridge.mav_gcs:
+                            last_rec = self._stargps._data[-1]
+
+                            lat_int = int(last_rec.lat * 1e7)
+                            lon_int = int(last_rec.lon * 1e7)
+                            alt_mm = int(last_rec.alt * 1000)
+                            boot_us = int(time.monotonic() * 1e6)
+
+                            self.bridge.mav_gcs.mav.gps_input_send(
+                                boot_us,
+                                1,  # gps_id (1 = Starlink)
+                                0,
+                                0,
+                                0,
+                                3,
+                                lat_int, lon_int, alt_mm,
+                                1.0, 1.0,
+                                0.0, 0.0, 0.0,
+                                0.0, 0.0, 0.0,
+                                15,
+                                0
+                            )
 
                 if processed == 0:
                     time.sleep(0.002)
