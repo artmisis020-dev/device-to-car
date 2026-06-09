@@ -99,13 +99,15 @@ class MAVLinkBridge:
             logger.info(f"Підключення до FC на {FC_RECV_ADDR}:{FC_RECV_PORT} (udpin)")
             self.mav_fc = mavutil.mavlink_connection(
                 f'udpin:{FC_RECV_ADDR}:{FC_RECV_PORT}',
-                source_system=1
+                source_system=1,
+                source_component=191
             )
 
             logger.info(f"Запускаємо GCS proxy на 0.0.0.0:{GCS_LISTEN_PORT} (udpin)")
             self.mav_gcs = mavutil.mavlink_connection(
                 f'udpin:0.0.0.0:{GCS_LISTEN_PORT}',
-                source_system=1
+                source_system=1,
+                source_component=191
             )
 
             logger.info("✅ MAVLink з'єднання успішно встановлено")
@@ -166,6 +168,7 @@ class MAVLinkBridge:
                 return None
             msg = self.mav_gcs.recv_match(blocking=False)
             if msg:
+                logger.warning(f"Дата з ground station: {msg}")
                 if msg.get_type() == 'BAD_DATA':
                     return None
 
@@ -188,9 +191,14 @@ class MAVLinkBridge:
             if self.mav_fc is None:
                 return None
             msg = self.mav_fc.recv_match(blocking=False)
-            if msg and self._recv_fc_callback:
-                self._recv_fc_callback(msg)
-            return msg
+            if msg:
+                if msg.get_type() == 'BAD_DATA':
+                    return None
+
+                if self._recv_fc_callback:
+                    self._recv_fc_callback(msg)
+                return msg
+            return None
         except Exception as e:
             logger.warning(f"Помилка при читанні з FC: {e}")
             return None
