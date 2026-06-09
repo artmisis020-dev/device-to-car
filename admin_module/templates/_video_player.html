@@ -78,11 +78,7 @@
   <div class="svp-head">
     <span>Live Stream</span>
     <div class="svp-actions">
-      <button id="svpReconnect" class="btn btn-sm btn-outline-info" type="button">Перепідключити</button>
-      {% if not video_player_compact %}
-      <button id="svpRecord" class="btn btn-sm btn-outline-danger" type="button">REC</button>
-      <span class="svp-rec-state"><span id="svpRecDot" class="svp-rec-dot"></span><span>REC</span></span>
-      {% endif %}
+      <button id="svpReconnect" class="btn btn-sm btn-outline-info" type="button">Перезавантажити</button>
     </div>
   </div>
   <div class="svp-video-shell">
@@ -417,14 +413,14 @@
     } catch (err) {}
   }
 
-  function updateRecordBtn() {
-    const btn = el('svpRecord');
-    const dot = el('svpRecDot');
-    if (!btn || !dot) return;
-    btn.className = recordActive ? 'btn btn-sm btn-danger' : 'btn btn-sm btn-outline-danger';
-    btn.textContent = recordActive ? 'Stop REC' : 'REC';
-    dot.classList.toggle('on', recordActive);
-  }
+  // function updateRecordBtn() {
+  //   const btn = el('svpRecord');
+  //   const dot = el('svpRecDot');
+  //   if (!btn || !dot) return;
+  //   btn.className = recordActive ? 'btn btn-sm btn-danger' : 'btn btn-sm btn-outline-danger';
+  //   btn.textContent = recordActive ? 'Stop REC' : 'REC';
+  //   dot.classList.toggle('on', recordActive);
+  // }
 
   el('svpReconnect')?.addEventListener('click', connectStream);
   el('svpRecord')?.addEventListener('click', toggleRecord);

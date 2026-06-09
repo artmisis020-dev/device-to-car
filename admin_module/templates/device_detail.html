@@ -22,8 +22,26 @@ body { background:#0b1220; color:#d7e1ea; }
 	.msg-table td, .msg-table th { padding:.35rem .5rem !important; font-size:.78rem; border-color:#263a59 !important; color:#e8eef5 !important; }
 	.msg-table thead th { background:#192840 !important; color:#f4f8fc !important; }
 	.msg-table code { color:#dbeafe; white-space:pre-wrap; overflow-wrap:anywhere; }
-.cmd-btn { min-width:88px; }
-</style>
+	.telemetry-summary {
+		display:grid;
+		grid-template-columns:repeat(4, minmax(0, 1fr));
+		gap:1px;
+		background:#263a59;
+		border-bottom:1px solid #263a59;
+	}
+	.telemetry-tile { background:#0f1a2b; padding:.7rem .8rem; min-height:72px; }
+	.telemetry-label { color:#9fb4cf; font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; }
+	.telemetry-value { color:#f4f8fc; font-weight:700; font-size:.98rem; margin-top:.2rem; overflow-wrap:anywhere; }
+	.telemetry-hint { color:#9fb4cf; font-size:.76rem; margin-top:.15rem; }
+	.highlight-list { display:flex; flex-wrap:wrap; gap:.35rem; }
+	.highlight-pill { background:#182942; border:1px solid #2b4264; border-radius:999px; padding:.12rem .45rem; color:#dbeafe; white-space:nowrap; }
+	.raw-details summary { color:#8bd3ff; cursor:pointer; user-select:none; }
+	.raw-details pre { margin:.45rem 0 0; max-height:180px; overflow:auto; white-space:pre-wrap; color:#dbeafe; font-size:.74rem; }
+	@media (max-width: 900px) {
+		.telemetry-summary { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+	}
+	.cmd-btn { min-width:88px; }
+	</style>
 {% endblock %}
 {% block content %}
 <nav class="navbar navbar-dark" style="background:#16243a;border-bottom:1px solid #20324f">
@@ -92,10 +110,16 @@ body { background:#0b1220; color:#d7e1ea; }
       <div class="card h-100">
         <div class="card-header">Телеметрія</div>
         <div class="card-body p-0">
+          <div id="telemetrySummary" class="telemetry-summary">
+            <div class="telemetry-tile"><div class="telemetry-label">GPS</div><div class="telemetry-value">—</div></div>
+            <div class="telemetry-tile"><div class="telemetry-label">Висота</div><div class="telemetry-value">—</div></div>
+            <div class="telemetry-tile"><div class="telemetry-label">Швидкість</div><div class="telemetry-value">—</div></div>
+            <div class="telemetry-tile"><div class="telemetry-label">Батарея</div><div class="telemetry-value">—</div></div>
+          </div>
           <div class="table-responsive">
             <table class="table table-sm msg-table mb-0">
-              <thead><tr><th>Тип</th><th>Кількість</th><th>Дані</th></tr></thead>
-              <tbody id="latestTelemetry"><tr><td colspan="3" class="text-center soft py-3">Завантаження…</td></tr></tbody>
+              <thead><tr><th>Повідомлення</th><th>Вік</th><th>Основне</th><th>Raw</th></tr></thead>
+              <tbody id="latestTelemetry"><tr><td colspan="4" class="text-center soft py-3">Завантаження…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -120,6 +144,119 @@ function fmt(value) {
   return String(value);
 }
 
+	function escapeHtml(value) {
+	  return String(value)
+	    .replaceAll('&', '&amp;')
+	    .replaceAll('<', '&lt;')
+	    .replaceAll('>', '&gt;')
+	    .replaceAll('"', '&quot;')
+	    .replaceAll("'", '&#039;');
+	}
+
+	function latestByType(messages) {
+	  const result = {};
+	  for (const row of messages) {
+	    if (!result[row.type] || Number(row.ts) > Number(result[row.type].ts)) result[row.type] = row;
+	  }
+	  return result;
+	}
+
+	function ageText(ts) {
+	  const age = Date.now() / 1000 - Number(ts || 0);
+	  if (!Number.isFinite(age) || age < 0) return '—';
+	  if (age < 2) return 'зараз';
+	  if (age < 60) return `${age.toFixed(0)}с`;
+	  if (age < 3600) return `${(age / 60).toFixed(0)}хв`;
+	  return `${(age / 3600).toFixed(1)}г`;
+	}
+
+	function numberText(value, digits = 1) {
+	  const n = Number(value);
+	  return Number.isFinite(n) ? n.toFixed(digits) : '—';
+	}
+
+	function tile(label, value, hint = '') {
+	  return `<div class="telemetry-tile"><div class="telemetry-label">${label}</div><div class="telemetry-value">${value}</div>${hint ? `<div class="telemetry-hint">${hint}</div>` : ''}</div>`;
+	}
+
+	function renderTelemetrySummary(byType) {
+	  const newest = Object.values(byType).sort((a, b) => Number(b.ts) - Number(a.ts))[0];
+	  const gps = byType.GLOBAL_POSITION_INT?.data || {};
+	  const gpsRaw = byType.GPS_RAW_INT?.data || {};
+	  const vfr = byType.VFR_HUD?.data || {};
+	  const sys = byType.SYS_STATUS?.data || {};
+	  const heartbeat = byType.HEARTBEAT?.data || {};
+	  const lat = gps.lat !== undefined ? Number(gps.lat) / 1e7 : null;
+	  const lon = gps.lon !== undefined ? Number(gps.lon) / 1e7 : null;
+	  const gpsValue = Number.isFinite(lat) && Number.isFinite(lon) ? `${lat.toFixed(6)}, ${lon.toFixed(6)}` : '—';
+	  const alt = gps.relative_alt !== undefined ? `${numberText(Number(gps.relative_alt) / 1000, 1)} м` : '—';
+	  const speed = vfr.groundspeed !== undefined ? `${numberText(vfr.groundspeed, 1)} м/с` : '—';
+	  const heading = vfr.heading !== undefined ? `${numberText(vfr.heading, 0)}°` : '';
+	  const voltage = sys.voltage_battery !== undefined && Number(sys.voltage_battery) > 0 ? `${numberText(Number(sys.voltage_battery) / 1000, 2)} В` : '—';
+	  const pct = sys.battery_remaining !== undefined && Number(sys.battery_remaining) >= 0 ? `${sys.battery_remaining}%` : '';
+	  const armed = heartbeat.base_mode !== undefined ? ((Number(heartbeat.base_mode) & 128) ? 'ARMED' : 'DISARMED') : '—';
+	  const modeHint = heartbeat.system_status !== undefined ? `status ${heartbeat.system_status}` : '';
+
+	  document.getElementById('telemetrySummary').innerHTML = [
+	    tile('GPS', gpsValue, gpsRaw.satellites_visible !== undefined ? `${gpsRaw.satellites_visible} супутників, fix ${gpsRaw.fix_type ?? '—'}` : ''),
+	    tile('Висота', alt, gps.hdg !== undefined && Number(gps.hdg) !== 65535 ? `курс ${(Number(gps.hdg) / 100).toFixed(0)}°` : ''),
+	    tile('Швидкість', speed, heading ? `heading ${heading}` : ''),
+	    tile('Батарея', voltage, pct),
+	    tile('Стан', armed, modeHint),
+	    tile('Останнє', newest ? ageText(newest.ts) : '—'),
+	  ].join('');
+	}
+
+	function highlightFor(row) {
+	  const d = row.data || {};
+	  const t = row.type;
+	  if (t === 'GLOBAL_POSITION_INT') {
+	    return [
+	      ['lat', d.lat !== undefined ? (Number(d.lat) / 1e7).toFixed(6) : null],
+	      ['lon', d.lon !== undefined ? (Number(d.lon) / 1e7).toFixed(6) : null],
+	      ['alt', d.relative_alt !== undefined ? `${numberText(Number(d.relative_alt) / 1000, 1)}м` : null],
+	    ];
+	  }
+	  if (t === 'GPS_RAW_INT') return [['fix', d.fix_type], ['sats', d.satellites_visible], ['eph', d.eph]];
+	  if (t === 'VFR_HUD') return [['speed', d.groundspeed], ['heading', d.heading], ['thr', d.throttle]];
+	  if (t === 'SYS_STATUS') return [['batt', d.voltage_battery > 0 ? `${numberText(d.voltage_battery / 1000, 2)}В` : null], ['load', d.load], ['err', d.errors_comm]];
+	  if (t === 'RAW_IMU' || t === 'SCALED_IMU2') return [['acc', `${d.xacc ?? '—'}/${d.yacc ?? '—'}/${d.zacc ?? '—'}`], ['gyro', `${d.xgyro ?? '—'}/${d.ygyro ?? '—'}/${d.zgyro ?? '—'}`]];
+	  if (t === 'RC_CHANNELS') return [['ch1', d.chan1_raw], ['ch2', d.chan2_raw], ['ch3', d.chan3_raw], ['count', d.chancount]];
+	  if (t === 'HEARTBEAT') return [['armed', d.base_mode !== undefined ? ((Number(d.base_mode) & 128) ? 'yes' : 'no') : null], ['status', d.system_status], ['mode', d.custom_mode]];
+	  return Object.entries(d).slice(0, 4);
+	}
+
+	function renderHighlights(row) {
+	  const items = highlightFor(row)
+	    .filter(([, value]) => value !== null && value !== undefined && value !== '')
+	    .map(([key, value]) => `<span class="highlight-pill">${escapeHtml(key)}: ${escapeHtml(value)}</span>`);
+	  return items.length ? `<div class="highlight-list">${items.join('')}</div>` : '<span class="soft">—</span>';
+	}
+
+	function renderTelemetry(latest) {
+	  const byType = latestByType(latest);
+	  renderTelemetrySummary(byType);
+	  const important = ['GLOBAL_POSITION_INT', 'GPS_RAW_INT', 'VFR_HUD', 'SYS_STATUS', 'HEARTBEAT', 'RAW_IMU', 'SCALED_IMU2', 'RC_CHANNELS'];
+	  const rows = Object.values(byType)
+	    .sort((a, b) => {
+	      const ai = important.indexOf(a.type);
+	      const bi = important.indexOf(b.type);
+	      if (ai !== -1 || bi !== -1) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+	      return Number(b.ts) - Number(a.ts);
+	    })
+	    .slice(0, 14)
+	    .map(row => {
+	      const raw = escapeHtml(JSON.stringify(row.data || {}, null, 2));
+	      return `<tr>
+	        <td><strong>${escapeHtml(row.type)}</strong></td>
+	        <td class="soft">${ageText(row.ts)}</td>
+	        <td>${renderHighlights(row)}</td>
+	        <td><details class="raw-details"><summary>raw</summary><pre>${raw}</pre></details></td>
+	      </tr>`;
+	    });
+	  document.getElementById('latestTelemetry').innerHTML = rows.length ? rows.join('') : '<tr><td colspan="4" class="text-center soft py-3">Телеметрії ще немає</td></tr>';
+	}
+
 async function loadDetail() {
   const res = await fetch(`/api/devices/${DEVICE_ID}`);
   const data = await res.json();
@@ -137,15 +274,14 @@ async function loadDetail() {
     ['Версія Sirena', device.sirena_version || '—'],
     ['Версія Відео', device.video_version || '—'],
     ['Активовано', data.is_valid ? 'Так' : 'Ні'],
-    ['Останнє з\'єднання', device.last_seen || '—'],
+    ['Час останнього пінгу', device.last_seen || '—'],
     ['Телеметрія', data.telemetry.active ? 'Вкл' : 'Вимк'],
     ['Стрім', data.video.active ? 'Вкл' : 'Вимк'],
   ];
   document.getElementById('profileBox').innerHTML = profile.map(([k, v]) => `<div>${k}</div><div>${fmt(v)}</div>`).join('');
 
   const latest = data.telemetry.latest || [];
-  const rows = latest.slice(0, 25).map(row => `<tr><td>${fmt(row.type)}</td><td class="soft">${row.ts}</td><td><code>${fmt(row.data)}</code></td></tr>`);
-  document.getElementById('latestTelemetry').innerHTML = rows.length ? rows.join('') : '<tr><td colspan="3" class="text-center soft py-3">No telemetry yet</td></tr>';
+  renderTelemetry(latest);
 
   const gps = latest.find((row) => row.data && (row.data.lat !== undefined || row.data.latitude !== undefined));
   const lat = gps?.data?.lat !== undefined ? gps.data.lat / 1e7 : gps?.data?.latitude;

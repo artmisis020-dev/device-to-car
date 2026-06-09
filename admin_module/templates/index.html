@@ -37,7 +37,7 @@ body { background:#1a1a2e; color:#e0e0e0; }
 .action-state { color:#f3f7fc; font-size:.78rem; font-weight:700; letter-spacing:.02em; }
 .action-state.muted { color:#b8c9df; font-weight:600; }
 .action-rec { color:#f3f7fc; font-size:.7rem; font-weight:700; margin-left:.25rem; }
-.tel-live { color:#f3f7fc; font-size:.75rem; font-weight:700; }
+.actions-btn { color:#f3f7fc; font-size:.75rem; font-weight:700; }
 .online-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:.35rem; background:#6c757d; }
 .online-dot.on { background:#3fb950; box-shadow:0 0 0 3px rgba(63,185,80,.18); }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
@@ -66,7 +66,7 @@ body { background:#1a1a2e; color:#e0e0e0; }
         <table class="table table-hover mb-0" id="devTable">
           <thead><tr>
             <th>Статус</th><th>Hostname</th><th>IP</th><th>Hardware ID</th>
-            <th>Версія Sirena</th><th>Версія Відео</th><th>Останнє з\'єднання</th><th>Дійсний до</th><th>Дії</th>
+            <th>Версія Sirena</th><th>Час останнього пінгу</th><th>Дійсний до</th><th>Дії</th>
           </tr></thead>
           <tbody id="devBody"></tbody>
         </table>
@@ -180,16 +180,16 @@ async function loadDevices() {
   const body = devs.map(d => {
     const hostname = d.hostname || '-';
     const vidBtn = d.video_active
-      ? 'Video'
-      : 'Video';
+      ? '<span>Відео</span>'
+      : '<span class="action-state muted">Відео відсутнє</span>';
     const telBadge = d.telemetry_active
-      ? '<span class="tel-live">Telemetry</span>'
-      : '<span class="action-state muted">off</span>';
+      ? '<span>Телеметрія</span>'
+      : '<span class="action-state muted">Телеметрія відсутня</span>';
     const approveBtn = d.is_valid
       ? ''
-      : `<button class="btn btn-sm action-btn icon-only py-0 px-2 me-1" onclick="openApprove('${d.device_id}')" title="Approve device">✓</button>`;
+      : `<button class="btn btn-sm action-btn icon-only py-0 px-2 me-1" onclick="openApprove('${d.device_id}')" title="Активувати">✓</button>`;
     const revokeBtn = d.approved
-      ? `<button class="btn btn-sm action-btn icon-only py-0 px-2 me-1" onclick="openRevoke('${d.device_id}')" title="Revoke access">✕</button>`
+      ? `<button class="btn btn-sm action-btn icon-only py-0 px-2 me-1" onclick="openRevoke('${d.device_id}')" title="Деактивувати">✕</button>`
       : '';
     return `<tr>
       <td><span class="online-dot ${d.online ? 'on' : ''}" title="${d.online ? 'Online' : 'Offline'}"></span>${statusBadge(d)}</td>
@@ -197,16 +197,15 @@ async function loadDevices() {
       <td>${esc(d.ip || '-')}</td>
       <td><code title="${esc(d.device_id)}">${shortId(d.device_id)}</code></td>
       <td><span class="badge bg-secondary">${esc(d.sirena_version || '-')}</span></td>
-      <td><span class="badge bg-secondary">${esc(d.video_version || '-')}</span></td>
       <td class="small ${lastSeenClass(d.last_seen)}">${esc((d.last_seen||'-').replace('T',' '))}</td>
       <td class="small">${esc(d.valid_until||'-')}</td>
       <td>
-        <a href="/devices/${d.device_id}" class="btn btn-sm action-btn icon-only py-0 px-2 me-1" title="Open detail page">Дашборд</a>
-        <a href="/telemetry/${d.device_id}" class="btn btn-sm action-btn py-0 px-2 me-1" title="Telemetry">${telBadge}</a>
-        <a href="/video/${d.device_id}" class="btn btn-sm action-btn py-0 px-2 me-1" title="Video">${vidBtn}</a>
+        <a href="/devices/${d.device_id}" class="btn btn-sm action-btn icon-only py-0 px-2 me-1 actions-btn" title="Open detail page">Дашборд</a>
+        <a href="/telemetry/${d.device_id}" class="btn btn-sm action-btn py-0 px-2 me-1 actions-btn" title="Телеметрія">${telBadge}</a>
+        <a href="/video/${d.device_id}" class="btn btn-sm action-btn py-0 px-2 me-1 actions-btn" title="Відео">${vidBtn}</a>
         ${approveBtn}
         ${revokeBtn}
-        <button class="btn btn-sm action-btn icon-only py-0 px-2" onclick="deleteDevice('${d.device_id}','${esc(hostname)}')" title="Видалити пристрій">🗑</button>
+        <button class="btn btn-sm action-bааtn icon-only py-0 px-2" onclick="deleteDevice('${d.device_id}','${esc(hostname)}')" title="Видалити пристрій">🗑</button>
       </td>
     </tr>`;
   }).join('');
