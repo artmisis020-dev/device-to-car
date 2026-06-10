@@ -129,6 +129,8 @@ class MavLinkGPSHub:
 
         self.lock = threading.Lock()
         self.starlink_service = starlink_service
+        self.is_moving = False
+        self.detector = starlink.MovementDetector(threshold=0.01)
 
     def _store_manual_coords(self, msg_data: Dict[str, Any], raw_alt: float) -> Dict[str, float]:
         lat = msg_data.get("latitude")
@@ -372,6 +374,8 @@ class MavLinkGPSHub:
                     try:
                         # location = starlink.get_location()
                         location = starlink.starlink_client.get_location()
+                        self.is_moving = self.detector.update(starlink.starlink_client.get_status())
+
 
                         if location and location.get("available"):
                             # 1. Оригінальний фільтр (moving average + outlier rejection)
@@ -704,7 +708,13 @@ class MavLinkGPSHub:
 
                 if gps_data:
                     self.last_output_alt = float(gps_data.get("altitude", 0.0))
-                    if self.bridge and gps_data:
+
+                    if self.is_moving:
+                        print("Рухаємось — можна брати координати")
+                    else:
+                        print("Стоїмо — координати ненадійні")
+
+                    if self.bridge and gps_data and self.is_moving:
                         self.bridge.send_gps_input(lat=gps_data["latitude"], lon=gps_data["longitude"], alt=gps_data.get("altitude", 0.0), sats=sats )
 
                     # Логування — показуємо FORECAST замість STARLINK якщо forecast

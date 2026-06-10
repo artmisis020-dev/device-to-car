@@ -13,6 +13,33 @@ from typing import Any, Dict
 
 import config
 import starlink_grpc
+import math
+
+def quaternion_delta(q_prev, q_curr):
+    return math.sqrt(
+        (q_curr.q_scalar - q_prev.q_scalar) ** 2 +
+        (q_curr.q_x      - q_prev.q_x)      ** 2 +
+        (q_curr.q_y      - q_prev.q_y)      ** 2 +
+        (q_curr.q_z      - q_prev.q_z)      ** 2
+    )
+
+class MovementDetector:
+    def __init__(self, threshold=0.01):
+        self.threshold = threshold
+        self.q_prev = None
+
+    def update(self, status):
+        q_curr = status.ned2dish_quaternion
+        if self.q_prev is None:
+            self.q_prev = q_curr
+            return False
+
+        delta = quaternion_delta(self.q_prev, q_curr)
+        self.q_prev = q_curr
+
+        print(f"delta: {delta:.6f}")
+
+        return delta > self.threshold
 
 # Налаштування логування
 logging.basicConfig(
@@ -97,33 +124,7 @@ class StarlinkClient:
             При помилці повертає кешовані дані або пусту структуру.
         """
         try:
-            ctx = self.grpc.ChannelContext(target=self.context)
-            status, _, _ = self.grpc.status_data(context=ctx)
-
-            data = {
-                "available": True,
-                "id": status.get("id"),
-                "hardware_version": status.get("hardware_version"),
-                "software_version": status.get("software_version"),
-                "software_update": self.get_software_update_status(self.target),
-                "state": status.get("state"),
-                "uptime": status.get("uptime"),
-                "snr": status.get("snr"),
-                "pop_ping_drop_rate": status.get("pop_ping_drop_rate"),
-                "downlink_throughput_bps": status.get("downlink_throughput_bps"),
-                "uplink_throughput_bps": status.get("uplink_throughput_bps"),
-                "pop_ping_latency_ms": status.get("pop_ping_latency_ms"),
-                "fraction_obstructed": status.get("fraction_obstructed"),
-                "gps_enabled": status.get("gps_enabled"),
-                "gps_ready": status.get("gps_ready"),
-                "gps_sats": status.get("gps_sats"),
-            }
-
-            self._status_cache = data
-            logger.debug(
-                f"Статус Starlink: state={data['state']}, uptime={data['uptime']}s"
-            )
-
+            data = self.grpc.get_status()
             return data
 
         except Exception as e:
