@@ -31,7 +31,7 @@ import datetime
 from collections import deque
 from pathlib import Path
 from typing import Optional, Dict, Any, List
-
+import json
 # Локальні модулі (оригінальний Sirena)
 import starlink
 import mavlink_bridge
@@ -375,7 +375,37 @@ class MavLinkGPSHub:
                         # location = starlink.get_location()
                         location = starlink.starlink_client.get_location()
                         self.is_moving = self.detector.update(starlink.starlink_client.get_status())
+                        status = starlink.starlink_client.get_status()
+                        print(f"pnt_filter: {status.gps_stats.pnt_filter_convergence_state}")
+                        print(f"downlink: {status.downlink_throughput_bps:.1f} bps")
+                        print(f"uplink: {status.uplink_throughput_bps:.1f} bps")
+                        print(f"ping: {status.pop_ping_latency_ms:.2f} ms")
+                        print(f"obstruction: {status.obstruction_stats.fraction_obstructed:.4f}")
+                        print(f"tilt: {status.alignment_stats.tilt_angle_deg:.4f} deg")
+                        print(f"azimuth: {status.alignment_stats.boresight_azimuth_deg:.4f} deg")
+                        print(f"elevation: {status.alignment_stats.boresight_elevation_deg:.4f} deg")
+                        print(
+                            f"q: {status.ned2dish_quaternion.q_scalar:.6f} {status.ned2dish_quaternion.q_x:.6f} {status.ned2dish_quaternion.q_y:.6f} {status.ned2dish_quaternion.q_z:.6f}")
 
+                        data = {
+                            "pnt_filter": str(status.gps_stats.pnt_filter_convergence_state),
+                            "downlink_bps": status.downlink_throughput_bps,
+                            "uplink_bps": status.uplink_throughput_bps,
+                            "ping_ms": status.pop_ping_latency_ms,
+                            "obstruction": status.obstruction_stats.fraction_obstructed,
+                            "tilt_deg": status.alignment_stats.tilt_angle_deg,
+                            "azimuth_deg": status.alignment_stats.boresight_azimuth_deg,
+                            "elevation_deg": status.alignment_stats.boresight_elevation_deg,
+                            "quaternion": {
+                                "scalar": status.ned2dish_quaternion.q_scalar,
+                                "x": status.ned2dish_quaternion.q_x,
+                                "y": status.ned2dish_quaternion.q_y,
+                                "z": status.ned2dish_quaternion.q_z,
+                            }
+                        }
+
+                        with open("/home/sirena/starlink_motion.jsonl", "a") as f:
+                            f.write(json.dumps(data) + "\n")
 
                         if location and location.get("available"):
                             # 1. Оригінальний фільтр (moving average + outlier rejection)
@@ -714,7 +744,7 @@ class MavLinkGPSHub:
                     else:
                         print("Стоїмо — координати ненадійні")
 
-                    if self.bridge and gps_data and self.is_moving:
+                    if self.bridge and gps_data:
                         self.bridge.send_gps_input(lat=gps_data["latitude"], lon=gps_data["longitude"], alt=gps_data.get("altitude", 0.0), sats=sats )
 
                     # Логування — показуємо FORECAST замість STARLINK якщо forecast
