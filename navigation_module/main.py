@@ -295,7 +295,7 @@ class MavLinkGPSHub:
         # для забезпечення наднизької затримки (low-latency) позиціонування
         window_size = 7
         if len(h) < window_size:
-            return False
+            return True
 
         last = h.latest()
         if last is None:
@@ -380,6 +380,8 @@ class MavLinkGPSHub:
                             with self.lock:
                                 self.starlink_available = True
                                 self.last_starlink_data = location
+
+                            #self.bridge.send_gps_input(lat=location["latitude"], lon=location["longitude"], alt=filtered.get('altitude', 0.0), sats=12)
 
                             logger.info(
                                 f"Starlink OK(raw→flt): "
@@ -680,7 +682,7 @@ class MavLinkGPSHub:
                             "longitude": fp.lon,
                             "altitude":  float(starlink_data.get("altitude", 0.0))
                                          if starlink_data else 0.0,
-                            "gps_sats":  0,
+                            "gps_sats":  12,
                         }
                         effective_starlink_avail = True
                         source_was_forecast      = True
@@ -702,24 +704,8 @@ class MavLinkGPSHub:
 
                 if gps_data:
                     self.last_output_alt = float(gps_data.get("altitude", 0.0))
-
-                    gga, rmc = self.priority.make_nmea(
-                        latitude=gps_data["latitude"],
-                        longitude=gps_data["longitude"],
-                        altitude=gps_data.get("altitude", 0.0),
-                        sats=sats
-                    )
-
-                    # Відправляємо в FC через UART
-                    if self.bridge:
-                        try:
-                            if self.bridge.write_uart_nmea(gga, rmc):
-                                self.uart_tx_ok += 1
-                            else:
-                                self.uart_tx_fail += 1
-                        except Exception as e:
-                            self.uart_tx_fail += 1
-                            logger.debug(f"UART write error: {e}")
+                    if self.bridge and gps_data:
+                        self.bridge.send_gps_input(lat=gps_data["latitude"], lon=gps_data["longitude"], alt=gps_data.get("altitude", 0.0), sats=sats )
 
                     # Логування — показуємо FORECAST замість STARLINK якщо forecast
                     loop_count += 1

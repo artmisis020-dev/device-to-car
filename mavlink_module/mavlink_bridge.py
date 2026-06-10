@@ -295,6 +295,40 @@ class MAVLinkBridge:
             logger.error(f"Помилка при записі NMEA на UART: {e}")
             return False
 
+    def send_gps_input(self, lat: float, lon: float, alt: float,
+                       sats: int = 12, hdop: float = 0.9) -> bool:
+        """
+        Відправляє GPS_INPUT MAVLink повідомлення в FC через UDP.
+        Потребує GPS_TYPE=14 (MAVLink GPS) в ArduPilot.
+        """
+        try:
+            if self.mav_fc is None:
+                return False
+            t = int(time.time() * 1e6)  # мікросекунди
+            self.mav_fc.mav.gps_input_send(
+                t,  # time_usec
+                0,  # gps_id
+                0,  # ignore_flags (0 = використовувати всі поля)
+                int(t // 1000000),  # time_week_ms (приблизно)
+                0,  # time_week
+                3,  # fix_type: 3 = 3D fix
+                int(lat * 1e7),  # lat
+                int(lon * 1e7),  # lon
+                alt,  # alt (метри)
+                hdop,  # hdop
+                1.0,  # vdop
+                0.0, 0.0, 0.0,  # vn, ve, vd (швидкість)
+                0.0,  # speed_accuracy
+                0.0,  # horiz_accuracy
+                0.0,  # vert_accuracy
+                sats,  # satellites_visible
+                0  # yaw
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"Помилка send_gps_input: {e}")
+            return False
+
     def send_adsb_vehicle(self, icao: int, lat: float, lon: float,
                           alt_m: float, name: str = "") -> bool:
         """

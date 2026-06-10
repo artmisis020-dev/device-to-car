@@ -25,7 +25,7 @@ from typing import Dict, Any, Optional, Tuple
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)s [priority]: %(message)s"
+    format="%(asctime)s %(levelname)s [%(name)s]: %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ class GPSPriority:
         """
         self.manual_timeout_sec = manual_timeout_sec
         self.talker = talker
-        self.last_source = None   # для логування змін джерела
+        self.last_source = "NONE"   # для логування змін джерела
 
     def select_source(
         self,
@@ -87,7 +87,8 @@ class GPSPriority:
                 "altitude":  manual_coords.get("altitude", 0),
             }
             source_type = "MANUAL"
-            sats = int(manual_coords.get("sats", 12))
+            # sats = int(manual_coords.get("sats", 12))
+            sats = 12
             logger.debug(f"GPS: MANUAL (залишилось {self.manual_timeout_sec - (now - manual_time):.1f}s)")
 
         # --- Пріоритет 2: STARLINK ---
@@ -101,7 +102,9 @@ class GPSPriority:
                 "altitude":  starlink_data.get("altitude", 0),
             }
             source_type = "STARLINK"
-            sats = int(starlink_data.get("gps_sats", 0))
+
+            # sats = int(starlink_data.get("gps_sats", 0)) or 12
+            sats = 12
             logger.debug(f"GPS: STARLINK (sats={sats})")
 
         # --- Пріоритет 3: BEITIAN (фізичний GPS приймач) ---
