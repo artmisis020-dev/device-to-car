@@ -39,6 +39,13 @@ class StarGPSHandler:
         # the difference between last and previous added records in meters
         self._last_dist_diff = 0.0
 
+        self._jump_threshold_m: float = 200.0
+        self._kalman_awake: bool = False
+
+    @property
+    def kalman_awake(self) -> bool:
+        return self._kalman_awake
+
     @staticmethod
     def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         """Distance between two points on Earth, in meters."""
@@ -107,6 +114,9 @@ class StarGPSHandler:
 
             # speed in m/s (protect from dt<=0)
             record.speed = self._last_dist_diff / dt if dt > 0 else 0.0
+
+            if not self._kalman_awake and self._last_dist_diff > self._jump_threshold_m:
+                self._kalman_awake = True
 
             # azimuth in degrees
             record.az = self._bearing_deg(prev.lat, prev.lon, record.lat, record.lon)
