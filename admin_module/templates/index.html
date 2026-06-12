@@ -35,7 +35,7 @@ body { background:#1a1a2e; color:#e0e0e0; }
 }
 .action-btn.icon-only { min-width:36px; }
 .action-state { color:#f3f7fc; font-size:.78rem; font-weight:700; letter-spacing:.02em; }
-.action-state.muted { color:#b8c9df; font-weight:600; }
+.action-state.muted { color:#b8c9df; font-weight:600; pointer-events:none; }
 .action-rec { color:#f3f7fc; font-size:.7rem; font-weight:700; margin-left:.25rem; }
 .actions-btn { color:#f3f7fc; font-size:.75rem; font-weight:700; }
 .online-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:.35rem; background:#6c757d; }
@@ -195,9 +195,9 @@ async function loadDevices() {
     const hostname = d.hostname || '-';
     const vidBtn = d.video_active
       ? '<span>Відео</span>'
-      : '<span class="action-state muted">Відео відсутнє</span>';
+      : '<span class="action-state muted">Відео</span>';
     const telBadge = d.telemetry_active
-      ? '<span>Телеметрія</span>'
+      ? '<span class="action-state">Телеметрія</span>'
       : '<span class="action-state muted">Телеметрія відсутня</span>';
     const approveBtn = d.is_valid
       ? ''
