@@ -164,6 +164,33 @@ function fmt(value) {
   return String(value);
 }
 
+function parseUtcDate(value) {
+  return new Date(String(value).replace('T', ' ') + ' UTC');
+}
+
+function uaPlural(value, one, few, many) {
+  const mod10 = value % 10;
+  const mod100 = value % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+}
+
+function timeAgoUa(value) {
+  if (!value) return '—';
+  const date = parseUtcDate(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const diffSec = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (diffSec < 5) return 'щойно';
+  if (diffSec < 60) return `${diffSec} ${uaPlural(diffSec, 'секунду', 'секунди', 'секунд')} назад`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} ${uaPlural(diffMin, 'хвилину', 'хвилини', 'хвилин')} назад`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour} ${uaPlural(diffHour, 'годину', 'години', 'годин')} назад`;
+  const diffDay = Math.floor(diffHour / 24);
+  return `${diffDay} ${uaPlural(diffDay, 'день', 'дні', 'днів')} назад`;
+}
+
 	function escapeHtml(value) {
 	  return String(value)
 	    .replaceAll('&', '&amp;')
@@ -205,7 +232,7 @@ function ageText(ts) {
 
 function utcToLocalText(value) {
   if (!value) return '—';
-  const date = new Date(String(value).replace('T', ' ') + ' UTC');
+  const date = parseUtcDate(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString(undefined, {
     year: 'numeric',
@@ -360,6 +387,7 @@ async function loadDetail() {
   }
 
   const device = data.device;
+  const lastSeenExact = utcToLocalText(device.last_seen);
   const profile = [
     ['ID Пристрою', device.device_id],
     ['Hostname', device.hostname || '—'],
@@ -368,7 +396,7 @@ async function loadDetail() {
     ['Версія Sirena', device.sirena_version || '—'],
     ['Версія Відео', device.video_version || '—'],
     ['Активовано', data.is_valid ? 'Так' : 'Ні'],
-    ['Час останнього пінгу', utcToLocalText(device.last_seen)],
+    ['Час останнього пінгу', `<span title="${escapeHtml(lastSeenExact)}">${escapeHtml(timeAgoUa(device.last_seen))}</span>`],
     ['Телеметрія', data.telemetry.active ? 'Вкл' : 'Вимк'],
     ['Стрім', data.video.active ? 'Вкл' : 'Вимк'],
   ];

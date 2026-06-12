@@ -145,12 +145,16 @@ function statusBadge(d) {
 
 function lastSeenClass(ls) {
   if (!ls) return '';
-  return (new Date() - new Date(ls + ' UTC')) > 5*60*1000 ? 'last-seen-old' : '';
+  return (new Date() - parseUtcDate(ls)) > 5*60*1000 ? 'last-seen-old' : '';
+}
+
+function parseUtcDate(value) {
+  return new Date(String(value).replace('T', ' ') + ' UTC');
 }
 
 function utcToLocalText(value) {
   if (!value) return '-';
-  const date = new Date(String(value).replace('T', ' ') + ' UTC');
+  const date = parseUtcDate(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString(undefined, {
     year: 'numeric',
@@ -160,6 +164,29 @@ function utcToLocalText(value) {
     minute: '2-digit',
     second: '2-digit',
   });
+}
+
+function uaPlural(value, one, few, many) {
+  const mod10 = value % 10;
+  const mod100 = value % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+}
+
+function timeAgoUa(value) {
+  if (!value) return '-';
+  const date = parseUtcDate(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const diffSec = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (diffSec < 5) return 'щойно';
+  if (diffSec < 60) return `${diffSec} ${uaPlural(diffSec, 'секунду', 'секунди', 'секунд')} назад`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} ${uaPlural(diffMin, 'хвилину', 'хвилини', 'хвилин')} назад`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour} ${uaPlural(diffHour, 'годину', 'години', 'годин')} назад`;
+  const diffDay = Math.floor(diffHour / 24);
+  return `${diffDay} ${uaPlural(diffDay, 'день', 'дні', 'днів')} назад`;
 }
 
 function shortId(id) { return id.substring(0, 12) + '...'; }
@@ -198,7 +225,7 @@ async function loadDevices() {
       : '<span class="action-state muted">Відео</span>';
     const telBadge = d.telemetry_active
       ? '<span class="action-state">Телеметрія</span>'
-      : '<span class="action-state muted">Телеметрія відсутня</span>';
+      : '<span class="action-state muted">Телеметрія</span>';
     const approveBtn = d.is_valid
       ? ''
       : `<button class="btn btn-sm action-btn icon-only py-0 px-2 me-1" onclick="openApprove('${d.device_id}')" title="Активувати">✓</button>`;
@@ -211,7 +238,7 @@ async function loadDevices() {
       <td>${esc(d.ip || '-')}</td>
       <td><code title="${esc(d.device_id)}">${shortId(d.device_id)}</code></td>
       <td><span class="badge bg-secondary">${esc(d.sirena_version || '-')}</span></td>
-      <td class="small ${lastSeenClass(d.last_seen)}" title="UTC: ${esc((d.last_seen||'-').replace('T',' '))}">${esc(utcToLocalText(d.last_seen))}</td>
+      <td class="small ${lastSeenClass(d.last_seen)}" title="${esc(utcToLocalText(d.last_seen))}">${esc(timeAgoUa(d.last_seen))}</td>
       <td class="small" title="UTC: ${esc(d.valid_until||'-')}">${esc(utcToLocalText(d.valid_until))}</td>
       <td>
         <a href="/devices/${d.device_id}" class="btn btn-sm action-btn icon-only py-0 px-2 me-1 actions-btn" title="Open detail page">Дашборд</a>
@@ -219,7 +246,7 @@ async function loadDevices() {
         <a href="/video/${d.device_id}" class="btn btn-sm action-btn py-0 px-2 me-1 actions-btn" title="Відео">${vidBtn}</a>
         ${approveBtn}
         ${revokeBtn}
-        <button class="btn btn-sm action-bааtn icon-only py-0 px-2" onclick="deleteDevice('${d.device_id}','${esc(hostname)}')" title="Видалити пристрій">🗑</button>
+        <button class="btn btn-sm action-btn icon-only py-0 px-2" onclick="deleteDevice('${d.device_id}','${esc(hostname)}')" title="Видалити пристрій">🗑</button>
       </td>
     </tr>`;
   }).join('');

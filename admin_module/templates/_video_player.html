@@ -173,7 +173,7 @@
   const loadCamerasFromDevice = async () => {
     try {
       // return await realtimeCommand('camera.list');
-      loadCamerasViaHttp()
+      return await loadCamerasViaHttp();
     } catch (err) {
       console.warn('Failed to load cameras via realtime command, falling back to HTTP API:', err);
     }
