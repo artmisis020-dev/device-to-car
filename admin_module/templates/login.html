@@ -1,13 +1,41 @@
 {% extends "base.html" %}
 {% block title %}Sirena Server — Login{% endblock %}
-{% block body_attrs %} class="bg-dark"{% endblock %}
+{% block head %}
+<style>
+  .login-card {
+    width:360px;
+    background:var(--sirena-surface);
+    color:var(--sirena-text);
+    border:1px solid var(--sirena-border);
+    border-radius:8px;
+  }
+  .form-control {
+    background:#172435;
+    border-color:var(--sirena-border);
+    color:var(--sirena-text);
+  }
+  .form-control:focus {
+    background:#172435;
+    border-color:var(--sirena-accent);
+    color:var(--sirena-text);
+    box-shadow:0 0 0 .2rem var(--sirena-accent-soft);
+  }
+  .btn-primary {
+    --bs-btn-bg:var(--sirena-accent);
+    --bs-btn-border-color:var(--sirena-accent);
+    --bs-btn-hover-bg:#4D8AB4;
+    --bs-btn-hover-border-color:#4D8AB4;
+  }
+</style>
+{% endblock %}
+{% block body_attrs %}{% endblock %}
 {% block scripts %}{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-center align-items-center" style="height:100vh">
-<div class="card bg-secondary text-white shadow" style="width:360px">
+<div class="card login-card shadow">
   <div class="card-body p-4">
     <h4 class="mb-1 text-center">🛰 Sirena Дашборд</h4>
-    <p class="text-center text-light small mb-4">Вхід до системи</p>
+    <p class="text-center text-muted small mb-4">Вхід до системи</p>
     {% if error %}<div class="alert alert-danger py-2">{{ error }}</div>{% endif %}
     <form method="post">
       <div class="mb-3">

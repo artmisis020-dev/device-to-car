@@ -4,26 +4,26 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
   body {
-    background: #0d1117;
-    color: #c9d1d9;
+    background: var(--sirena-bg);
+    color: var(--sirena-text);
     font-family: 'Segoe UI', sans-serif;
   }
 
   .card {
-    background: #161b22;
-    border: 1px solid #21262d;
+    background: var(--sirena-surface);
+    border: 1px solid var(--sirena-border);
     border-radius: 8px;
-    color: #eef5ff;
+    color: var(--sirena-text);
   }
 
   .card-body {
-    color: #eef5ff;
+    color: var(--sirena-text);
   }
 
   .card-header {
-    background: #1c2128 !important;
-    border-bottom: 1px solid #21262d;
-    color: #eef5ff !important;
+    background: var(--sirena-header) !important;
+    border-bottom: 1px solid var(--sirena-border);
+    color: var(--sirena-text) !important;
     font-weight: 600;
     padding: .6rem 1rem;
     font-size: .85rem;
@@ -31,7 +31,7 @@
 
   .metric-label {
     font-size: .68rem;
-    color: #b8c0cc;
+    color: var(--sirena-muted);
     text-transform: uppercase;
     letter-spacing: .05em;
   }
@@ -42,17 +42,17 @@
     font-size: 1.6rem;
     font-weight: 700;
     line-height: 1.1;
-    color: #f3f7fc;
+    color: var(--sirena-text);
     overflow-wrap: anywhere;
   }
 
   .metric-unit {
     font-size: .75rem;
-    color: #cbd5e1;
+    color: var(--sirena-muted);
   }
 
   .fw-bold {
-    color: #f3f7fc;
+    color: var(--sirena-text);
   }
 
   .metric-value,
@@ -121,27 +121,29 @@
   }
 
   .small {
-    color: #dbe7f3;
+    color: var(--sirena-text);
   }
 
   .text-muted {
-    color: #b8c0cc !important;
+    color: var(--sirena-muted) !important;
   }
 
   .text-warning {
-    color: #ffd66b !important;
+    color: var(--sirena-warning) !important;
   }
 
   .text-info {
-    color: #8bd3ff !important;
+    color: var(--sirena-accent) !important;
   }
 
   .badge-armed {
-    background: #d73a49;
+    background: var(--sirena-danger);
+    color: #170807;
   }
 
   .badge-disarmed {
-    background: #388bfd;
+    background: var(--sirena-inactive);
+    color: var(--sirena-text);
   }
 
   .status-dot {
@@ -152,23 +154,23 @@
   }
 
   .dot-live {
-    background: #3fb950;
+    background: var(--sirena-online);
     animation: pulse 2s infinite;
   }
 
   .dot-off {
-    background: #6e7681;
+    background: var(--sirena-inactive);
   }
 
   @keyframes pulse {
 
     0%,
     100% {
-      box-shadow: 0 0 0 0 rgba(63, 185, 80, .4)
+      box-shadow: 0 0 0 0 rgba(84, 176, 138, .35)
     }
 
     70% {
-      box-shadow: 0 0 0 6px rgba(63, 185, 80, 0)
+      box-shadow: 0 0 0 6px rgba(84, 176, 138, 0)
     }
   }
 
@@ -180,20 +182,20 @@
   .starlink-marker {
     min-width: 48px;
     padding: .12rem .35rem;
-    border: 2px solid #f59e0b;
+    border: 2px solid var(--sirena-warning);
     border-radius: 999px;
-    background: #111827;
-    color: #fef3c7;
+    background: var(--sirena-surface);
+    color: var(--sirena-text);
     font-size: .68rem;
     font-weight: 800;
     line-height: 1.1;
     text-align: center;
-    box-shadow: 0 0 0 3px rgba(245, 158, 11, .22);
+    box-shadow: 0 0 0 3px rgba(201, 154, 62, .18);
   }
 
   .navbar {
-    background: #161b22 !important;
-    border-bottom: 1px solid #21262d;
+    background: var(--sirena-header) !important;
+    border-bottom: 1px solid var(--sirena-border);
   }
 </style>
 {% endblock %}
@@ -271,7 +273,7 @@
               <div class="fw-bold metric-readout" id="attYaw">—</div>
             </div>
           </div>
-          <hr class="my-2" style="border-color:#21262d">
+          <hr class="my-2" style="border-color:var(--sirena-border)">
           <div class="row g-1 text-center">
             <div class="col-6">
               <div class="metric-label">Speed m/s</div>
@@ -284,7 +286,7 @@
           </div>
           <div class="mt-1 text-center">
             <div class="metric-label">Throttle</div>
-            <div class="progress mt-1" style="height:6px;background:#21262d">
+            <div class="progress mt-1" style="height:6px;background:var(--sirena-border)">
               <div class="progress-bar bg-info" id="throttleBar" style="width:0%"></div>
             </div>
             <div class="small text-muted metric-readout" id="throttleVal">0%</div>
@@ -300,8 +302,8 @@
           <div class="metric-value" id="batVolt">—<span class="metric-unit"> V</span></div>
           <div class="metric-label mt-1">Voltage</div>
           <div class="mt-2">
-            <div class="progress" style="height:10px;background:#21262d">
-              <div class="progress-bar" id="batBar" style="width:0%;background:#3fb950"></div>
+            <div class="progress" style="height:10px;background:var(--sirena-border)">
+              <div class="progress-bar" id="batBar" style="width:0%;background:var(--sirena-ok)"></div>
             </div>
             <div class="d-flex justify-content-between mt-1">
               <span class="small text-muted metric-readout" id="batPct">—%</span>
@@ -323,7 +325,7 @@
           <div class="metric-label">Mode</div>
           <div class="fw-bold fs-5" id="flightMode">—</div>
           <div class="mt-2" id="armedBadge"><span class="badge badge-disarmed">DISARMED</span></div>
-          <hr class="my-2" style="border-color:#21262d">
+          <hr class="my-2" style="border-color:var(--sirena-border)">
           <div class="metric-label">Status Text</div>
           <div class="small text-warning" id="lastStatusText">—</div>
           <div class="metric-label mt-1">Climb m/s</div>
@@ -383,18 +385,18 @@
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap', maxZoom: 19
   }).addTo(map);
-  let trackLine = L.polyline([], { color: '#fdc838', weight: 2 }).addTo(map);
-  let starlinkLine = L.polyline([], { color: '#5866ed', weight: 2, dashArray: '5 5' }).addTo(map);
+  let trackLine = L.polyline([], { color: '#3E7CA8', weight: 2 }).addTo(map);
+  let starlinkLine = L.polyline([], { color: '#C99A3E', weight: 2, dashArray: '5 5' }).addTo(map);
   let gpsDotLayer = L.layerGroup().addTo(map);
   let starlinkDotLayer = L.layerGroup().addTo(map);
   let droneMarker = null;
   let starlinkMarker = null;
   const droneIcon = L.divIcon({
-    html: '<div style="font-size:20px;transform:translate(-10px,-10px); color: #ffa500">✈</div>',
+    html: '<div style="font-size:20px;transform:translate(-10px,-10px); color: #3E7CA8">✈</div>',
     className: '', iconSize: [20, 20]
   });
   const starlinkIcon = L.divIcon({
-    html: '<div style="font-size:12px; color: #0b22f5" class="starlink-marker">STRLK</div>',
+    html: '<div style="font-size:12px" class="starlink-marker">STRLK</div>',
     className: '',
     iconSize: [48, 22],
     iconAnchor: [24, 11]
@@ -524,7 +526,7 @@
     const tooltip = `GPS Starlink: ${starlinkGps.lat.toFixed(6)}, ${starlinkGps.lon.toFixed(6)}`;
     if (routePointChanged(starlinkTrack, point)) {
       starlinkTrack.push(point);
-      addRouteDot(starlinkDotLayer, starlinkDots, point, '#f59e0b');
+      addRouteDot(starlinkDotLayer, starlinkDots, point, '#C99A3E');
       trimRoute(starlinkTrack, starlinkDots, starlinkDotLayer);
       starlinkLine.setLatLngs(starlinkTrack);
     }
@@ -559,7 +561,7 @@
           const point = [lat, lon];
           if (routePointChanged(gpsTrack, point)) {
             gpsTrack.push(point);
-            addRouteDot(gpsDotLayer, gpsDots, point, '#388bfd');
+            addRouteDot(gpsDotLayer, gpsDots, point, '#3E7CA8');
             trimRoute(gpsTrack, gpsDots, gpsDotLayer);
             trackLine.setLatLngs(gpsTrack);
           }
@@ -596,7 +598,7 @@
           document.getElementById('batPct').textContent = pct + '%';
           const bar = document.getElementById('batBar');
           bar.style.width = pct + '%';
-          bar.style.background = pct > 50 ? '#3fb950' : pct > 20 ? '#f0883e' : '#d73a49';
+          bar.style.background = pct > 50 ? '#5E9A78' : pct > 20 ? '#C99A3E' : '#C25B54';
         }
       }
       else if (messageType === 'HEARTBEAT') {

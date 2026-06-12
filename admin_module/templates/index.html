@@ -2,49 +2,53 @@
 {% block title %}Sirena — Device Registry{% endblock %}
 {% block head %}
 <style>
-body { background:#1a1a2e; color:#e0e0e0; }
-.card { background:#16213e; border:1px solid #0f3460; }
-.table { color:#e0e0e0; }
-.table thead { background:#0f3460; }
-.badge-valid { background:#198754; }
-.badge-pending { background:#ffc107; color:#000; }
-.badge-revoked { background:#dc3545; }
-.badge-expired { background:#6c757d; }
-.last-seen-old { color:#dc3545 !important; }
-.stat-card { background:linear-gradient(135deg,#16213e,#1a2a4a); border:1px solid #1e3a5f; border-radius:10px; padding:1rem; text-align:center; }
+body { background:var(--sirena-bg); color:var(--sirena-text); }
+.card { background:var(--sirena-surface); border:1px solid var(--sirena-border); color:var(--sirena-text); }
+.table { --bs-table-bg:var(--sirena-surface); --bs-table-color:var(--sirena-text); --bs-table-border-color:var(--sirena-border); color:var(--sirena-text); }
+.table thead { background:var(--sirena-header); }
+.badge-valid { background:var(--sirena-ok); color:#07110d; }
+.badge-pending { background:var(--sirena-warning); color:#171006; }
+.badge-revoked { background:var(--sirena-danger); color:#170807; }
+.badge-expired { background:var(--sirena-inactive); color:var(--sirena-text); }
+.last-seen-old { color:var(--sirena-danger) !important; }
+.stat-card { background:var(--sirena-surface); border:1px solid var(--sirena-border); border-radius:8px; padding:1rem; text-align:center; }
 .stat-card .stat-value { font-size:2rem; font-weight:700; line-height:1.1; }
-.stat-card .stat-label { font-size:0.75rem; color:#8baac8; text-transform:uppercase; letter-spacing:.05em; margin-top:4px; }
-.card-header { background:#0f3460 !important; color:#e8eef5 !important; font-weight:600; font-size:.9rem; }
-.table thead th { color:#333; font-size:.78rem; text-transform:uppercase; letter-spacing:.05em; border-bottom:1px solid #1e3a5f !important; }
-.table tbody td { border-color:#1a2a3a !important; vertical-align:middle; font-size:.85rem; }
-.table-hover tbody tr:hover { background:rgba(30,58,95,.4) !important; }
+.stat-card .stat-label { font-size:0.75rem; color:var(--sirena-muted); text-transform:uppercase; letter-spacing:.05em; margin-top:4px; }
+.card-header { background:var(--sirena-header) !important; color:var(--sirena-text) !important; border-bottom:1px solid var(--sirena-border); font-weight:600; font-size:.9rem; }
+.table thead th { color:var(--sirena-text); font-size:.78rem; text-transform:uppercase; letter-spacing:.05em; border-bottom:1px solid var(--sirena-border) !important; }
+.table tbody td { border-color:var(--sirena-border) !important; vertical-align:middle; font-size:.85rem; }
+.table-hover tbody tr:hover { --bs-table-hover-bg:var(--sirena-accent-soft); --bs-table-hover-color:var(--sirena-text); }
+.table code { color:var(--sirena-mono); }
 .navbar-brand { letter-spacing:.03em; }
 .action-btn {
   min-width:48px;
-  border:1px solid #8ea6c5 !important;
-  background:#1f2f46 !important;
-  color:#f3f7fc !important;
+  border:1px solid var(--sirena-accent) !important;
+  background:#172435 !important;
+  color:var(--sirena-text) !important;
   font-weight:700;
   box-shadow:none !important;
 }
 .action-btn:hover,
 .action-btn:focus {
-  background:#2b4364 !important;
-  border-color:#dbe7f3 !important;
-  color:#fff !important;
+  background:var(--sirena-accent) !important;
+  border-color:var(--sirena-accent) !important;
+  color:#07111a !important;
 }
 .action-btn.icon-only { min-width:36px; }
-.action-state { color:#f3f7fc; font-size:.78rem; font-weight:700; letter-spacing:.02em; }
-.action-state.muted { color:#b8c9df; font-weight:600; pointer-events:none; }
-.action-rec { color:#f3f7fc; font-size:.7rem; font-weight:700; margin-left:.25rem; }
-.actions-btn { color:#f3f7fc; font-size:.75rem; font-weight:700; }
-.online-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:.35rem; background:#6c757d; }
-.online-dot.on { background:#3fb950; box-shadow:0 0 0 3px rgba(63,185,80,.18); }
+.action-state { color:var(--sirena-text); font-size:.78rem; font-weight:700; letter-spacing:.02em; }
+.action-state.muted { color:var(--sirena-inactive); font-weight:600; pointer-events:none; }
+.action-rec { color:var(--sirena-text); font-size:.7rem; font-weight:700; margin-left:.25rem; }
+.actions-btn { color:var(--sirena-text); font-size:.75rem; font-weight:700; }
+.online-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:.35rem; background:var(--sirena-inactive); }
+.online-dot.on { background:var(--sirena-online); box-shadow:0 0 0 3px rgba(84,176,138,.18); }
+.modal-content { background:var(--sirena-surface) !important; color:var(--sirena-text) !important; border:1px solid var(--sirena-border); }
+.modal-header, .modal-footer { border-color:var(--sirena-border) !important; }
+.form-control { background:#172435 !important; border-color:var(--sirena-border) !important; color:var(--sirena-text) !important; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 </style>
 {% endblock %}
 {% block content %}
-<nav class="navbar navbar-dark" style="background:#0f3460">
+<nav class="navbar navbar-dark" style="background:var(--sirena-header);border-bottom:1px solid var(--sirena-border)">
   <div class="container-fluid">
     <span class="navbar-brand fw-bold">🛰 Sirena Дашборд</span>
     <div class="d-flex gap-2 align-items-center">
@@ -213,7 +217,7 @@ async function loadDevices() {
 
   document.getElementById('stats').innerHTML = `
     <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-value text-white">${total}</div><div class="stat-label">Всього пристроїв</div></div></div>
-    <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-value text-success">${active}</div><div class="stat-label">Активні</div></div></div>
+    <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-value text-success">${active}</div><div class="stat-label">Авторизовані</div></div></div>
     <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-value text-warning">${pending}</div><div class="stat-label">В очікуванні</div></div></div>
     <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-value text-info">${online}</div><div class="stat-label">Онлайн (2м)</div></div></div>
   `;
