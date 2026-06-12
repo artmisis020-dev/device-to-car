@@ -9,6 +9,19 @@ body { background:#0b1220; color:#d7e1ea; }
 .card-header { background:#16243a !important; border-bottom:1px solid #20324f; color:#e8eef5 !important; font-weight:600; }
 .soft { color:#b8c9df !important; }
 #map { height: 360px; border-radius: 8px; }
+.starlink-marker {
+  min-width:48px;
+  padding:.12rem .35rem;
+  border:2px solid #f59e0b;
+  border-radius:999px;
+  background:#111827;
+  color:#fef3c7;
+  font-size:.68rem;
+  font-weight:800;
+  line-height:1.1;
+  text-align:center;
+  box-shadow:0 0 0 3px rgba(245,158,11,.22);
+}
 .kv { display:grid; grid-template-columns:120px 1fr; gap:.35rem .75rem; font-size:.9rem; }
 .kv div:nth-child(odd) { color:#b8c9df; }
 .kv div:nth-child(even) { color:#f3f7fc; font-weight:600; overflow-wrap:anywhere; }
@@ -136,7 +149,14 @@ const DEVICE_ID = "{{ device_id }}";
 const map = L.map('map').setView([0, 0], 2);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
 let marker = null;
+let starlinkMarker = null;
 let track = L.polyline([], {color:'#4ea1ff', weight:3}).addTo(map);
+const starlinkIcon = L.divIcon({
+  html:'<div class="starlink-marker">STRLK</div>',
+  className:'',
+  iconSize:[48,22],
+  iconAnchor:[24,11]
+});
 
 function fmt(value) {
   if (value === null || value === undefined) return '—';
@@ -153,9 +173,22 @@ function fmt(value) {
 	    .replaceAll("'", '&#039;');
 	}
 
+const MAV_MODE_FLAG_SAFETY_ARMED = 128;
+const MAV_TYPE_GCS = 6;
+const MAV_AUTOPILOT_INVALID = 8;
+
+function isAutopilotHeartbeat(data) {
+  const mavType = Number(data?.type);
+  const autopilot = Number(data?.autopilot);
+  if (mavType === MAV_TYPE_GCS) return false;
+  if (autopilot === MAV_AUTOPILOT_INVALID) return false;
+  return true;
+}
+
 	function latestByType(messages) {
 	  const result = {};
 	  for (const row of messages) {
+	    if (row.type === 'HEARTBEAT' && !isAutopilotHeartbeat(row.data || {})) continue;
 	    if (!result[row.type] || Number(row.ts) > Number(result[row.type].ts)) result[row.type] = row;
 	  }
 	  return result;
@@ -189,6 +222,53 @@ function numberText(value, digits = 1) {
   return Number.isFinite(n) ? n.toFixed(digits) : '—';
 }
 
+function cleanNamedValueName(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map(code => Number(code))
+      .filter(code => Number.isFinite(code) && code > 0)
+      .map(code => String.fromCharCode(code))
+      .join('')
+      .trim();
+  }
+  const raw = String(value ?? '').replaceAll('\u0000', '').trim();
+  if (/^[0-9a-fA-F]+$/.test(raw) && raw.length % 2 === 0) {
+    let decoded = '';
+    for (let i = 0; i < raw.length; i += 2) {
+      const code = parseInt(raw.slice(i, i + 2), 16);
+      if (code > 0) decoded += String.fromCharCode(code);
+    }
+    if (decoded.trim()) return decoded.trim();
+  }
+  return raw;
+}
+
+function starlinkPointFromLatest(latest) {
+  let lat = null;
+  let lon = null;
+  for (const row of latest) {
+    if (row.type !== 'NAMED_VALUE_FLOAT') continue;
+    const name = cleanNamedValueName(row.data?.name);
+    const value = Number(row.data?.value);
+    if (!Number.isFinite(value)) continue;
+    if (name === 'STRLK_lat') lat = value;
+    if (name === 'STRLK_lon') lon = value;
+  }
+  return Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0) ? [lat, lon] : null;
+}
+
+function renderStarlinkMarker(point) {
+  if (!point) return;
+  const tooltip = `GPS Starlink: ${point[0].toFixed(6)}, ${point[1].toFixed(6)}`;
+  if (!starlinkMarker) {
+    starlinkMarker = L.marker(point, {icon:starlinkIcon}).addTo(map);
+    starlinkMarker.bindTooltip(tooltip, {direction:'top'});
+  } else {
+    starlinkMarker.setLatLng(point);
+    starlinkMarker.setTooltipContent(tooltip);
+  }
+}
+
 	function tile(label, value, hint = '') {
 	  return `<div class="telemetry-tile"><div class="telemetry-label">${label}</div><div class="telemetry-value">${value}</div>${hint ? `<div class="telemetry-hint">${hint}</div>` : ''}</div>`;
 	}
@@ -208,7 +288,7 @@ function numberText(value, digits = 1) {
 	  const heading = vfr.heading !== undefined ? `${numberText(vfr.heading, 0)}°` : '';
 	  const voltage = sys.voltage_battery !== undefined && Number(sys.voltage_battery) > 0 ? `${numberText(Number(sys.voltage_battery) / 1000, 2)} В` : '—';
 	  const pct = sys.battery_remaining !== undefined && Number(sys.battery_remaining) >= 0 ? `${sys.battery_remaining}%` : '';
-	  const armed = heartbeat.base_mode !== undefined ? ((Number(heartbeat.base_mode) & 128) ? 'ARMED' : 'DISARMED') : '—';
+	  const armed = heartbeat.base_mode !== undefined ? ((Number(heartbeat.base_mode) & MAV_MODE_FLAG_SAFETY_ARMED) ? 'ARMED' : 'DISARMED') : '—';
 	  const modeHint = heartbeat.system_status !== undefined ? `status ${heartbeat.system_status}` : '';
 
 	  document.getElementById('telemetrySummary').innerHTML = [
@@ -236,7 +316,7 @@ function numberText(value, digits = 1) {
 	  if (t === 'SYS_STATUS') return [['batt', d.voltage_battery > 0 ? `${numberText(d.voltage_battery / 1000, 2)}В` : null], ['load', d.load], ['err', d.errors_comm]];
 	  if (t === 'RAW_IMU' || t === 'SCALED_IMU2') return [['acc', `${d.xacc ?? '—'}/${d.yacc ?? '—'}/${d.zacc ?? '—'}`], ['gyro', `${d.xgyro ?? '—'}/${d.ygyro ?? '—'}/${d.zgyro ?? '—'}`]];
 	  if (t === 'RC_CHANNELS') return [['ch1', d.chan1_raw], ['ch2', d.chan2_raw], ['ch3', d.chan3_raw], ['count', d.chancount]];
-	  if (t === 'HEARTBEAT') return [['armed', d.base_mode !== undefined ? ((Number(d.base_mode) & 128) ? 'yes' : 'no') : null], ['status', d.system_status], ['mode', d.custom_mode]];
+	  if (t === 'HEARTBEAT') return [['armed', d.base_mode !== undefined ? ((Number(d.base_mode) & MAV_MODE_FLAG_SAFETY_ARMED) ? 'yes' : 'no') : null], ['status', d.system_status], ['mode', d.custom_mode]];
 	  return Object.entries(d).slice(0, 4);
 	}
 
@@ -300,12 +380,16 @@ async function loadDetail() {
   const gps = latest.find((row) => row.data && (row.data.lat !== undefined || row.data.latitude !== undefined));
   const lat = gps?.data?.lat !== undefined ? gps.data.lat / 1e7 : gps?.data?.latitude;
   const lon = gps?.data?.lon !== undefined ? gps.data.lon / 1e7 : gps?.data?.longitude;
+  const starlinkPoint = starlinkPointFromLatest(latest);
+  renderStarlinkMarker(starlinkPoint);
   if (typeof lat === 'number' && typeof lon === 'number' && !Number.isNaN(lat) && !Number.isNaN(lon)) {
     const point = [lat, lon];
     map.setView(point, 15);
     track.setLatLngs([point]);
     if (!marker) marker = L.marker(point).addTo(map);
     else marker.setLatLng(point);
+  } else if (starlinkPoint) {
+    map.setView(starlinkPoint, 15);
   }
 
   const commands = data.commands || [];

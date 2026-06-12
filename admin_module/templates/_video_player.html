@@ -127,7 +127,7 @@
     overlay.classList.toggle('hidden', !visible);
   };
   const cameraTitle = camera => {
-    const name = camera.name || camera.path || 'camera';
+    const name = camera.label || camera.name  || 'camera';
     const target = camera.target ? ` -> ${camera.target}` : '';
     return `${name}${target}`;
   };
@@ -172,7 +172,7 @@
   };
   const loadCamerasFromDevice = async () => {
     try {
-      return await realtimeCommand('camera.list');
+      // return await realtimeCommand('camera.list');
     } catch (err) {
       return loadCamerasViaHttp();
     }
