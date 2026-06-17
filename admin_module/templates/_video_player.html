@@ -316,7 +316,7 @@
         if (!isActive) {
           node.type = 'button';
           node.disabled = switchingCamera;
-          node.addEventListener('click', () => switchCamera(camera.path));
+          node.addEventListener('click', () => switchCamera(camera.id || camera.path));
         }
         list.appendChild(node);
       }

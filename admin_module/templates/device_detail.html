@@ -9,7 +9,7 @@ body { background:var(--sirena-bg); color:var(--sirena-text); }
 .card-header { background:var(--sirena-header) !important; border-bottom:1px solid var(--sirena-border); color:var(--sirena-text) !important; font-weight:600; }
 .soft { color:var(--sirena-muted) !important; }
 #map { height: 360px; border-radius: 8px; }
-.starlink-marker {
+	.starlink-marker {
   min-width:48px;
   padding:.12rem .35rem;
   border:2px solid var(--sirena-warning);
@@ -20,8 +20,38 @@ body { background:var(--sirena-bg); color:var(--sirena-text); }
   font-weight:800;
   line-height:1.1;
   text-align:center;
-  box-shadow:0 0 0 3px rgba(201,154,62,.18);
-}
+	  box-shadow:0 0 0 3px rgba(201,154,62,.18);
+	}
+	.fc-marker {
+	  min-width:34px;
+	  padding:.08rem .28rem;
+	  border:2px solid var(--sirena-accent);
+	  border-radius:999px;
+	  background:var(--sirena-surface);
+	  color:var(--sirena-text);
+	  font-size:.68rem;
+	  font-weight:800;
+	  line-height:1.1;
+	  text-align:center;
+	  box-shadow:0 0 0 3px rgba(62,124,168,.18);
+	}
+	.map-legend {
+	  background:rgba(18,26,40,.92);
+	  border:1px solid var(--sirena-border);
+	  border-radius:6px;
+	  color:var(--sirena-text);
+	  padding:.35rem .5rem;
+	  font-size:.75rem;
+	  line-height:1.5;
+	}
+	.legend-dot {
+	  display:inline-block;
+	  width:.65rem;
+	  height:.65rem;
+	  border-radius:50%;
+	  margin-right:.35rem;
+	  vertical-align:-.05rem;
+	}
 .kv { display:grid; grid-template-columns:120px 1fr; gap:.35rem .75rem; font-size:.9rem; }
 .kv div:nth-child(odd) { color:var(--sirena-muted); }
 .kv div:nth-child(even) { color:var(--sirena-text); font-weight:600; overflow-wrap:anywhere; }
@@ -151,12 +181,28 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19,
 let marker = null;
 let starlinkMarker = null;
 let track = L.polyline([], {color:'#3E7CA8', weight:3}).addTo(map);
+const fcIcon = L.divIcon({
+  html:'<div class="fc-marker">FC</div>',
+  className:'',
+  iconSize:[34,20],
+  iconAnchor:[17,10]
+});
 const starlinkIcon = L.divIcon({
   html:'<div class="starlink-marker">STRLK</div>',
   className:'',
   iconSize:[48,22],
   iconAnchor:[24,11]
 });
+const legend = L.control({position:'bottomleft'});
+legend.onAdd = function() {
+  const div = L.DomUtil.create('div', 'map-legend');
+  div.innerHTML = `
+    <div><span class="legend-dot" style="background:#3E7CA8"></span>FC raw</div>
+    <div><span class="legend-dot" style="background:#C99A3E"></span>Starlink</div>
+  `;
+  return div;
+};
+legend.addTo(map);
 
 function fmt(value) {
   if (value === null || value === undefined) return '—';
@@ -278,15 +324,16 @@ function starlinkPointFromLatest(latest) {
     const name = cleanNamedValueName(row.data?.name);
     const value = Number(row.data?.value);
     if (!Number.isFinite(value)) continue;
-    if (name === 'STRLK_lat') lat = value;
-    if (name === 'STRLK_lon') lon = value;
+    const normalized = name.toUpperCase();
+    if (normalized === 'STRLK_LAT' || normalized === 'STRLNK_LAT') lat = value;
+    if (normalized === 'STRLK_LON' || normalized === 'STRLNK_LON') lon = value;
   }
   return Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0) ? [lat, lon] : null;
 }
 
 function renderStarlinkMarker(point) {
   if (!point) return;
-  const tooltip = `GPS Starlink: ${point[0].toFixed(6)}, ${point[1].toFixed(6)}`;
+  const tooltip = `Starlink: ${point[0].toFixed(6)}, ${point[1].toFixed(6)}`;
   if (!starlinkMarker) {
     starlinkMarker = L.marker(point, {icon:starlinkIcon}).addTo(map);
     starlinkMarker.bindTooltip(tooltip, {direction:'top'});
@@ -414,8 +461,14 @@ async function loadDetail() {
     const point = [lat, lon];
     map.setView(point, 15);
     track.setLatLngs([point]);
-    if (!marker) marker = L.marker(point).addTo(map);
-    else marker.setLatLng(point);
+    const tooltip = `FC raw: ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+    if (!marker) {
+      marker = L.marker(point, {icon:fcIcon}).addTo(map);
+      marker.bindTooltip(tooltip, {direction:'top'});
+    } else {
+      marker.setLatLng(point);
+      marker.setTooltipContent(tooltip);
+    }
   } else if (starlinkPoint) {
     map.setView(starlinkPoint, 15);
   }

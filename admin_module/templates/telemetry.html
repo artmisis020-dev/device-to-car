@@ -193,6 +193,39 @@
     box-shadow: 0 0 0 3px rgba(201, 154, 62, .18);
   }
 
+  .fc-marker {
+    min-width: 34px;
+    padding: .08rem .28rem;
+    border: 2px solid var(--sirena-accent);
+    border-radius: 999px;
+    background: var(--sirena-surface);
+    color: var(--sirena-text);
+    font-size: .68rem;
+    font-weight: 800;
+    line-height: 1.1;
+    text-align: center;
+    box-shadow: 0 0 0 3px rgba(62, 124, 168, .18);
+  }
+
+  .map-legend {
+    background: rgba(18, 26, 40, .92);
+    border: 1px solid var(--sirena-border);
+    border-radius: 6px;
+    color: var(--sirena-text);
+    padding: .35rem .5rem;
+    font-size: .75rem;
+    line-height: 1.5;
+  }
+
+  .legend-dot {
+    display: inline-block;
+    width: .65rem;
+    height: .65rem;
+    border-radius: 50%;
+    margin-right: .35rem;
+    vertical-align: -0.05rem;
+  }
+
   .navbar {
     background: var(--sirena-header) !important;
     border-bottom: 1px solid var(--sirena-border);
@@ -330,6 +363,13 @@
           <div class="small text-warning" id="lastStatusText">—</div>
           <div class="metric-label mt-1">Climb m/s</div>
           <div class="fw-bold metric-readout" id="vfrClimb">—</div>
+          <hr class="my-2" style="border-color:var(--sirena-border)">
+          <div class="metric-label">Стан Плати Ініціації</div>
+          <div class="fw-bold" id="deviceState">—</div>
+          <div class="metric-label mt-1">Помилки Плати Ініціації</div>
+          <div class="small" id="deviceError">—</div>
+          <div class="metric-label mt-1">External connection</div>
+          <div class="fw-bold metric-readout" id="deviceExternal">—</div>
         </div>
       </div>
     </div>
@@ -392,8 +432,10 @@
   let droneMarker = null;
   let starlinkMarker = null;
   const droneIcon = L.divIcon({
-    html: '<div style="font-size:20px;transform:translate(-10px,-10px); color: #3E7CA8">✈</div>',
-    className: '', iconSize: [20, 20]
+    html: '<div class="fc-marker">FC</div>',
+    className: '',
+    iconSize: [34, 20],
+    iconAnchor: [17, 10]
   });
   const starlinkIcon = L.divIcon({
     html: '<div style="font-size:12px" class="starlink-marker">STRLK</div>',
@@ -401,6 +443,16 @@
     iconSize: [48, 22],
     iconAnchor: [24, 11]
   });
+  const legend = L.control({ position: 'bottomleft' });
+  legend.onAdd = function () {
+    const div = L.DomUtil.create('div', 'map-legend');
+    div.innerHTML = `
+      <div><span class="legend-dot" style="background:#3E7CA8"></span>FC raw</div>
+      <div><span class="legend-dot" style="background:#C99A3E"></span>Starlink</div>
+    `;
+    return div;
+  };
+  legend.addTo(map);
 
   function trimRoute(track, dots, layer) {
     while (track.length > MAX_ROUTE_POINTS) track.shift();
@@ -474,6 +526,39 @@
   const MAV_MODE_FLAG_SAFETY_ARMED = 128;
   const MAV_TYPE_GCS = 6;
   const MAV_AUTOPILOT_INVALID = 8;
+  const DEVICE_STATE_NAMES = {
+    0: 'None',
+    1: 'Testing',
+    2: 'Standby',
+    3: 'Safety Timeout',
+    4: 'Disarmed',
+    5: 'Arming',
+    6: 'Armed',
+    7: 'Fire',
+    8: 'Discharging',
+    9: 'Fired',
+  };
+  const DEVICE_ERROR_NAMES = {
+    0: 'OK',
+    1: 'CRC Error',
+    2: 'Battery Test Error',
+    3: 'Safety Sensor Error',
+    4: 'Safety Switch Error',
+    5: 'Cap Debounce Error',
+    6: 'Fuse Error',
+    7: 'Safety Switch Moved Error',
+    8: 'Boost Error',
+    9: 'Weak Battery Error',
+    10: 'IMU Error',
+    11: 'Prearm Error',
+    12: 'Discharge Error',
+    13: 'External Connection Error',
+    14: 'Start Config Error',
+    20: 'LIDAR Presence Error',
+    21: 'LIDAR False Target Error',
+    22: 'LIDAR No Target Error',
+  };
+  const deviceStatus = { state: null, error: null, externalOk: null };
 
   function isAutopilotHeartbeat(data) {
     const mavType = Number(data?.type);
@@ -507,10 +592,11 @@
   function updateStarlinkGps(name, value, ts) {
     const gpsValue = Number(value);
     if (!Number.isFinite(gpsValue)) return;
-    if (name === 'STRLK_lat') {
+    const normalized = name.toUpperCase();
+    if (normalized === 'STRLK_LAT' || normalized === 'STRLNK_LAT') {
       starlinkGps.lat = gpsValue
     };
-    if (name === 'STRLK_lon') {
+    if (normalized === 'STRLK_LON' || normalized === 'STRLNK_LON') {
       starlinkGps.lon = gpsValue
     };
     starlinkGps.ts = ts || Date.now() / 1000;
@@ -523,7 +609,7 @@
     };
 
     const point = [starlinkGps.lat, starlinkGps.lon];
-    const tooltip = `GPS Starlink: ${starlinkGps.lat.toFixed(6)}, ${starlinkGps.lon.toFixed(6)}`;
+    const tooltip = `Starlink: ${starlinkGps.lat.toFixed(6)}, ${starlinkGps.lon.toFixed(6)}`;
     if (routePointChanged(starlinkTrack, point)) {
       starlinkTrack.push(point);
       addRouteDot(starlinkDotLayer, starlinkDots, point, '#C99A3E');
@@ -539,6 +625,27 @@
     }
     if (!droneMarker && gpsTrack.length === 0) {
       map.setView(point, 16);
+    }
+  }
+
+  function updateDeviceStatus(name, value) {
+    const intValue = Number(value);
+    if (!Number.isFinite(intValue)) return;
+
+    if (name === 'DEV_STATE') {
+      deviceStatus.state = intValue;
+      document.getElementById('deviceState').textContent =
+        DEVICE_STATE_NAMES[intValue] || `Unknown ${intValue}`;
+    } else if (name === 'DEV_ERROR') {
+      deviceStatus.error = intValue;
+      const errorEl = document.getElementById('deviceError');
+      errorEl.textContent = DEVICE_ERROR_NAMES[intValue] || `Unknown ${intValue}`;
+      errorEl.className = intValue === 0 ? 'small text-muted' : 'small text-warning';
+    } else if (name === 'DEV_EXTOK') {
+      deviceStatus.externalOk = intValue ? 1 : 0;
+      const extEl = document.getElementById('deviceExternal');
+      extEl.textContent = intValue ? 'OK' : 'OFF';
+      extEl.style.color = intValue ? 'var(--sirena-ok)' : 'var(--sirena-danger)';
     }
   }
 
@@ -565,8 +672,14 @@
             trimRoute(gpsTrack, gpsDots, gpsDotLayer);
             trackLine.setLatLngs(gpsTrack);
           }
-          if (!droneMarker) droneMarker = L.marker(point, { icon: droneIcon }).addTo(map);
-          else droneMarker.setLatLng(point);
+          const tooltip = `FC raw: ${lat.toFixed(6)}, ${lon.toFixed(6)} alt ${alt} m`;
+          if (!droneMarker) {
+            droneMarker = L.marker(point, { icon: droneIcon }).addTo(map);
+            droneMarker.bindTooltip(tooltip, { direction: 'top' });
+          } else {
+            droneMarker.setLatLng(point);
+            droneMarker.setTooltipContent(tooltip);
+          }
           if (gpsTrack.length <= 3) map.setView(point, 16);
         }
       }
@@ -614,6 +727,9 @@
       }
       else if (messageType === 'NAMED_VALUE_FLOAT') {
         updateStarlinkGps(cleanNamedValueName(data.name), data.value, m.ts);
+      }
+      else if (messageType === 'NAMED_VALUE_INT') {
+        updateDeviceStatus(cleanNamedValueName(data.name), data.value);
       }
     }
   }
