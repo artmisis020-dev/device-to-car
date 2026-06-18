@@ -11,6 +11,8 @@ import threading
 import time
 
 import gi
+from pymavlink import mavutil
+from cameras_services import resolve_video_device, video_nodes
 
 try:
     gi.require_foreign("cairo")
@@ -25,7 +27,21 @@ from gi.repository import GLib, Gst
 Gst.init(None)
 
 
-VIDEO_DEVICE = os.environ.get("VIDEO_DEVICE", "/dev/video0")
+_CONFIGURED_VIDEO_DEVICE = os.environ.get("VIDEO_DEVICE", "/dev/video0")
+VIDEO_DEVICE = resolve_video_device(_CONFIGURED_VIDEO_DEVICE)
+
+print(f"[INFO] Використовується відеопристрій: {VIDEO_DEVICE}", flush=True)
+
+if VIDEO_DEVICE != _CONFIGURED_VIDEO_DEVICE:
+    print(f"[WARN] VIDEO_DEVICE={_CONFIGURED_VIDEO_DEVICE} не знайдено, використовую {VIDEO_DEVICE}", flush=True)
+    
+if not os.path.exists(VIDEO_DEVICE):
+    available = ", ".join(video_nodes()) or "немає"
+    raise RuntimeError(
+        f"Відеокамеру не знайдено: VIDEO_DEVICE={VIDEO_DEVICE}. "
+        f"Доступні /dev/video*: {available}. "
+        "Перевірте USB camera або оновіть VIDEO_DEVICE в /opt/sirena/.env."
+    )
 
 
 def env_int(name: str, default: int) -> int:
@@ -52,6 +68,72 @@ MAVLINK_ENDPOINT = os.environ.get(
 TELEMETRY_SNAPSHOT_PATH = os.environ.get("SIRENA_TELEMETRY_SNAPSHOT_PATH", "/tmp/sirena_mavlink_snapshot.json")
 SIRENA_RELAY_TARGET = os.environ.get("SIRENA_RELAY_TARGET", "").strip().strip('"')
 OSD_RATE_HZ = max(1, env_int("OSD_RATE_HZ", 5))
+V4L2_IO_MODE = os.environ.get("V4L2_IO_MODE", os.environ.get("SIRENA_V4L2_IO_MODE", "rw")).strip().lower()
+
+
+DEVICE_STATE_NAMES = {
+    0: "None",
+    1: "Testing",
+    2: "Standby",
+    3: "Safety Timeout",
+    4: "Disarmed",
+    5: "Arming",
+    6: "Armed",
+    7: "Fire",
+    8: "Discharging",
+    9: "Fired",
+}
+
+DEVICE_ERROR_NAMES = {
+    0: "OK",
+    1: "CRC Error",
+    2: "Battery Test Error",
+    3: "Safety Sensor Error",
+    4: "Safety Switch Error",
+    5: "Cap Debounce Error",
+    6: "Fuse Error",
+    7: "Safety Switch Moved Error",
+    8: "Boost Error",
+    9: "Weak Battery Error",
+    10: "IMU Error",
+    11: "Prearm Error",
+    12: "Discharge Error",
+    13: "External Connection Error",
+    14: "Start Config Error",
+    20: "LIDAR Presence Error",
+    21: "LIDAR False Target Error",
+    22: "LIDAR No Target Error",
+}
+
+
+def decode_flight_mode(vehicle_type, custom_mode) -> str:
+    """Декодує ArduPilot custom_mode для OSD, якщо snapshot ще містить число."""
+    try:
+        vehicle_type = int(vehicle_type)
+        custom_mode = int(custom_mode)
+    except (TypeError, ValueError):
+        return str(custom_mode or "N/A")
+
+    mavlink = mavutil.mavlink
+    mappings = {
+        mavlink.MAV_TYPE_FIXED_WING: mavutil.mode_mapping_apm,
+        mavlink.MAV_TYPE_VTOL_DUOROTOR: mavutil.mode_mapping_apm,
+        mavlink.MAV_TYPE_VTOL_QUADROTOR: mavutil.mode_mapping_apm,
+        mavlink.MAV_TYPE_VTOL_TILTROTOR: mavutil.mode_mapping_apm,
+        mavlink.MAV_TYPE_QUADROTOR: mavutil.mode_mapping_acm,
+        mavlink.MAV_TYPE_COAXIAL: mavutil.mode_mapping_acm,
+        mavlink.MAV_TYPE_HEXAROTOR: mavutil.mode_mapping_acm,
+        mavlink.MAV_TYPE_OCTOROTOR: mavutil.mode_mapping_acm,
+        mavlink.MAV_TYPE_TRICOPTER: mavutil.mode_mapping_acm,
+        mavlink.MAV_TYPE_HELICOPTER: mavutil.mode_mapping_acm,
+        mavlink.MAV_TYPE_GROUND_ROVER: mavutil.mode_mapping_rover,
+        mavlink.MAV_TYPE_SURFACE_BOAT: mavutil.mode_mapping_rover,
+        mavlink.MAV_TYPE_SUBMARINE: mavutil.mode_mapping_sub,
+        mavlink.MAV_TYPE_ANTENNA_TRACKER: mavutil.mode_mapping_tracker,
+        mavlink.MAV_TYPE_AIRSHIP: mavutil.mode_mapping_blimp,
+    }
+    return mappings.get(vehicle_type, {}).get(custom_mode) or str(custom_mode)
+
 
 _legacy_osd_enabled = os.environ.get("OSD_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
 OSD_MODE = os.environ.get("OSD_MODE", "").strip().lower()
@@ -79,6 +161,9 @@ class TelemetryState:
         self.fix = None
         self.roll_deg = 0.0
         self.pitch_deg = 0.0
+        self.device_state = "N/A"
+        self.device_error = "N/A"
+        self.device_external_ok = None
         self.last_update_ts = 0.0
         self.error = ""
 
@@ -86,7 +171,7 @@ class TelemetryState:
         mtype = msg.get_type()
         with self.lock:
             if mtype == "HEARTBEAT":
-                self.mode = str(getattr(msg, "custom_mode", 0))
+                self.mode = decode_flight_mode(getattr(msg, "autopilot", None), getattr(msg, "custom_mode", 0))
                 self.armed = "ARMED" if (getattr(msg, "base_mode", 0) & 128) else "DISARMED"
             elif mtype == "SYS_STATUS":
                 voltage_mv = getattr(msg, "voltage_battery", -1)
@@ -151,9 +236,19 @@ class TelemetryState:
                 "fix",
                 "roll_deg",
                 "pitch_deg",
+                "device_state",
+                "device_error",
+                "device_external_ok",
             ):
                 if key in snapshot:
                     setattr(self, key, snapshot[key])
+            fire_device_status = snapshot.get("fire_device_status")
+            if isinstance(fire_device_status, dict):
+                self.device_state = str(fire_device_status.get("state") or "N/A")
+                self.device_error = str(fire_device_status.get("error") or "N/A")
+                self.device_external_ok = fire_device_status.get("external_ok")
+            if str(self.mode).isdigit() and "vehicle_type" in snapshot:
+                self.mode = decode_flight_mode(snapshot.get("vehicle_type"), self.mode)
             self.last_update_ts = float(snapshot.get("last_update_ts") or time.time())
             self.error = str(snapshot.get("error") or "")
 
@@ -172,6 +267,9 @@ class TelemetryState:
                 "fix": self.fix,
                 "roll_deg": self.roll_deg,
                 "pitch_deg": self.pitch_deg,
+                "device_state": self.device_state,
+                "device_error": self.device_error,
+                "device_external_ok": self.device_external_ok,
                 "age": age,
                 "error": self.error,
             }
@@ -182,7 +280,7 @@ class TelemetryState:
         arm_s = f"STATE: {s['armed']}"
         alt_s = f"ALT: {s['alt_m']:.1f} m" if s["alt_m"] is not None else "ALT: --"
         spd_s = f"GS: {s['ground_kmh']:.1f} km/h" if s["ground_kmh"] is not None else "GS: --"
-        hdg_s = f"HDG: {s['heading']:.0f}" if s["heading"] is not None else "HDG: --"
+        hdg_s = f"YAW: {s['heading']:.0f}" if s["heading"] is not None else "HDG: --"
 
         if s["batt_v"] is not None and s["batt_pct"] is not None:
             batt_s = f"BATT: {s['batt_v']:.2f}V ({s['batt_pct']}%)"
@@ -207,6 +305,12 @@ class TelemetryState:
             br_lines.append(stale_s)
         if err_s:
             br_lines.append(err_s)
+        if s["device_state"] != "N/A" or s["device_error"] != "N/A":
+            if s["device_external_ok"] is None:
+                ext_s = "EXT --"
+            else:
+                ext_s = "EXT OK" if s["device_external_ok"] else "EXT OFF"
+            br_lines.append(f"DEV: {s['device_state']} / {s['device_error']} / {ext_s}")
         return {"tl": tl, "tr": tr, "bl": bl, "br": "\n".join(br_lines)}
 
 
@@ -547,12 +651,26 @@ class HudLiteDrawer:
                if s["fix"] is not None and s["sats"] is not None else "GPS --")
         self._draw_label(cr, cx, h - 24, f"{batt}   {gps}", align="center", size=16)
 
+        if s["device_state"] != "N/A" or s["device_error"] != "N/A":
+            if s["device_external_ok"] is None:
+                ext_s = "EXT --"
+            else:
+                ext_s = "EXT OK" if s["device_external_ok"] else "EXT OFF"
+            self._draw_label(
+                cr,
+                cx,
+                h - 46,
+                f"DEV {s['device_state']} / {s['device_error']} / {ext_s}",
+                align="center",
+                size=14,
+            )
+
         # --- Stale / error ---
-        if s["age"] is None or s["age"] > 2.0:
-            wait_text = ("MAVLINK WAIT" if s["age"] is None
-                         else f"MAVLINK STALE {s['age']:.1f}s")
-            self._draw_label(cr, cx, cy + tape_h / 2 + 60, wait_text,
-                             align="center", size=16)
+        # if s["age"] is None or s["age"] > 2.0:
+        #     wait_text = ("MAVLINK WAIT" if s["age"] is None
+        #                  else f"MAVLINK STALE {s['age']:.1f}s")
+        #     self._draw_label(cr, cx, cy + tape_h / 2 + 60, wait_text,
+        #                      align="center", size=16)
         if s["error"]:
             self._draw_label(cr, cx, cy + tape_h / 2 + 82,
                              f"ERR: {s['error']}", align="center", size=14)
@@ -729,7 +847,8 @@ print(
     "[CONF] "
     f"VIDEO_DEVICE={VIDEO_DEVICE} STREAM_FPS={STREAM_FPS} "
     f"SRT_LATENCY_MS={SRT_LATENCY_MS} BITRATE_KBPS={BITRATE_KBPS} "
-    f"OSD_MODE={OSD_MODE} TELEMETRY_SNAPSHOT_PATH={TELEMETRY_SNAPSHOT_PATH}",
+    f"OSD_MODE={OSD_MODE} V4L2_IO_MODE={V4L2_IO_MODE} "
+    f"TELEMETRY_SNAPSHOT_PATH={TELEMETRY_SNAPSHOT_PATH}",
     flush=True,
 )
 print(f"[PIPE] {PIPELINE_STR}", flush=True)
