@@ -447,8 +447,8 @@
   legend.onAdd = function () {
     const div = L.DomUtil.create('div', 'map-legend');
     div.innerHTML = `
-      <div><span class="legend-dot" style="background:#3E7CA8"></span>FC raw</div>
-      <div><span class="legend-dot" style="background:#C99A3E"></span>Starlink</div>
+      <div><span class="legend-dot" style="background:#3E7CA8"></span>FC</div>
+      <div><span class="legend-dot" style="background:#C99A3E"></span>STR</div>
     `;
     return div;
   };
@@ -609,7 +609,7 @@
     };
 
     const point = [starlinkGps.lat, starlinkGps.lon];
-    const tooltip = `Starlink: ${starlinkGps.lat.toFixed(6)}, ${starlinkGps.lon.toFixed(6)}`;
+    const tooltip = `Позиція Starlink: ${starlinkGps.lat.toFixed(6)}, ${starlinkGps.lon.toFixed(6)}`;
     if (routePointChanged(starlinkTrack, point)) {
       starlinkTrack.push(point);
       addRouteDot(starlinkDotLayer, starlinkDots, point, '#C99A3E');
@@ -672,7 +672,7 @@
             trimRoute(gpsTrack, gpsDots, gpsDotLayer);
             trackLine.setLatLngs(gpsTrack);
           }
-          const tooltip = `FC raw: ${lat.toFixed(6)}, ${lon.toFixed(6)} alt ${alt} m`;
+          const tooltip = `Позиція FC: ${lat.toFixed(6)}, ${lon.toFixed(6)} висота ${alt} м`;
           if (!droneMarker) {
             droneMarker = L.marker(point, { icon: droneIcon }).addTo(map);
             droneMarker.bindTooltip(tooltip, { direction: 'top' });

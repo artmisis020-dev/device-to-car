@@ -197,7 +197,7 @@ const legend = L.control({position:'bottomleft'});
 legend.onAdd = function() {
   const div = L.DomUtil.create('div', 'map-legend');
   div.innerHTML = `
-    <div><span class="legend-dot" style="background:#3E7CA8"></span>FC raw</div>
+    <div><span class="legend-dot" style="background:#3E7CA8"></span>FC</div>
     <div><span class="legend-dot" style="background:#C99A3E"></span>Starlink</div>
   `;
   return div;
@@ -333,7 +333,7 @@ function starlinkPointFromLatest(latest) {
 
 function renderStarlinkMarker(point) {
   if (!point) return;
-  const tooltip = `Starlink: ${point[0].toFixed(6)}, ${point[1].toFixed(6)}`;
+  const tooltip = `Позиція Starlink: ${point[0].toFixed(6)}, ${point[1].toFixed(6)}`;
   if (!starlinkMarker) {
     starlinkMarker = L.marker(point, {icon:starlinkIcon}).addTo(map);
     starlinkMarker.bindTooltip(tooltip, {direction:'top'});
@@ -461,7 +461,7 @@ async function loadDetail() {
     const point = [lat, lon];
     map.setView(point, 15);
     track.setLatLngs([point]);
-    const tooltip = `FC raw: ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+    const tooltip = `Позиція FC: ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
     if (!marker) {
       marker = L.marker(point, {icon:fcIcon}).addTo(map);
       marker.bindTooltip(tooltip, {direction:'top'});
