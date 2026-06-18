@@ -4,10 +4,90 @@ import os
 import time
 from pathlib import Path
 import logging
+from pymavlink import mavutil
 
 SNAPSHOT_PATH = Path(os.environ.get("SIRENA_TELEMETRY_SNAPSHOT_PATH", "/tmp/sirena_mavlink_snapshot.json"))
 
 logger = logging.getLogger(__name__)
+
+
+FIRE_DEVICE_STATE_NAMES = {
+    0: "None",
+    1: "Testing",
+    2: "Standby",
+    3: "Safety Timeout",
+    4: "Disarmed",
+    5: "Arming",
+    6: "Armed",
+    7: "Fire",
+    8: "Discharging",
+    9: "Fired",
+}
+
+FIRE_DEVICE_ERROR_NAMES = {
+    0: "OK",
+    1: "CRC Error",
+    2: "Battery Test Error",
+    3: "Safety Sensor Error",
+    4: "Safety Switch Error",
+    5: "Cap Debounce Error",
+    6: "Fuse Error",
+    7: "Safety Switch Moved Error",
+    8: "Boost Error",
+    9: "Weak Battery Error",
+    10: "IMU Error",
+    11: "Prearm Error",
+    12: "Discharge Error",
+    13: "External Connection Error",
+    14: "Start Config Error",
+    20: "LIDAR Presence Error",
+    21: "LIDAR False Target Error",
+    22: "LIDAR No Target Error",
+}
+
+
+def decode_flight_mode(vehicle_type, custom_mode) -> str:
+    """Декодує HEARTBEAT.custom_mode у назву режиму ArduPilot."""
+    try:
+        vehicle_type = int(vehicle_type)
+        custom_mode = int(custom_mode)
+    except (TypeError, ValueError):
+        return str(custom_mode or "N/A")
+
+    mavlink = mavutil.mavlink
+    mappings = {
+        mavlink.MAV_TYPE_FIXED_WING: mavutil.mode_mapping_apm,
+        mavlink.MAV_TYPE_VTOL_DUOROTOR: mavutil.mode_mapping_apm,
+        mavlink.MAV_TYPE_VTOL_QUADROTOR: mavutil.mode_mapping_apm,
+        mavlink.MAV_TYPE_VTOL_TILTROTOR: mavutil.mode_mapping_apm,
+        mavlink.MAV_TYPE_QUADROTOR: mavutil.mode_mapping_acm,
+        mavlink.MAV_TYPE_COAXIAL: mavutil.mode_mapping_acm,
+        mavlink.MAV_TYPE_HEXAROTOR: mavutil.mode_mapping_acm,
+        mavlink.MAV_TYPE_OCTOROTOR: mavutil.mode_mapping_acm,
+        mavlink.MAV_TYPE_TRICOPTER: mavutil.mode_mapping_acm,
+        mavlink.MAV_TYPE_HELICOPTER: mavutil.mode_mapping_acm,
+        mavlink.MAV_TYPE_GROUND_ROVER: mavutil.mode_mapping_rover,
+        mavlink.MAV_TYPE_SURFACE_BOAT: mavutil.mode_mapping_rover,
+        mavlink.MAV_TYPE_SUBMARINE: mavutil.mode_mapping_sub,
+        mavlink.MAV_TYPE_ANTENNA_TRACKER: mavutil.mode_mapping_tracker,
+        mavlink.MAV_TYPE_AIRSHIP: mavutil.mode_mapping_blimp,
+    }
+    mode = mappings.get(vehicle_type, {}).get(custom_mode)
+    return mode or str(custom_mode)
+
+
+def clean_named_value_name(value) -> str:
+    """Нормалізує MAVLink char[10] name з різних представлень pymavlink."""
+    if isinstance(value, list):
+        return "".join(
+            chr(int(code))
+            for code in value
+            if isinstance(code, (int, float)) and int(code) > 0
+        ).strip()
+    if isinstance(value, (bytes, bytearray)):
+        return value.decode("ascii", errors="ignore").rstrip("\x00").strip()
+    return str(value or "").replace("\x00", "").strip()
+
 
 class TelemetrySnapshotPublisher:
     def __init__(self, path: Path = SNAPSHOT_PATH, min_interval_s: float = 0.1):
@@ -27,6 +107,14 @@ class TelemetrySnapshotPublisher:
             "roll_deg": 0.0,
             "pitch_deg": 0.0,
             "error": "",
+            "fire_device_status": {
+                "state_id": None,
+                "state": "N/A",
+                "error_id": None,
+                "error": "N/A",
+                "external_ok": None,
+                "updated_ts": None,
+            },
             "messages": {},
         }
 
@@ -60,7 +148,9 @@ class TelemetrySnapshotPublisher:
         changed = False
 
         if mtype == "HEARTBEAT":
-            self.state["mode"] = str(data.get("custom_mode", 0))
+            self.state["mode"] = decode_flight_mode(data.get("type"), data.get("custom_mode", 0))
+            self.state["mode_raw"] = data.get("custom_mode", 0)
+            self.state["vehicle_type"] = data.get("type")
             self.state["armed"] = "ARMED" if (int(data.get("base_mode") or 0) & 128) else "DISARMED"
             changed = True
         elif mtype == "SYS_STATUS":
@@ -114,8 +204,29 @@ class TelemetrySnapshotPublisher:
             if isinstance(vfr_hdg, int) and 0 <= vfr_hdg <= 360:
                 self.state["heading"] = float(vfr_hdg)
                 changed = True
+        elif mtype == "NAMED_VALUE_INT":
+            name = clean_named_value_name(data.get("name"))
+            value = data.get("value")
+            if isinstance(value, (int, float)):
+                changed = self._update_device_status(name, int(value)) or changed
 
         return changed
+
+    def _update_device_status(self, name: str, value: int) -> bool:
+        fire_device_status = self.state.setdefault("fire_device_status", {})
+        if name == "DEV_STATE":
+            fire_device_status["state_id"] = value
+            fire_device_status["state"] = FIRE_DEVICE_STATE_NAMES.get(value, f"Unknown {value}")
+        elif name == "DEV_ERROR":
+            fire_device_status["error_id"] = value
+            fire_device_status["error"] = FIRE_DEVICE_ERROR_NAMES.get(value, f"Unknown {value}")
+        elif name == "DEV_EXTOK":
+            fire_device_status["external_ok"] = bool(value)
+        else:
+            return False
+
+        fire_device_status["updated_ts"] = time.time()
+        return True
 
     def _write_if_due(self):
         now = time.time()

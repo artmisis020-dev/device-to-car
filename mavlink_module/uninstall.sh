@@ -19,6 +19,7 @@ echo "=== Початок видалення Sirena Telemetry & Router ==="
 echo "1. Зупинка активних фонових процесів та сервісів..."
 SERVICES=(
     "telemetry-sender.service"
+    "fire-device-status.service"
     "mavlink-router.service"
 )
 

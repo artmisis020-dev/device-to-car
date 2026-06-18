@@ -84,8 +84,19 @@ if ! id "$SERVICE_USER" &>/dev/null; then
     useradd -m -s /bin/bash "$SERVICE_USER"
 fi
 
-# Додаємо у dialout для доступу до /dev/ttyAMA4 та інших UART
+# Додаємо у dialout для доступу до /dev/ttyAMA0 та інших UART
 usermod -aG dialout "$SERVICE_USER"
+
+# Даємо стабільні права на UART FC. На деяких образах Raspberry Pi
+# /dev/ttyAMA0 створюється як root:tty 0600, і сервіс sirena не може його відкрити.
+UDEV_RULE_FILE="/etc/udev/rules.d/99-sirena-uart.rules"
+echo 'KERNEL=="ttyAMA0", GROUP="dialout", MODE="0660"' > "$UDEV_RULE_FILE"
+udevadm control --reload-rules || true
+udevadm trigger --name-match=ttyAMA0 || true
+if [ -e /dev/ttyAMA0 ]; then
+    chgrp dialout /dev/ttyAMA0 || true
+    chmod 0660 /dev/ttyAMA0 || true
+fi
 
 # Оновлення прав sudoers для користувача sirena (контроль systemctl без пароля)
 echo "Оновлення прав sudo для керування сервісами телеметрії..."
@@ -100,6 +111,7 @@ mkdir -p "$INSTALL_DIR"
 cp -p "$DEPLOY_DIR/telemetry_daemon.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/telemetry_sender.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/telemetry_snapshot.py" "$INSTALL_DIR/"
+cp -p "$DEPLOY_DIR/fire_device_status_daemon.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/mavlink_router.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/mavlink_client.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/mavlink_bridge.py" "$INSTALL_DIR/"
@@ -149,6 +161,14 @@ if [ -f "$SERVICES_SRC_DIR/mavlink-router.service" ]; then
     echo "mavlink-router.service скопійовано."
 else
     echo "Попередження: mavlink-router.service не знайдено в папці services."
+fi
+
+if [ -f "$SERVICES_SRC_DIR/fire_device-status.service" ]; then
+    cp "$SERVICES_SRC_DIR/fire_device-status.service" /etc/systemd/system/
+    chmod 644 /etc/systemd/system/fire_device-status.service
+    echo "fire_device-status.service скопійовано."
+else
+    echo "Попередження: fire_device-status.service не знайдено в папці services."
 fi
 
 # Оновлення демона без запуску сервісів.
