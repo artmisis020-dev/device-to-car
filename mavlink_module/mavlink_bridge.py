@@ -167,7 +167,7 @@ class MAVLinkBridge:
                 if msg.get_type() == 'BAD_DATA':
                     return None
 
-                logger.warning(f"Дата з ground station: {msg}")
+                logger.debug(f"Дата з ground station: {msg}")
                 if self._recv_gcs_callback:
                     self._recv_gcs_callback(msg)
                 return msg
@@ -296,7 +296,9 @@ class MAVLinkBridge:
             return False
 
     def send_gps_input(self, lat: float, lon: float, alt: float,
-                       sats: int = 12, hdop: float = 0.9) -> bool:
+                       sats: int = 12, hdop: float = 0.9,
+                       fix_type: int = 3,
+                       yaw_deg: Optional[float] = None) -> bool:
         """
         Відправляє GPS_INPUT MAVLink повідомлення в FC через UDP.
         Потребує GPS_TYPE=14 (MAVLink GPS) в ArduPilot.
@@ -304,14 +306,20 @@ class MAVLinkBridge:
         try:
             if self.mav_fc is None:
                 return False
-            t = int(time.time() * 1e6)  # мікросекунди
+            t = int(time.time() * 1e6) # час в мікросекундах
+            IGNORE_VEL_HORIZ = 8
+            IGNORE_VEL_VERT  = 16
+            IGNORE_SPEED_ACC = 32
+            ignore_flags = IGNORE_VEL_HORIZ | IGNORE_VEL_VERT | IGNORE_SPEED_ACC  # = 56
+            yaw_cdeg = self._gps_input_yaw_cdeg(yaw_deg)
+
             self.mav_fc.mav.gps_input_send(
                 t,  # time_usec
-                0,  # gps_id
-                0,  # ignore_flags (0 = використовувати всі поля)
+                0,  # gps_id  -> 0 is first primary gps. Use 1 for instance 2.
+                ignore_flags,  # ignore_flags (0 = використовувати всі поля)
                 int(t // 1000000),  # time_week_ms (приблизно)
                 0,  # time_week
-                3,  # fix_type: 3 = 3D fix
+                int(fix_type),  # fix_type: 3 = 3D fix
                 int(lat * 1e7),  # lat
                 int(lon * 1e7),  # lon
                 alt,  # alt (метри)
@@ -319,15 +327,27 @@ class MAVLinkBridge:
                 1.0,  # vdop
                 0.0, 0.0, 0.0,  # vn, ve, vd (швидкість)
                 0.0,  # speed_accuracy
-                0.0,  # horiz_accuracy
-                0.0,  # vert_accuracy
-                sats,  # satellites_visible
-                0  # yaw
+                3.0,  # horiz_accuracy
+                5.0,  # vert_accuracy
+                sats,  # satellites_visible by default set to 12
+                yaw_cdeg  # yaw: centidegrees, 0 = невідомо, 36000 = північ
             )
             return True
         except Exception as e:
             logger.warning(f"Помилка send_gps_input: {e}")
             return False
+
+    @staticmethod
+    def _gps_input_yaw_cdeg(yaw_deg: Optional[float]) -> int:
+        """Конвертує yaw у MAVLink GPS_INPUT yaw: centidegrees, 0 означає unknown."""
+        if yaw_deg is None:
+            return 0
+        try:
+            yaw = float(yaw_deg) % 360.0
+        except (TypeError, ValueError):
+            return 0
+        yaw_cdeg = int(round(yaw * 100.0))
+        return 36000 if yaw_cdeg == 0 else yaw_cdeg
 
     def send_adsb_vehicle(self, icao: int, lat: float, lon: float,
                           alt_m: float, name: str = "") -> bool:
