@@ -19,6 +19,7 @@ WG_INTERFACES = tuple(
 VIDEO_STATUS_UNIT = "video-streamer.service"
 MAVLINK_ROUTER_UNIT = "mavlink-router.service"
 TELEMETRY_SENDER_UNIT = "telemetry-sender.service"
+DEVICE_STATUS_UNIT = "device-status.service"
 NAVIGATION_UNIT = "sirena-gps-hub.service"
 VIDEO_MANAGER_UNIT = "video-service-manager.service"
 VIDEO_RELAY_UNIT = "video-relay.service"
@@ -47,6 +48,12 @@ SERVICES = {
         name="telemetry_sender",
         label="Telemetry Sender",
         units=(TELEMETRY_SENDER_UNIT,),
+        depends_on=("mavlink_router",),
+    ),
+    "device_status": ServiceDefinition(
+        name="device_status",
+        label="Device Status",
+        units=(DEVICE_STATUS_UNIT,),
         depends_on=("mavlink_router",),
     ),
     "navigation": ServiceDefinition(

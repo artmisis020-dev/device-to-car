@@ -1,11 +1,9 @@
-"""HTTP API for the Sirena root manager."""
-
 from __future__ import annotations
-
 from flask import Flask, jsonify, request
-
 from .config import MANAGER_HOST, MANAGER_PORT
 from .supervisor import SirenaSupervisor
+
+"""HTTP API for the Sirena root manager."""
 
 
 def create_app() -> Flask:
@@ -39,7 +37,9 @@ def create_app() -> Flask:
 
     @app.post("/api/v1/services/<name>/start")
     def start_service(name: str):
-        return jsonify(supervisor.start_service(name))
+        result = supervisor.start_service(name)
+
+        return jsonify(result)
 
     @app.post("/api/v1/services/<name>/stop")
     def stop_service(name: str):
@@ -59,11 +59,12 @@ def create_app() -> Flask:
 
     @app.get("/api/v1/cameras")
     def list_cameras():
-        return jsonify(supervisor.list_cameras())
+        return jsonify(supervisor.list_camera_list())
 
     @app.post("/api/v1/camera")
     def set_camera():
         payload = request.get_json(silent=True) or {}
-        return jsonify(supervisor.set_camera(payload.get("camera", "")))
+        result = supervisor.set_camera(payload.get("camera", ""))
+        return jsonify(result)
 
     return app
