@@ -30,6 +30,7 @@ apt-get install -y \
     python3-pip \
     python3-venv \
     python3-cairo \
+    python3-gi-cairo \
     python3-gi \
     python3-gst-1.0 \
     gir1.2-gstreamer-1.0 \
