@@ -15,6 +15,8 @@ INPUT_FORMAT = os.environ.get("INPUT_FORMAT", "YUY2").upper()
 
 # Конфігурація ретранслятора (SRT Relay)
 RELAY_FLAG_FILE = "/tmp/sirena_video_relay_active"
+VIDEO_CONFIG_PATH = os.environ.get("SIRENA_VIDEO_CONFIG_PATH", "/opt/sirena-video/sirena_video_config.json")
+RELAY_BITRATE_KBPS = int(os.environ.get("SIRENA_VIDEO_BITRATE", "1000"))
 
 # Конфігурація Sirena Registry
 REGISTRY_URL = os.environ.get("SIRENA_ADMIN_SERVER_URL", "http://127.0.0.1:8080").rstrip("/")

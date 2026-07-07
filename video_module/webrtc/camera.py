@@ -24,6 +24,8 @@ class ThermalTrack(VideoStreamTrack):
         self._time_base = Fraction(1, self.fps)
         self._frame_q = asyncio.Queue(maxsize=3)
         self._reader_task = None
+        self._lut = None                          # b"" = контраст не потрібен
+        self._lut_refresh = max(1, fps // 2)      # перерахунок ~2 рази/с
 
     def _build_cmd(self):
         if config.INPUT_FORMAT in ("MJPG", "JPEG"):
@@ -171,16 +173,22 @@ class ThermalTrack(VideoStreamTrack):
         uv_size = y_size >> 2
         y_bytes = bytes(data[:y_size])
 
-        y_min = min(y_bytes)
-        y_max = max(y_bytes)
-        if self._n % 60 == 1:
-            logging.info("Frame %d Y min=%d max=%d mean=%d",
-                         self._n, y_min, y_max, sum(y_bytes) // len(y_bytes))
+        # min/max по всьому Y-плейну на кожному кадрі дорогі для CPU RPi, а
+        # теплова картина міняється повільно — перераховуємо LUT раз на
+        # _lut_refresh кадрів, між ними користуємось кешованим.
+        if self._lut is None or self._n % self._lut_refresh == 1:
+            y_min = min(y_bytes)
+            y_max = max(y_bytes)
+            if y_max > y_min + 2:
+                span = y_max - y_min
+                self._lut = bytes(max(0, min(255, int((i - y_min) * 255 / span))) for i in range(256))
+            else:
+                self._lut = b""
+            if self._n % 60 == 1:
+                logging.info("Frame %d Y min=%d max=%d", self._n, y_min, y_max)
 
-        if y_max > y_min + 2:
-            span = y_max - y_min
-            lut = bytes(max(0, min(255, int((i - y_min) * 255 / span))) for i in range(256))
-            y_bytes = y_bytes.translate(lut)
+        if self._lut:
+            y_bytes = y_bytes.translate(self._lut)
 
         frame = av.VideoFrame(self.width, self.height, "yuv420p")
         frame.planes[0].update(y_bytes)

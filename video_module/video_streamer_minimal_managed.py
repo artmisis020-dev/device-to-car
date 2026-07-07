@@ -58,7 +58,6 @@ def env_int(name: str, default: int) -> int:
 STREAM_FPS = env_int("STREAM_FPS", 30)
 STREAM_WIDTH = env_int("SIRENA_VIDEO_WIDTH", 640)
 STREAM_HEIGHT = env_int("SIRENA_VIDEO_HEIGHT", 512)
-SRT_LATENCY_MS = env_int("SRT_LATENCY_MS", 0)
 BITRATE_KBPS = env_int("BITRATE_KBPS", 2500)
 KEYINT = env_int("KEYINT", 30)
 MAVLINK_ENDPOINT = os.environ.get(
@@ -67,6 +66,7 @@ MAVLINK_ENDPOINT = os.environ.get(
 )
 TELEMETRY_SNAPSHOT_PATH = os.environ.get("SIRENA_TELEMETRY_SNAPSHOT_PATH", "/tmp/sirena_mavlink_snapshot.json")
 SIRENA_RELAY_TARGET = os.environ.get("SIRENA_RELAY_TARGET", "").strip().strip('"')
+VIDEO_ENCODER = os.environ.get("VIDEO_ENCODER", "auto").strip().lower()
 OSD_RATE_HZ = max(1, env_int("OSD_RATE_HZ", 5))
 V4L2_IO_MODE = os.environ.get("V4L2_IO_MODE", os.environ.get("SIRENA_V4L2_IO_MODE", "rw")).strip().lower()
 
@@ -134,6 +134,14 @@ def decode_flight_mode(vehicle_type, custom_mode) -> str:
     }
     return mappings.get(vehicle_type, {}).get(custom_mode) or str(custom_mode)
 
+
+if not SIRENA_RELAY_TARGET:
+    # Без цілі ретрансляції стрімити нікуди. Виходимо чисто (exit 0), щоб
+    # Restart=on-failure не крутив crash-loop до StartLimitBurst і юніт не
+    # лягав у failed; video-relay сам рестартне сервіс, коли запише
+    # /etc/default/sirena-relay з таргетом.
+    print("[INFO] SIRENA_RELAY_TARGET порожній — стрім не потрібен, чистий вихід.", flush=True)
+    sys.exit(0)
 
 _legacy_osd_enabled = os.environ.get("OSD_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
 OSD_MODE = os.environ.get("OSD_MODE", "").strip().lower()
@@ -713,6 +721,20 @@ def supports_mjpeg(video_device: str) -> bool:
 
 
 def get_encoder_chain() -> str:
+    # v4l2h264enc реєструється GStreamer'ом лише коли в системі реально є
+    # V4L2 M2M енкодер (RPi4 має, RPi5 — ні), тож find() тут — перевірка заліза.
+    use_hw = VIDEO_ENCODER in ("auto", "v4l2") and Gst.ElementFactory.find("v4l2h264enc") is not None
+    if VIDEO_ENCODER == "v4l2" and not use_hw:
+        print("[WARN] VIDEO_ENCODER=v4l2, але v4l2h264enc недоступний — fallback на x264enc", flush=True)
+    if use_hw:
+        print("[INFO] Using hardware encoder: v4l2h264enc", flush=True)
+        return (
+            "v4l2h264enc "
+            "extra-controls=\"controls,repeat_sequence_header=1,h264_profile=0,"
+            f"video_bitrate={BITRATE_KBPS * 1000},h264_i_frame_period={KEYINT}\" ! "
+            "capsfilter caps=\"video/x-h264,level=(string)4,stream-format=byte-stream,alignment=au\""
+        )
+
     if Gst.ElementFactory.find("x264enc") is None:
         raise RuntimeError("No H264 encoder found: x264enc")
 
@@ -745,10 +767,10 @@ def get_osd_chain() -> str:
         )
     if OSD_MODE == "hud-lite":
         return (
-            "videoconvert ! "
+            "videoconvert n-threads=2 ! "
             "capsfilter caps=\"video/x-raw,format=BGRA\" ! "
             "cairooverlay name=osd_hud ! "
-            "videoconvert ! "
+            "videoconvert n-threads=2 ! "
         )
     return ""
 
@@ -767,7 +789,7 @@ def create_pipeline_string() -> str:
         f"v4l2src device={VIDEO_DEVICE} ! "
         "capsfilter caps=\"video/x-raw\" ! "
         "queue leaky=downstream max-size-buffers=1 ! "
-        "videoconvert ! "
+        "videoconvert n-threads=2 ! "
         "videoscale ! "
         "videorate drop-only=true ! "
         f"{output_caps} ! "
@@ -846,7 +868,7 @@ print("[INIT] Запускається GStreamer SRT streamer...", flush=True)
 print(
     "[CONF] "
     f"VIDEO_DEVICE={VIDEO_DEVICE} STREAM_FPS={STREAM_FPS} "
-    f"SRT_LATENCY_MS={SRT_LATENCY_MS} BITRATE_KBPS={BITRATE_KBPS} "
+    f"BITRATE_KBPS={BITRATE_KBPS} VIDEO_ENCODER={VIDEO_ENCODER} "
     f"OSD_MODE={OSD_MODE} V4L2_IO_MODE={V4L2_IO_MODE} "
     f"TELEMETRY_SNAPSHOT_PATH={TELEMETRY_SNAPSHOT_PATH}",
     flush=True,

@@ -41,6 +41,7 @@ ADMIN_SERVER_URL  = os.environ.get("SIRENA_ADMIN_SERVER_URL", "http://127.0.0.1:
 REGISTRY_URL      = ADMIN_SERVER_URL
 SERVER_SRT_HOST   = os.environ.get("SIRENA_SRT_HOST", "10.0.0.1")
 SERVER_SRT_PORT   = int(os.environ.get("SIRENA_SRT_PORT", "8554"))
+SRT_LATENCY_MS    = int(os.environ.get("SRT_LATENCY_MS", "200"))
 POLL_INTERVAL     = float(os.environ.get("SIRENA_VIDEO_RELAY_POLL_INTERVAL", "5.0"))
 REPORT_EVERY      = 12
 
@@ -105,21 +106,33 @@ def _report_to_server(device_id: str, active: bool):
         logger.debug(f"Server report error (non-fatal): {e}")
 
 
-def _get_current_mode() -> str:
+def _get_current_mode(fallback: str = "srt") -> str:
+    """Питає режим у video-service-manager; якщо той недоступний — повертає
+    fallback (останній відомий режим), щоб тимчасовий рестарт менеджера не
+    перемикав relay наосліп і не вбивав робочий стрім."""
     try:
         req = urllib.request.Request(VIDEO_MANAGER_URL, method="GET")
         with urllib.request.urlopen(req, timeout=3) as r:
             data = json.loads(r.read().decode())
-            return data.get("mode", "srt")
-    except Exception:
-        return "srt"
+            return data.get("mode", fallback)
+    except Exception as e:
+        logger.debug(f"Video manager unreachable, keeping mode '{fallback}': {e}")
+        return fallback
 
 
 # ─── SRT relay ────────────────────────────────────────────────────────────────
+def _restart_video_streamer():
+    # reset-failed знімає rate-limit лічильник: якщо юніт встиг влетіти у
+    # StartLimitBurst і стан failed, звичайний restart його вже не підніме.
+    subprocess.run(["systemctl", "reset-failed", "video-streamer"],
+                   check=False, capture_output=True)
+    subprocess.run(["systemctl", "restart", "video-streamer"], check=False)
+
+
 def _enable_srt_relay(stream_name: str):
     target = f"rtsp://{SERVER_SRT_HOST}:{SERVER_SRT_PORT}/{stream_name}"
     Path(RELAY_ENV_FILE).write_text(f'SIRENA_RELAY_TARGET="{target}"\n')
-    subprocess.run(["systemctl", "restart", "video-streamer"], check=False)
+    _restart_video_streamer()
     logger.info(f"[RTSP] Relay enabled -> {target}")
 
 
@@ -128,14 +141,14 @@ def _disable_srt_relay():
         Path(RELAY_ENV_FILE).unlink(missing_ok=True)
     except Exception:
         pass
-    subprocess.run(["systemctl", "restart", "video-streamer"], check=False)
+    _restart_video_streamer()
     logger.info("[SRT] Relay disabled")
 
 
 # ─── WebRTC relay ─────────────────────────────────────────────────────────────
 def _enable_webrtc_relay(stream_name: str):
     target = (f"srt://{SERVER_SRT_HOST}:{SERVER_SRT_PORT}"
-              f"?mode=caller&latency=200&streamid=publish:{stream_name}")
+              f"?mode=caller&latency={SRT_LATENCY_MS}&streamid=publish:{stream_name}")
     Path(RELAY_FLAG_FILE).write_text(target)
     logger.info(f"[WebRTC] Relay flag written → {target}")
 
@@ -169,7 +182,7 @@ def main():
 
     while True:
         should_relay = _camera_available()
-        current_mode = _get_current_mode()
+        current_mode = _get_current_mode(last_mode or "srt")
         poll_count  += 1
 
         # ── Activate ─────────────────────────────────────────────────────────
