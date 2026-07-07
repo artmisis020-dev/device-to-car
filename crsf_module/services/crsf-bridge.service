@@ -1,0 +1,20 @@
+[Unit]
+Description=Sirena CRSF Bridge (UDP RC -> FC over UART)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sirena
+WorkingDirectory=/opt/sirena-crsf
+EnvironmentFile=/opt/sirena/.env
+ExecStart=/opt/sirena-crsf/venv/bin/python3 /opt/sirena-crsf/crsf_daemon.py
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=crsf-bridge
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
