@@ -3,40 +3,83 @@
 {% block head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <style>
-body { background:#0b1220; color:#d7e1ea; }
-.card { background:#111a2b; border:1px solid #20324f; border-radius:12px; color:#eef5ff; }
-.card-body { color:#eef5ff; }
-.card-header { background:#16243a !important; border-bottom:1px solid #20324f; color:#e8eef5 !important; font-weight:600; }
-.soft { color:#b8c9df !important; }
+body { background:var(--sirena-bg); color:var(--sirena-text); }
+.card { background:var(--sirena-surface); border:1px solid var(--sirena-border); border-radius:8px; color:var(--sirena-text); }
+.card-body { color:var(--sirena-text); }
+.card-header { background:var(--sirena-header) !important; border-bottom:1px solid var(--sirena-border); color:var(--sirena-text) !important; font-weight:600; }
+.soft { color:var(--sirena-muted) !important; }
 #map { height: 360px; border-radius: 8px; }
-.kv { display:grid; grid-template-columns:120px 1fr; gap:.35rem .75rem; font-size:.9rem; }
-.kv div:nth-child(odd) { color:#b8c9df; }
-.kv div:nth-child(even) { color:#f3f7fc; font-weight:600; overflow-wrap:anywhere; }
-	.msg-table {
-		--bs-table-bg:#0f1a2b;
-		--bs-table-color:#e8eef5;
-		--bs-table-border-color:#263a59;
-		--bs-table-striped-bg:#142139;
-		--bs-table-striped-color:#eef5ff;
+	.starlink-marker {
+  min-width:48px;
+  padding:.12rem .35rem;
+  border:2px solid var(--sirena-warning);
+  border-radius:999px;
+  background:var(--sirena-surface);
+  color:var(--sirena-text);
+  font-size:.68rem;
+  font-weight:800;
+  line-height:1.1;
+  text-align:center;
+	  box-shadow:0 0 0 3px rgba(201,154,62,.18);
 	}
-	.msg-table td, .msg-table th { padding:.35rem .5rem !important; font-size:.78rem; border-color:#263a59 !important; color:#e8eef5 !important; }
-	.msg-table thead th { background:#192840 !important; color:#f4f8fc !important; }
-	.msg-table code { color:#dbeafe; white-space:pre-wrap; overflow-wrap:anywhere; }
+	.fc-marker {
+	  min-width:34px;
+	  padding:.08rem .28rem;
+	  border:2px solid var(--sirena-accent);
+	  border-radius:999px;
+	  background:var(--sirena-surface);
+	  color:var(--sirena-text);
+	  font-size:.68rem;
+	  font-weight:800;
+	  line-height:1.1;
+	  text-align:center;
+	  box-shadow:0 0 0 3px rgba(62,124,168,.18);
+	}
+	.map-legend {
+	  background:rgba(18,26,40,.92);
+	  border:1px solid var(--sirena-border);
+	  border-radius:6px;
+	  color:var(--sirena-text);
+	  padding:.35rem .5rem;
+	  font-size:.75rem;
+	  line-height:1.5;
+	}
+	.legend-dot {
+	  display:inline-block;
+	  width:.65rem;
+	  height:.65rem;
+	  border-radius:50%;
+	  margin-right:.35rem;
+	  vertical-align:-.05rem;
+	}
+.kv { display:grid; grid-template-columns:120px 1fr; gap:.35rem .75rem; font-size:.9rem; }
+.kv div:nth-child(odd) { color:var(--sirena-muted); }
+.kv div:nth-child(even) { color:var(--sirena-text); font-weight:600; overflow-wrap:anywhere; }
+	.msg-table {
+		--bs-table-bg:var(--sirena-surface);
+		--bs-table-color:var(--sirena-text);
+		--bs-table-border-color:var(--sirena-border);
+		--bs-table-striped-bg:#172435;
+		--bs-table-striped-color:var(--sirena-text);
+	}
+	.msg-table td, .msg-table th { padding:.35rem .5rem !important; font-size:.78rem; border-color:var(--sirena-border) !important; color:var(--sirena-text) !important; }
+	.msg-table thead th { background:var(--sirena-header) !important; color:var(--sirena-text) !important; }
+	.msg-table code { color:var(--sirena-mono); white-space:pre-wrap; overflow-wrap:anywhere; }
 	.telemetry-summary {
 		display:grid;
 		grid-template-columns:repeat(4, minmax(0, 1fr));
 		gap:1px;
-		background:#263a59;
-		border-bottom:1px solid #263a59;
+		background:var(--sirena-border);
+		border-bottom:1px solid var(--sirena-border);
 	}
-	.telemetry-tile { background:#0f1a2b; padding:.7rem .8rem; min-height:72px; }
-	.telemetry-label { color:#9fb4cf; font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; }
-	.telemetry-value { color:#f4f8fc; font-weight:700; font-size:.98rem; margin-top:.2rem; overflow-wrap:anywhere; }
-	.telemetry-hint { color:#9fb4cf; font-size:.76rem; margin-top:.15rem; }
+	.telemetry-tile { background:var(--sirena-surface); padding:.7rem .8rem; min-height:72px; }
+	.telemetry-label { color:var(--sirena-muted); font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; }
+	.telemetry-value { color:var(--sirena-text); font-weight:700; font-size:.98rem; margin-top:.2rem; overflow-wrap:anywhere; }
+	.telemetry-hint { color:var(--sirena-muted); font-size:.76rem; margin-top:.15rem; }
 	.highlight-list { display:flex; flex-wrap:wrap; gap:.35rem; }
-	.highlight-pill { background:#182942; border:1px solid #2b4264; border-radius:999px; padding:.12rem .45rem; color:#dbeafe; white-space:nowrap; }
-	.raw-details summary { color:#8bd3ff; cursor:pointer; user-select:none; }
-	.raw-details pre { margin:.45rem 0 0; max-height:180px; overflow:auto; white-space:pre-wrap; color:#dbeafe; font-size:.74rem; }
+	.highlight-pill { background:#172435; border:1px solid var(--sirena-border); border-radius:999px; padding:.12rem .45rem; color:var(--sirena-text); white-space:nowrap; }
+	.raw-details summary { color:var(--sirena-accent); cursor:pointer; user-select:none; }
+	.raw-details pre { margin:.45rem 0 0; max-height:180px; overflow:auto; white-space:pre-wrap; color:var(--sirena-text); font-size:.74rem; }
 	@media (max-width: 900px) {
 		.telemetry-summary { grid-template-columns:repeat(2, minmax(0, 1fr)); }
 	}
@@ -44,7 +87,7 @@ body { background:#0b1220; color:#d7e1ea; }
 	</style>
 {% endblock %}
 {% block content %}
-<nav class="navbar navbar-dark" style="background:#16243a;border-bottom:1px solid #20324f">
+<nav class="navbar navbar-dark" style="background:var(--sirena-header);border-bottom:1px solid var(--sirena-border)">
   <div class="container-fluid">
     <span class="navbar-brand fw-semibold">🧭 {{ hostname }} / {{ device_id[:12] }}</span>
     <div class="d-flex gap-2">
@@ -136,12 +179,62 @@ const DEVICE_ID = "{{ device_id }}";
 const map = L.map('map').setView([0, 0], 2);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
 let marker = null;
-let track = L.polyline([], {color:'#4ea1ff', weight:3}).addTo(map);
+let starlinkMarker = null;
+let track = L.polyline([], {color:'#3E7CA8', weight:3}).addTo(map);
+const fcIcon = L.divIcon({
+  html:'<div class="fc-marker">FC</div>',
+  className:'',
+  iconSize:[34,20],
+  iconAnchor:[17,10]
+});
+const starlinkIcon = L.divIcon({
+  html:'<div class="starlink-marker">STRLK</div>',
+  className:'',
+  iconSize:[48,22],
+  iconAnchor:[24,11]
+});
+const legend = L.control({position:'bottomleft'});
+legend.onAdd = function() {
+  const div = L.DomUtil.create('div', 'map-legend');
+  div.innerHTML = `
+    <div><span class="legend-dot" style="background:#3E7CA8"></span>FC</div>
+    <div><span class="legend-dot" style="background:#C99A3E"></span>Starlink</div>
+  `;
+  return div;
+};
+legend.addTo(map);
 
 function fmt(value) {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
+}
+
+function parseUtcDate(value) {
+  return new Date(String(value).replace('T', ' ') + ' UTC');
+}
+
+function uaPlural(value, one, few, many) {
+  const mod10 = value % 10;
+  const mod100 = value % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+}
+
+function timeAgoUa(value) {
+  if (!value) return '—';
+  const date = parseUtcDate(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const diffSec = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (diffSec < 5) return 'щойно';
+  if (diffSec < 60) return `${diffSec} ${uaPlural(diffSec, 'секунду', 'секунди', 'секунд')} назад`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} ${uaPlural(diffMin, 'хвилину', 'хвилини', 'хвилин')} назад`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour} ${uaPlural(diffHour, 'годину', 'години', 'годин')} назад`;
+  const diffDay = Math.floor(diffHour / 24);
+  return `${diffDay} ${uaPlural(diffDay, 'день', 'дні', 'днів')} назад`;
 }
 
 	function escapeHtml(value) {
@@ -153,9 +246,22 @@ function fmt(value) {
 	    .replaceAll("'", '&#039;');
 	}
 
+const MAV_MODE_FLAG_SAFETY_ARMED = 128;
+const MAV_TYPE_GCS = 6;
+const MAV_AUTOPILOT_INVALID = 8;
+
+function isAutopilotHeartbeat(data) {
+  const mavType = Number(data?.type);
+  const autopilot = Number(data?.autopilot);
+  if (mavType === MAV_TYPE_GCS) return false;
+  if (autopilot === MAV_AUTOPILOT_INVALID) return false;
+  return true;
+}
+
 	function latestByType(messages) {
 	  const result = {};
 	  for (const row of messages) {
+	    if (row.type === 'HEARTBEAT' && !isAutopilotHeartbeat(row.data || {})) continue;
 	    if (!result[row.type] || Number(row.ts) > Number(result[row.type].ts)) result[row.type] = row;
 	  }
 	  return result;
@@ -172,7 +278,7 @@ function ageText(ts) {
 
 function utcToLocalText(value) {
   if (!value) return '—';
-  const date = new Date(String(value).replace('T', ' ') + ' UTC');
+  const date = parseUtcDate(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString(undefined, {
     year: 'numeric',
@@ -187,6 +293,54 @@ function utcToLocalText(value) {
 function numberText(value, digits = 1) {
   const n = Number(value);
   return Number.isFinite(n) ? n.toFixed(digits) : '—';
+}
+
+function cleanNamedValueName(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map(code => Number(code))
+      .filter(code => Number.isFinite(code) && code > 0)
+      .map(code => String.fromCharCode(code))
+      .join('')
+      .trim();
+  }
+  const raw = String(value ?? '').replaceAll('\u0000', '').trim();
+  if (/^[0-9a-fA-F]+$/.test(raw) && raw.length % 2 === 0) {
+    let decoded = '';
+    for (let i = 0; i < raw.length; i += 2) {
+      const code = parseInt(raw.slice(i, i + 2), 16);
+      if (code > 0) decoded += String.fromCharCode(code);
+    }
+    if (decoded.trim()) return decoded.trim();
+  }
+  return raw;
+}
+
+function starlinkPointFromLatest(latest) {
+  let lat = null;
+  let lon = null;
+  for (const row of latest) {
+    if (row.type !== 'NAMED_VALUE_FLOAT') continue;
+    const name = cleanNamedValueName(row.data?.name);
+    const value = Number(row.data?.value);
+    if (!Number.isFinite(value)) continue;
+    const normalized = name.toUpperCase();
+    if (normalized === 'STRLK_LAT' || normalized === 'STRLNK_LAT') lat = value;
+    if (normalized === 'STRLK_LON' || normalized === 'STRLNK_LON') lon = value;
+  }
+  return Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0) ? [lat, lon] : null;
+}
+
+function renderStarlinkMarker(point) {
+  if (!point) return;
+  const tooltip = `Позиція Starlink: ${point[0].toFixed(6)}, ${point[1].toFixed(6)}`;
+  if (!starlinkMarker) {
+    starlinkMarker = L.marker(point, {icon:starlinkIcon}).addTo(map);
+    starlinkMarker.bindTooltip(tooltip, {direction:'top'});
+  } else {
+    starlinkMarker.setLatLng(point);
+    starlinkMarker.setTooltipContent(tooltip);
+  }
 }
 
 	function tile(label, value, hint = '') {
@@ -208,7 +362,7 @@ function numberText(value, digits = 1) {
 	  const heading = vfr.heading !== undefined ? `${numberText(vfr.heading, 0)}°` : '';
 	  const voltage = sys.voltage_battery !== undefined && Number(sys.voltage_battery) > 0 ? `${numberText(Number(sys.voltage_battery) / 1000, 2)} В` : '—';
 	  const pct = sys.battery_remaining !== undefined && Number(sys.battery_remaining) >= 0 ? `${sys.battery_remaining}%` : '';
-	  const armed = heartbeat.base_mode !== undefined ? ((Number(heartbeat.base_mode) & 128) ? 'ARMED' : 'DISARMED') : '—';
+	  const armed = heartbeat.base_mode !== undefined ? ((Number(heartbeat.base_mode) & MAV_MODE_FLAG_SAFETY_ARMED) ? 'ARMED' : 'DISARMED') : '—';
 	  const modeHint = heartbeat.system_status !== undefined ? `status ${heartbeat.system_status}` : '';
 
 	  document.getElementById('telemetrySummary').innerHTML = [
@@ -236,7 +390,7 @@ function numberText(value, digits = 1) {
 	  if (t === 'SYS_STATUS') return [['batt', d.voltage_battery > 0 ? `${numberText(d.voltage_battery / 1000, 2)}В` : null], ['load', d.load], ['err', d.errors_comm]];
 	  if (t === 'RAW_IMU' || t === 'SCALED_IMU2') return [['acc', `${d.xacc ?? '—'}/${d.yacc ?? '—'}/${d.zacc ?? '—'}`], ['gyro', `${d.xgyro ?? '—'}/${d.ygyro ?? '—'}/${d.zgyro ?? '—'}`]];
 	  if (t === 'RC_CHANNELS') return [['ch1', d.chan1_raw], ['ch2', d.chan2_raw], ['ch3', d.chan3_raw], ['count', d.chancount]];
-	  if (t === 'HEARTBEAT') return [['armed', d.base_mode !== undefined ? ((Number(d.base_mode) & 128) ? 'yes' : 'no') : null], ['status', d.system_status], ['mode', d.custom_mode]];
+	  if (t === 'HEARTBEAT') return [['armed', d.base_mode !== undefined ? ((Number(d.base_mode) & MAV_MODE_FLAG_SAFETY_ARMED) ? 'yes' : 'no') : null], ['status', d.system_status], ['mode', d.custom_mode]];
 	  return Object.entries(d).slice(0, 4);
 	}
 
@@ -280,6 +434,7 @@ async function loadDetail() {
   }
 
   const device = data.device;
+  const lastSeenExact = utcToLocalText(device.last_seen);
   const profile = [
     ['ID Пристрою', device.device_id],
     ['Hostname', device.hostname || '—'],
@@ -288,7 +443,7 @@ async function loadDetail() {
     ['Версія Sirena', device.sirena_version || '—'],
     ['Версія Відео', device.video_version || '—'],
     ['Активовано', data.is_valid ? 'Так' : 'Ні'],
-    ['Час останнього пінгу', utcToLocalText(device.last_seen)],
+    ['Час останнього пінгу', `<span title="${escapeHtml(lastSeenExact)}">${escapeHtml(timeAgoUa(device.last_seen))}</span>`],
     ['Телеметрія', data.telemetry.active ? 'Вкл' : 'Вимк'],
     ['Стрім', data.video.active ? 'Вкл' : 'Вимк'],
   ];
@@ -300,12 +455,22 @@ async function loadDetail() {
   const gps = latest.find((row) => row.data && (row.data.lat !== undefined || row.data.latitude !== undefined));
   const lat = gps?.data?.lat !== undefined ? gps.data.lat / 1e7 : gps?.data?.latitude;
   const lon = gps?.data?.lon !== undefined ? gps.data.lon / 1e7 : gps?.data?.longitude;
+  const starlinkPoint = starlinkPointFromLatest(latest);
+  renderStarlinkMarker(starlinkPoint);
   if (typeof lat === 'number' && typeof lon === 'number' && !Number.isNaN(lat) && !Number.isNaN(lon)) {
     const point = [lat, lon];
     map.setView(point, 15);
     track.setLatLngs([point]);
-    if (!marker) marker = L.marker(point).addTo(map);
-    else marker.setLatLng(point);
+    const tooltip = `Позиція FC: ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+    if (!marker) {
+      marker = L.marker(point, {icon:fcIcon}).addTo(map);
+      marker.bindTooltip(tooltip, {direction:'top'});
+    } else {
+      marker.setLatLng(point);
+      marker.setTooltipContent(tooltip);
+    }
+  } else if (starlinkPoint) {
+    map.setView(starlinkPoint, 15);
   }
 
   const commands = data.commands || [];

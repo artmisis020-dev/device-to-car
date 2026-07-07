@@ -12,7 +12,6 @@ WorkingDirectory=/opt/sirena-video
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=/opt/sirena/.env
 EnvironmentFile=-/etc/default/sirena-relay
-ExecStartPre=/bin/sh -c 'dev="$${VIDEO_DEVICE:-/dev/video0}"; for i in $$(seq 1 30); do [ -e "$$dev" ] && exit 0; sleep 1; done; echo "Video device not found: $$dev" >&2; exit 1'
 ExecStart=/opt/sirena-video/venv/bin/python3 /opt/sirena-video/video_streamer_minimal_managed.py
 Restart=on-failure
 RestartSec=5s

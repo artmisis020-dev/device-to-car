@@ -1,60 +1,235 @@
 {% extends "base.html" %}
 {% block title %}📡 Telemetry — {{ hostname }}{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
-body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
-.card { background:#161b22; border:1px solid #21262d; border-radius:8px; color:#eef5ff; }
-.card-body { color:#eef5ff; }
-.card-header { background:#1c2128 !important; border-bottom:1px solid #21262d; color:#eef5ff !important; font-weight:600; padding:.6rem 1rem; font-size:.85rem; }
-.metric-label { font-size:.68rem; color:#b8c0cc; text-transform:uppercase; letter-spacing:.05em; }
-.metric-value { display:block; min-height:1.8rem; font-size:1.6rem; font-weight:700; line-height:1.1; color:#f3f7fc; overflow-wrap:anywhere; }
-.metric-unit  { font-size:.75rem; color:#cbd5e1; }
-.fw-bold { color:#f3f7fc; }
-.metric-value,
-.metric-readout,
-.status-readout {
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum";
-}
-.metric-readout,
-.status-readout {
-  display:inline-block;
-  min-width:5.5ch;
-  white-space:nowrap;
-}
-.status-readout-wide { min-width:8ch; }
-.metric-row-item { min-width:5.75rem; }
-#gpsLat,
-#gpsLon { min-width:12ch; }
-#gpsAlt { min-width:8ch; }
-#gpsSats,
-#gpsFix { min-width:6ch; }
-#attRoll,
-#attPitch,
-#attYaw,
-#vfrSpeed,
-#vfrHdg,
-#vfrClimb,
-#throttleVal,
-#batPct,
-#batCurr { min-width:6ch; }
-#batVolt { min-width:7ch; }
-#msgCount { min-width:7ch; }
-#msgRate { min-width:4ch; }
-#flightId { display:inline-block; min-width:8ch; }
-.small { color:#dbe7f3; }
-.text-muted { color:#b8c0cc !important; }
-.text-warning { color:#ffd66b !important; }
-.text-info { color:#8bd3ff !important; }
-.badge-armed   { background:#d73a49; }
-.badge-disarmed{ background:#388bfd; }
-.status-dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
-.dot-live   { background:#3fb950; animation: pulse 2s infinite; }
-.dot-off    { background:#6e7681; }
-@keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(63,185,80,.4)} 70%{box-shadow:0 0 0 6px rgba(63,185,80,0)} }
-#map { height:320px; border-radius:6px; }
-.navbar { background:#161b22 !important; border-bottom:1px solid #21262d; }
+  body {
+    background: var(--sirena-bg);
+    color: var(--sirena-text);
+    font-family: 'Segoe UI', sans-serif;
+  }
+
+  .card {
+    background: var(--sirena-surface);
+    border: 1px solid var(--sirena-border);
+    border-radius: 8px;
+    color: var(--sirena-text);
+  }
+
+  .card-body {
+    color: var(--sirena-text);
+  }
+
+  .card-header {
+    background: var(--sirena-header) !important;
+    border-bottom: 1px solid var(--sirena-border);
+    color: var(--sirena-text) !important;
+    font-weight: 600;
+    padding: .6rem 1rem;
+    font-size: .85rem;
+  }
+
+  .metric-label {
+    font-size: .68rem;
+    color: var(--sirena-muted);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+
+  .metric-value {
+    display: block;
+    min-height: 1.8rem;
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--sirena-text);
+    overflow-wrap: anywhere;
+  }
+
+  .metric-unit {
+    font-size: .75rem;
+    color: var(--sirena-muted);
+  }
+
+  .fw-bold {
+    color: var(--sirena-text);
+  }
+
+  .metric-value,
+  .metric-readout,
+  .status-readout {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  .metric-readout,
+  .status-readout {
+    display: inline-block;
+    min-width: 5.5ch;
+    white-space: nowrap;
+  }
+
+  .status-readout-wide {
+    min-width: 8ch;
+  }
+
+  .metric-row-item {
+    min-width: 5.75rem;
+  }
+
+  #gpsLat,
+  #gpsLon {
+    min-width: 12ch;
+  }
+
+  #gpsAlt {
+    min-width: 8ch;
+  }
+
+  #gpsSats,
+  #gpsFix {
+    min-width: 6ch;
+  }
+
+  #attRoll,
+  #attPitch,
+  #attYaw,
+  #vfrSpeed,
+  #vfrHdg,
+  #vfrClimb,
+  #throttleVal,
+  #batPct,
+  #batCurr {
+    min-width: 6ch;
+  }
+
+  #batVolt {
+    min-width: 7ch;
+  }
+
+  #msgCount {
+    min-width: 7ch;
+  }
+
+  #msgRate {
+    min-width: 4ch;
+  }
+
+  #flightId {
+    display: inline-block;
+    min-width: 8ch;
+  }
+
+  .small {
+    color: var(--sirena-text);
+  }
+
+  .text-muted {
+    color: var(--sirena-muted) !important;
+  }
+
+  .text-warning {
+    color: var(--sirena-warning) !important;
+  }
+
+  .text-info {
+    color: var(--sirena-accent) !important;
+  }
+
+  .badge-armed {
+    background: var(--sirena-danger);
+    color: #170807;
+  }
+
+  .badge-disarmed {
+    background: var(--sirena-inactive);
+    color: var(--sirena-text);
+  }
+
+  .status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .dot-live {
+    background: var(--sirena-online);
+    animation: pulse 2s infinite;
+  }
+
+  .dot-off {
+    background: var(--sirena-inactive);
+  }
+
+  @keyframes pulse {
+
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgba(84, 176, 138, .35)
+    }
+
+    70% {
+      box-shadow: 0 0 0 6px rgba(84, 176, 138, 0)
+    }
+  }
+
+  #map {
+    height: 320px;
+    border-radius: 6px;
+  }
+
+  .starlink-marker {
+    min-width: 48px;
+    padding: .12rem .35rem;
+    border: 2px solid var(--sirena-warning);
+    border-radius: 999px;
+    background: var(--sirena-surface);
+    color: var(--sirena-text);
+    font-size: .68rem;
+    font-weight: 800;
+    line-height: 1.1;
+    text-align: center;
+    box-shadow: 0 0 0 3px rgba(201, 154, 62, .18);
+  }
+
+  .fc-marker {
+    min-width: 34px;
+    padding: .08rem .28rem;
+    border: 2px solid var(--sirena-accent);
+    border-radius: 999px;
+    background: var(--sirena-surface);
+    color: var(--sirena-text);
+    font-size: .68rem;
+    font-weight: 800;
+    line-height: 1.1;
+    text-align: center;
+    box-shadow: 0 0 0 3px rgba(62, 124, 168, .18);
+  }
+
+  .map-legend {
+    background: rgba(18, 26, 40, .92);
+    border: 1px solid var(--sirena-border);
+    border-radius: 6px;
+    color: var(--sirena-text);
+    padding: .35rem .5rem;
+    font-size: .75rem;
+    line-height: 1.5;
+  }
+
+  .legend-dot {
+    display: inline-block;
+    width: .65rem;
+    height: .65rem;
+    border-radius: 50%;
+    margin-right: .35rem;
+    vertical-align: -0.05rem;
+  }
+
+  .navbar {
+    background: var(--sirena-header) !important;
+    border-bottom: 1px solid var(--sirena-border);
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -62,10 +237,10 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
   <div class="container-fluid">
     <span class="navbar-brand">
       <span class="status-dot dot-off me-2" id="statusDot"></span>
-      📡 {{ hostname }} — Telemetry
+      {{ hostname }} — Telemetry
     </span>
     <div class="d-flex gap-2">
-      <button id="btnToggle" class="btn btn-sm btn-success" onclick="toggleTelemetry()">▶ Старт</button>
+      <!-- <button id="btnToggle" class="btn btn-sm btn-success" onclick="toggleTelemetry()">▶ Старт</button> -->
       <button class="btn btn-sm btn-outline-warning" onclick="clearTelemetry()">🗑 Очистити</button>
       <a href="/" class="btn btn-sm btn-outline-secondary">← Назад</a>
     </div>
@@ -77,7 +252,8 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
   <div class="d-flex gap-3 mb-3 align-items-center flex-wrap">
     <span id="statusText" class="text-muted small">Очікування телеметрії…</span>
     <span class="text-muted small">|</span>
-    <span class="small">Кількість повідомлень: <strong id="msgCount" class="status-readout status-readout-wide">0</strong></span>
+    <span class="small">Кількість повідомлень: <strong id="msgCount"
+        class="status-readout status-readout-wide">0</strong></span>
     <span class="small">Швидкість: <strong id="msgRate" class="status-readout">0</strong> повід/с</span>
     <span class="small">Flight: <code id="flightId" class="text-info">—</code></span>
     <span class="small" id="lastSeen"></span>
@@ -95,9 +271,18 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
           <div class="metric-label mt-1">Longitude(Довгота)</div>
           <div class="metric-value" id="gpsLon">—</div>
           <div class="d-flex gap-3 mt-2">
-            <div class="metric-row-item"><div class="metric-label">Alt (m)</div><div id="gpsAlt" class="fw-bold metric-readout">—</div></div>
-            <div class="metric-row-item"><div class="metric-label">Sats(Супутники)</div><div id="gpsSats" class="fw-bold metric-readout">—</div></div>
-            <div class="metric-row-item"><div class="metric-label">Fix</div><div id="gpsFix" class="fw-bold metric-readout">—</div></div>
+            <div class="metric-row-item">
+              <div class="metric-label">Alt (m)</div>
+              <div id="gpsAlt" class="fw-bold metric-readout">—</div>
+            </div>
+            <div class="metric-row-item">
+              <div class="metric-label">Sats(Супутники)</div>
+              <div id="gpsSats" class="fw-bold metric-readout">—</div>
+            </div>
+            <div class="metric-row-item">
+              <div class="metric-label">Fix</div>
+              <div id="gpsFix" class="fw-bold metric-readout">—</div>
+            </div>
           </div>
         </div>
       </div>
@@ -108,18 +293,33 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
         <div class="card-header">✈ Attitude</div>
         <div class="card-body p-2">
           <div class="row g-1 text-center">
-            <div class="col-4"><div class="metric-label">Roll</div><div class="fw-bold metric-readout" id="attRoll">—</div></div>
-            <div class="col-4"><div class="metric-label">Pitch</div><div class="fw-bold metric-readout" id="attPitch">—</div></div>
-            <div class="col-4"><div class="metric-label">Yaw</div><div class="fw-bold metric-readout" id="attYaw">—</div></div>
+            <div class="col-4">
+              <div class="metric-label">Roll</div>
+              <div class="fw-bold metric-readout" id="attRoll">—</div>
+            </div>
+            <div class="col-4">
+              <div class="metric-label">Pitch</div>
+              <div class="fw-bold metric-readout" id="attPitch">—</div>
+            </div>
+            <div class="col-4">
+              <div class="metric-label">Yaw</div>
+              <div class="fw-bold metric-readout" id="attYaw">—</div>
+            </div>
           </div>
-          <hr class="my-2" style="border-color:#21262d">
+          <hr class="my-2" style="border-color:var(--sirena-border)">
           <div class="row g-1 text-center">
-            <div class="col-6"><div class="metric-label">Speed m/s</div><div class="fw-bold metric-readout" id="vfrSpeed">—</div></div>
-            <div class="col-6"><div class="metric-label">Heading</div><div class="fw-bold metric-readout" id="vfrHdg">—</div></div>
+            <div class="col-6">
+              <div class="metric-label">Speed m/s</div>
+              <div class="fw-bold metric-readout" id="vfrSpeed">—</div>
+            </div>
+            <div class="col-6">
+              <div class="metric-label">Heading</div>
+              <div class="fw-bold metric-readout" id="vfrHdg">—</div>
+            </div>
           </div>
           <div class="mt-1 text-center">
             <div class="metric-label">Throttle</div>
-            <div class="progress mt-1" style="height:6px;background:#21262d">
+            <div class="progress mt-1" style="height:6px;background:var(--sirena-border)">
               <div class="progress-bar bg-info" id="throttleBar" style="width:0%"></div>
             </div>
             <div class="small text-muted metric-readout" id="throttleVal">0%</div>
@@ -135,8 +335,8 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
           <div class="metric-value" id="batVolt">—<span class="metric-unit"> V</span></div>
           <div class="metric-label mt-1">Voltage</div>
           <div class="mt-2">
-            <div class="progress" style="height:10px;background:#21262d">
-              <div class="progress-bar" id="batBar" style="width:0%;background:#3fb950"></div>
+            <div class="progress" style="height:10px;background:var(--sirena-border)">
+              <div class="progress-bar" id="batBar" style="width:0%;background:var(--sirena-ok)"></div>
             </div>
             <div class="d-flex justify-content-between mt-1">
               <span class="small text-muted metric-readout" id="batPct">—%</span>
@@ -158,11 +358,18 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
           <div class="metric-label">Mode</div>
           <div class="fw-bold fs-5" id="flightMode">—</div>
           <div class="mt-2" id="armedBadge"><span class="badge badge-disarmed">DISARMED</span></div>
-          <hr class="my-2" style="border-color:#21262d">
+          <hr class="my-2" style="border-color:var(--sirena-border)">
           <div class="metric-label">Status Text</div>
           <div class="small text-warning" id="lastStatusText">—</div>
           <div class="metric-label mt-1">Climb m/s</div>
           <div class="fw-bold metric-readout" id="vfrClimb">—</div>
+          <hr class="my-2" style="border-color:var(--sirena-border)">
+          <div class="metric-label">Стан Плати Ініціації</div>
+          <div class="fw-bold" id="deviceState">—</div>
+          <div class="metric-label mt-1">Помилки Плати Ініціації</div>
+          <div class="small" id="deviceError">—</div>
+          <div class="metric-label mt-1">External connection</div>
+          <div class="fw-bold metric-readout" id="deviceExternal">—</div>
         </div>
       </div>
     </div>
@@ -170,17 +377,19 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
 
   <div class="row g-2">
     <!-- Map -->
-    <div class="col-md-7">
-      <div class="card">
+    <div class="col-md-6">
+      <div class="card h-100">
         <div class="card-header d-flex justify-content-between">
-          🗺 GPS Track
-          <button class="btn btn-sm btn-outline-secondary py-0" onclick="clearTrack()">Clear track</button>
+          🗺 GPS трек
+          <button class="btn btn-sm btn-outline-secondary py-0" onclick="clearTrack()">Очистити трек</button>
         </div>
-        <div class="card-body p-1"><div id="map"></div></div>
+        <div class="card-body p-1 h-100">
+          <div id="map"></div>
+        </div>
       </div>
     </div>
     <!-- Video stream -->
-    <div class="col-md-5">
+    <div class="col-md-6">
       <div class="card h-100">
         <div class="card-header">Відео стрім</div>
         <div class="card-body p-2">
@@ -196,196 +405,413 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Segoe UI',sans-serif; }
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 {{ super() }}
 <script>
-const DEVICE_ID = "{{ device_id }}";
-let telActive   = false;
-let lastTs      = Date.now()/1000 - 300;
-let msgCounts   = {};
-let msgTimes    = {};
-let msgTotal    = 0;
-let lastMsgTime = 0;
-let prevMsgTotal= 0;
-let gpsTrack    = [];
-let currentFlight = null;
+  const DEVICE_ID = "{{ device_id }}";
+  let telActive = false;
+  let lastTs = Date.now() / 1000 - 300;
+  let msgCounts = {};
+  let msgTimes = {};
+  let msgTotal = 0;
+  let lastMsgTime = 0;
+  let prevMsgTotal = 0;
+  let gpsTrack = [];
+  let gpsDots = [];
+  let starlinkTrack = [];
+  let starlinkDots = [];
+  let currentFlight = null;
+  let starlinkGps = { lat: null, lon: null, ts: 0 };
+  const MAX_ROUTE_POINTS = 1500;
 
-const map = L.map('map').setView([0,0], 2);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution:'© OpenStreetMap', maxZoom:19
-}).addTo(map);
-let trackLine  = L.polyline([], {color:'#388bfd', weight:2}).addTo(map);
-let droneMarker = null;
-const droneIcon = L.divIcon({
-  html:'<div style="font-size:20px;transform:translate(-10px,-10px)">✈</div>',
-  className:'', iconSize:[20,20]
-});
-
-function clearTrack() { gpsTrack=[]; trackLine.setLatLngs([]); }
-
-// ─── Перемикач запису телеметрії на сервері ─────────────────────────────────
-async function toggleTelemetry() {
-  const endpoint = telActive
-    ? '/api/devices/'+DEVICE_ID+'/telemetry/stop'
-    : '/api/devices/'+DEVICE_ID+'/telemetry/start';
-  await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
-  telActive = !telActive;
-  updateToggleBtn();
-}
-
-async function clearTelemetry() {
-  if (!confirm('Очистити всю збережену телеметрію для цього пристрою?')) return;
-  await fetch('/api/devices/'+DEVICE_ID+'/telemetry/clear', {
-    method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'
+  const map = L.map('map').setView([0, 0], 2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap', maxZoom: 19
+  }).addTo(map);
+  let trackLine = L.polyline([], { color: '#3E7CA8', weight: 2 }).addTo(map);
+  let starlinkLine = L.polyline([], { color: '#C99A3E', weight: 2, dashArray: '5 5' }).addTo(map);
+  let gpsDotLayer = L.layerGroup().addTo(map);
+  let starlinkDotLayer = L.layerGroup().addTo(map);
+  let droneMarker = null;
+  let starlinkMarker = null;
+  const droneIcon = L.divIcon({
+    html: '<div class="fc-marker">FC</div>',
+    className: '',
+    iconSize: [34, 20],
+    iconAnchor: [17, 10]
   });
-  msgTotal=0; msgCounts={}; msgTimes={};
-  document.getElementById('msgCount').textContent='0';
-}
+  const starlinkIcon = L.divIcon({
+    html: '<div style="font-size:12px" class="starlink-marker">STRLK</div>',
+    className: '',
+    iconSize: [48, 22],
+    iconAnchor: [24, 11]
+  });
+  const legend = L.control({ position: 'bottomleft' });
+  legend.onAdd = function () {
+    const div = L.DomUtil.create('div', 'map-legend');
+    div.innerHTML = `
+      <div><span class="legend-dot" style="background:#3E7CA8"></span>FC</div>
+      <div><span class="legend-dot" style="background:#C99A3E"></span>STR</div>
+    `;
+    return div;
+  };
+  legend.addTo(map);
 
-function updateToggleBtn() {
-  const btn = document.getElementById('btnToggle');
-  if (telActive) {
-    btn.textContent='⏹ Стоп'; btn.className='btn btn-sm btn-danger';
-  } else {
-    btn.textContent='▶ Старт'; btn.className='btn btn-sm btn-success';
+  function trimRoute(track, dots, layer) {
+    while (track.length > MAX_ROUTE_POINTS) track.shift();
+    while (dots.length > MAX_ROUTE_POINTS) {
+      const dot = dots.shift();
+      if (dot) layer.removeLayer(dot);
+    }
   }
-}
 
-// ─── Синхронізація стану з HTTP API ──────────────────────────────────────────
-async function syncActiveState() {
-  try {
-    const r = await fetch('/api/telemetry/status/'+DEVICE_ID);
-    const d = await r.json();
-    if (d.active !== telActive) { telActive = d.active; updateToggleBtn(); }
-  } catch(e) {}
-}
+  function addRouteDot(layer, dots, point, color) {
+    const dot = L.circleMarker(point, {
+      radius: 3,
+      color,
+      weight: 1,
+      fillColor: color,
+      fillOpacity: .85,
+      opacity: .95,
+    }).addTo(layer);
+    dots.push(dot);
+  }
 
-// ─── Обробка MAVLink повідомлень з HTTP polling API ──────────────────────────
-const FIX_TYPES = ['No GPS','No Fix','2D Fix','3D Fix','DGPS','RTK Float','RTK Fixed'];
-const STATUS_NAMES = {0:'Uninit',1:'Boot',2:'Calibrating',3:'Standby',4:'Active',5:'Critical',6:'Emergency',7:'Poweroff'};
+  function routePointChanged(track, point) {
+    const last = track[track.length - 1];
+    if (!last) return true;
+    return Math.abs(last[0] - point[0]) > 0.0000001 || Math.abs(last[1] - point[1]) > 0.0000001;
+  }
 
-function processMsgs(msgs) {
-  for (const m of msgs) {
-    const t = m.type, d = m.d;
-    msgCounts[t] = (msgCounts[t]||0)+1;
-    msgTimes[t]  = m.ts;
-    msgTotal++;
-    lastMsgTime  = m.ts;
+  function clearTrack() {
+    gpsTrack = [];
+    starlinkTrack = [];
+    gpsDots = [];
+    starlinkDots = [];
+    trackLine.setLatLngs([]);
+    starlinkLine.setLatLngs([]);
+    gpsDotLayer.clearLayers();
+    starlinkDotLayer.clearLayers();
+  }
 
-    if (t === 'GLOBAL_POSITION_INT') {
-      const lat = d.lat/1e7, lon = d.lon/1e7;
-      const alt = (d.relative_alt/1000).toFixed(1);
-      document.getElementById('gpsLat').textContent = lat.toFixed(6);
-      document.getElementById('gpsLon').textContent = lon.toFixed(6);
-      document.getElementById('gpsAlt').textContent = alt + ' m';
-      if (lat !== 0 && lon !== 0) {
-        gpsTrack.push([lat,lon]);
-        trackLine.setLatLngs(gpsTrack);
-        if (!droneMarker) droneMarker = L.marker([lat,lon],{icon:droneIcon}).addTo(map);
-        else droneMarker.setLatLng([lat,lon]);
-        if (gpsTrack.length<=3) map.setView([lat,lon],16);
+  // ─── Перемикач запису телеметрії на сервері ─────────────────────────────────
+  // async function toggleTelemetry() {
+  //   const endpoint = telActive
+  //     ? '/api/devices/' + DEVICE_ID + '/telemetry/stop'
+  //     : '/api/devices/' + DEVICE_ID + '/telemetry/start';
+  //   await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  //   telActive = !telActive;
+  //   updateToggleBtn();
+  // }
+
+  async function clearTelemetry() {
+    if (!confirm('Очистити всю збережену телеметрію для цього пристрою?')) return;
+    await fetch('/api/devices/' + DEVICE_ID + '/telemetry/clear', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+    });
+    msgTotal = 0; msgCounts = {}; msgTimes = {};
+    document.getElementById('msgCount').textContent = '0';
+  }
+
+  // function updateToggleBtn() {
+  //   const btn = document.getElementById('btnToggle');
+  //   if (telActive) {
+  //     btn.textContent = '⏹ Стоп'; btn.className = 'btn btn-sm btn-danger';
+  //   } else {
+  //     btn.textContent = '▶ Старт'; btn.className = 'btn btn-sm btn-success';
+  //   }
+  // }
+
+
+  // ─── Обробка MAVLink повідомлень з HTTP polling API ──────────────────────────
+  const FIX_TYPES = ['No GPS', 'No Fix', '2D Fix', '3D Fix', 'DGPS', 'RTK Float', 'RTK Fixed'];
+  const STATUS_NAMES = { 0: 'Uninit', 1: 'Boot', 2: 'Calibrating', 3: 'Standby', 4: 'Active', 5: 'Critical', 6: 'Emergency', 7: 'Poweroff' };
+  const MAV_MODE_FLAG_SAFETY_ARMED = 128;
+  const MAV_TYPE_GCS = 6;
+  const MAV_AUTOPILOT_INVALID = 8;
+  const DEVICE_STATE_NAMES = {
+    0: 'None',
+    1: 'Testing',
+    2: 'Standby',
+    3: 'Safety Timeout',
+    4: 'Disarmed',
+    5: 'Arming',
+    6: 'Armed',
+    7: 'Fire',
+    8: 'Discharging',
+    9: 'Fired',
+  };
+  const DEVICE_ERROR_NAMES = {
+    0: 'OK',
+    1: 'CRC Error',
+    2: 'Battery Test Error',
+    3: 'Safety Sensor Error',
+    4: 'Safety Switch Error',
+    5: 'Cap Debounce Error',
+    6: 'Fuse Error',
+    7: 'Safety Switch Moved Error',
+    8: 'Boost Error',
+    9: 'Weak Battery Error',
+    10: 'IMU Error',
+    11: 'Prearm Error',
+    12: 'Discharge Error',
+    13: 'External Connection Error',
+    14: 'Start Config Error',
+    20: 'LIDAR Presence Error',
+    21: 'LIDAR False Target Error',
+    22: 'LIDAR No Target Error',
+  };
+  const deviceStatus = { state: null, error: null, externalOk: null };
+
+  function isAutopilotHeartbeat(data) {
+    const mavType = Number(data?.type);
+    const autopilot = Number(data?.autopilot);
+    if (mavType === MAV_TYPE_GCS) return false;
+    if (autopilot === MAV_AUTOPILOT_INVALID) return false;
+    return true;
+  }
+
+  function cleanNamedValueName(value) {
+    if (Array.isArray(value)) {
+      return value
+        .map(code => Number(code))
+        .filter(code => Number.isFinite(code) && code > 0)
+        .map(code => String.fromCharCode(code))
+        .join('')
+        .trim();
+    }
+    const raw = String(value ?? '').replaceAll('\u0000', '').trim();
+    if (/^[0-9a-fA-F]+$/.test(raw) && raw.length % 2 === 0) {
+      let decoded = '';
+      for (let i = 0; i < raw.length; i += 2) {
+        const code = parseInt(raw.slice(i, i + 2), 16);
+        if (code > 0) decoded += String.fromCharCode(code);
+      }
+      if (decoded.trim()) return decoded.trim();
+    }
+    return raw;
+  }
+
+  function updateStarlinkGps(name, value, ts) {
+    const gpsValue = Number(value);
+    if (!Number.isFinite(gpsValue)) return;
+    const normalized = name.toUpperCase();
+    if (normalized === 'STRLK_LAT' || normalized === 'STRLNK_LAT') {
+      starlinkGps.lat = gpsValue
+    };
+    if (normalized === 'STRLK_LON' || normalized === 'STRLNK_LON') {
+      starlinkGps.lon = gpsValue
+    };
+    starlinkGps.ts = ts || Date.now() / 1000;
+
+    if (!Number.isFinite(starlinkGps.lat) || !Number.isFinite(starlinkGps.lon)) {
+      return;
+    };
+    if (starlinkGps.lat === 0 && starlinkGps.lon === 0) {
+      return;
+    };
+
+    const point = [starlinkGps.lat, starlinkGps.lon];
+    const tooltip = `Позиція Starlink: ${starlinkGps.lat.toFixed(6)}, ${starlinkGps.lon.toFixed(6)}`;
+    if (routePointChanged(starlinkTrack, point)) {
+      starlinkTrack.push(point);
+      addRouteDot(starlinkDotLayer, starlinkDots, point, '#C99A3E');
+      trimRoute(starlinkTrack, starlinkDots, starlinkDotLayer);
+      starlinkLine.setLatLngs(starlinkTrack);
+    }
+    if (!starlinkMarker) {
+      starlinkMarker = L.marker(point, { icon: starlinkIcon }).addTo(map);
+      starlinkMarker.bindTooltip(tooltip, { direction: 'top' });
+    } else {
+      starlinkMarker.setLatLng(point);
+      starlinkMarker.setTooltipContent(tooltip);
+    }
+    if (!droneMarker && gpsTrack.length === 0) {
+      map.setView(point, 16);
+    }
+  }
+
+  function updateDeviceStatus(name, value) {
+    const intValue = Number(value);
+    if (!Number.isFinite(intValue)) return;
+
+    if (name === 'DEV_STATE') {
+      deviceStatus.state = intValue;
+      document.getElementById('deviceState').textContent =
+        DEVICE_STATE_NAMES[intValue] || `Unknown ${intValue}`;
+    } else if (name === 'DEV_ERROR') {
+      deviceStatus.error = intValue;
+      const errorEl = document.getElementById('deviceError');
+      errorEl.textContent = DEVICE_ERROR_NAMES[intValue] || `Unknown ${intValue}`;
+      errorEl.className = intValue === 0 ? 'small text-muted' : 'small text-warning';
+    } else if (name === 'DEV_EXTOK') {
+      deviceStatus.externalOk = intValue ? 1 : 0;
+      const extEl = document.getElementById('deviceExternal');
+      extEl.textContent = intValue ? 'OK' : 'OFF';
+      extEl.style.color = intValue ? 'var(--sirena-ok)' : 'var(--sirena-danger)';
+    }
+  }
+
+  function processMsgs(msgs) {
+    for (const m of msgs) {
+      const messageType = m.type;
+      const data = m.d;
+      msgCounts[messageType] = (msgCounts[messageType] || 0) + 1;
+      msgTimes[messageType] = m.ts;
+      msgTotal++;
+      lastMsgTime = m.ts;
+
+      if (messageType === 'GLOBAL_POSITION_INT') {
+        const lat = data.lat / 1e7, lon = data.lon / 1e7;
+        const alt = (data.relative_alt / 1000).toFixed(1);
+        document.getElementById('gpsLat').textContent = lat.toFixed(6);
+        document.getElementById('gpsLon').textContent = lon.toFixed(6);
+        document.getElementById('gpsAlt').textContent = alt + ' m';
+        if (lat !== 0 && lon !== 0) {
+          const point = [lat, lon];
+          if (routePointChanged(gpsTrack, point)) {
+            gpsTrack.push(point);
+            addRouteDot(gpsDotLayer, gpsDots, point, '#3E7CA8');
+            trimRoute(gpsTrack, gpsDots, gpsDotLayer);
+            trackLine.setLatLngs(gpsTrack);
+          }
+          const tooltip = `Позиція FC: ${lat.toFixed(6)}, ${lon.toFixed(6)} висота ${alt} м`;
+          if (!droneMarker) {
+            droneMarker = L.marker(point, { icon: droneIcon }).addTo(map);
+            droneMarker.bindTooltip(tooltip, { direction: 'top' });
+          } else {
+            droneMarker.setLatLng(point);
+            droneMarker.setTooltipContent(tooltip);
+          }
+          if (gpsTrack.length <= 3) map.setView(point, 16);
+        }
+      }
+      else if (messageType === 'GPS_RAW_INT') {
+        document.getElementById('gpsSats').textContent = data.satellites_visible;
+        document.getElementById('gpsFix').textContent = FIX_TYPES[data.fix_type] || data.fix_type;
+      }
+      else if (messageType === 'ATTITUDE') {
+        const r2d = 180 / Math.PI;
+        document.getElementById('attRoll').textContent = (data.roll * r2d).toFixed(1) + '°';
+        document.getElementById('attPitch').textContent = (data.pitch * r2d).toFixed(1) + '°';
+        document.getElementById('attYaw').textContent = (data.yaw * r2d).toFixed(1) + '°';
+      }
+      else if (messageType === 'VFR_HUD') {
+        document.getElementById('vfrSpeed').textContent = data.groundspeed.toFixed(1);
+        document.getElementById('vfrHdg').textContent = data.heading + '°';
+        document.getElementById('vfrClimb').textContent = data.climb.toFixed(2);
+        const thr = Math.min(100, Math.max(0, data.throttle));
+        document.getElementById('throttleBar').style.width = thr + '%';
+        document.getElementById('throttleVal').textContent = thr + '%';
+      }
+      else if (messageType === 'SYS_STATUS') {
+        const v = (data.voltage_battery / 1000).toFixed(2);
+        const a = (data.current_battery / 100).toFixed(1);
+        const pct = data.battery_remaining;
+        document.getElementById('batVolt').innerHTML = v + '<span class="metric-unit"> V</span>';
+        document.getElementById('batCurr').textContent = a + ' A';
+        if (pct >= 0) {
+          document.getElementById('batPct').textContent = pct + '%';
+          const bar = document.getElementById('batBar');
+          bar.style.width = pct + '%';
+          bar.style.background = pct > 50 ? '#5E9A78' : pct > 20 ? '#C99A3E' : '#C25B54';
+        }
+      }
+      else if (messageType === 'HEARTBEAT') {
+        if (!isAutopilotHeartbeat(data)) continue;
+        const armed = (Number(data.base_mode || 0) & MAV_MODE_FLAG_SAFETY_ARMED) !== 0;
+        document.getElementById('armedBadge').innerHTML = armed
+          ? '<span class="badge badge-armed">ARMED</span>'
+          : '<span class="badge badge-disarmed">DISARMED</span>';
+        document.getElementById('sysStatus').textContent = STATUS_NAMES[data.system_status] || data.system_status;
+      }
+      else if (messageType === 'STATUSTEXT') {
+        document.getElementById('lastStatusText').textContent = data.text || '';
+      }
+      else if (messageType === 'NAMED_VALUE_FLOAT') {
+        updateStarlinkGps(cleanNamedValueName(data.name), data.value, m.ts);
+      }
+      else if (messageType === 'NAMED_VALUE_INT') {
+        updateDeviceStatus(cleanNamedValueName(data.name), data.value);
       }
     }
-    else if (t === 'GPS_RAW_INT') {
-      document.getElementById('gpsSats').textContent = d.satellites_visible;
-      document.getElementById('gpsFix').textContent  = FIX_TYPES[d.fix_type]||d.fix_type;
-    }
-    else if (t === 'ATTITUDE') {
-      const r2d = 180/Math.PI;
-      document.getElementById('attRoll').textContent  = (d.roll*r2d).toFixed(1)+'°';
-      document.getElementById('attPitch').textContent = (d.pitch*r2d).toFixed(1)+'°';
-      document.getElementById('attYaw').textContent   = (d.yaw*r2d).toFixed(1)+'°';
-    }
-    else if (t === 'VFR_HUD') {
-      document.getElementById('vfrSpeed').textContent = d.groundspeed.toFixed(1);
-      document.getElementById('vfrHdg').textContent   = d.heading+'°';
-      document.getElementById('vfrClimb').textContent = d.climb.toFixed(2);
-      const thr = Math.min(100,Math.max(0,d.throttle));
-      document.getElementById('throttleBar').style.width = thr+'%';
-      document.getElementById('throttleVal').textContent = thr+'%';
-    }
-    else if (t === 'SYS_STATUS') {
-      const v = (d.voltage_battery/1000).toFixed(2);
-      const a = (d.current_battery/100).toFixed(1);
-      const pct = d.battery_remaining;
-      document.getElementById('batVolt').innerHTML = v+'<span class="metric-unit"> V</span>';
-      document.getElementById('batCurr').textContent = a+' A';
-      if (pct >= 0) {
-        document.getElementById('batPct').textContent = pct+'%';
-        const bar = document.getElementById('batBar');
-        bar.style.width = pct+'%';
-        bar.style.background = pct>50?'#3fb950':pct>20?'#f0883e':'#d73a49';
+  }
+
+  // ─── HTTP polling loop та історія з БД ───────────────────────────────────────
+  let pollErrors = 0;
+  async function poll() {
+    try {
+      const r = await fetch(`/api/telemetry/latest/${DEVICE_ID}?since=${lastTs}&limit=500`);
+      if (r.status === 403 || r.redirected) {
+        window.location.href = '/login';
+        return;
       }
+      const msgs = await r.json();
+      if (msgs.length > 0) {
+        lastTs = msgs[msgs.length - 1].ts;
+        processMsgs(msgs);
+        pollErrors = 0;
+      }
+    } catch (e) {
+      console.error(`Polling error: ${e}`);
+      pollErrors++;
     }
-    else if (t === 'HEARTBEAT') {
-      const armed = (d.base_mode & 128) !== 0;
-      document.getElementById('armedBadge').innerHTML = armed
-        ? '<span class="badge badge-armed">ARMED</span>'
-        : '<span class="badge badge-disarmed">DISARMED</span>';
-      document.getElementById('sysStatus').textContent = STATUS_NAMES[d.system_status]||d.system_status;
-    }
-    else if (t === 'STATUSTEXT') {
-      document.getElementById('lastStatusText').textContent = d.text||'';
-    }
-  }
-}
+    const telemetryAllowedTimeForMissing = 5;
 
-// ─── HTTP polling loop та історія з БД ───────────────────────────────────────
-let pollErrors = 0;
-async function poll() {
-  try {
-    const r = await fetch(`/api/telemetry/latest/${DEVICE_ID}?since=${lastTs}&limit=500`);
-    if (r.status === 403 || r.redirected) { window.location.href='/login'; return; }
-    const msgs = await r.json();
-    if (msgs.length > 0) {
-      lastTs = msgs[msgs.length-1].ts;
-      processMsgs(msgs);
-      pollErrors = 0;
+    // Оновлення стану підключення
+    const now = Date.now() / 1000;
+    const alive = (now - lastMsgTime) < telemetryAllowedTimeForMissing && lastMsgTime > 0;
+    const dot = document.getElementById('statusDot');
+    dot.className = 'status-dot me-2 ' + (alive ? 'dot-live' : 'dot-off');
+
+    document.getElementById('msgCount').textContent = msgTotal;
+    if (lastMsgTime > 0) {
+      const age = now - lastMsgTime;
+      document.getElementById('lastSeen').textContent = age < telemetryAllowedTimeForMissing
+        ? '🟢 Наживо'
+        : `Останнє: ${age.toFixed(0)}с тому`;
     }
-  } catch(e) { pollErrors++; }
 
-  // Оновлення стану підключення
-  const now = Date.now()/1000;
-  const alive = (now - lastMsgTime) < 5 && lastMsgTime > 0;
-  const dot = document.getElementById('statusDot');
-  dot.className = 'status-dot me-2 ' + (alive ? 'dot-live' : 'dot-off');
+    // Швидкість повідомлень за останню секунду
+    const rate = (msgTotal - prevMsgTotal) / 1;
+    prevMsgTotal = msgTotal;
+    document.getElementById('msgRate').textContent = rate.toFixed(0);
 
-  document.getElementById('msgCount').textContent = msgTotal;
-  if (lastMsgTime > 0) {
-    const age = now - lastMsgTime;
-    document.getElementById('lastSeen').textContent = age<2 ? '🟢 Наживо' : `Останнє: ${age.toFixed(0)}с тому`;
+    document.getElementById('statusText').textContent = alive
+      ? (telActive ? '🟢 Стрім йде' : '🟡 Дані надходять, запис вимкнено')
+      : (telActive ? '🟡 Очікування пристрою…' : '⚫ Телеметрія вимкнена');
+
   }
 
-  // Швидкість повідомлень за останню секунду
-  const rate = (msgTotal - prevMsgTotal) / 1;
-  prevMsgTotal = msgTotal;
-  document.getElementById('msgRate').textContent = rate.toFixed(0);
 
-  document.getElementById('statusText').textContent = alive
-    ? (telActive ? '🟢 Стрім йде' : '🟡 Дані надходять, запис вимкнено')
-    : (telActive ? '🟡 Очікування пристрою…' : '⚫ Телеметрія вимкнена');
+  async function loadInitialState() {
+    try {
+      const since = Date.now() / 1000 - 300;
 
-}
+      const response = await fetch(
+        `/api/telemetry/latest/${DEVICE_ID}?since=${since}&limit=500`,
+        { credentials: 'include' }
+      );
 
-setInterval(syncActiveState, 5000);
+      if (!response.ok) {
+        return
+      };
+      let msgs;
+      try {
+        msgs = await response.json();
+      } catch (e) {
+        console.error(`Error parsing telemetry history: ${e}`);
+        return;
+      }
 
-async function loadInitialState() {
-  const dbg = document.getElementById('dbgLine');
-  try {
-    const since = Date.now()/1000 - 300;
-    if (dbg) dbg.textContent = `init: fetching since=${since.toFixed(0)}…`;
-    const r = await fetch(`/api/telemetry/latest/${DEVICE_ID}?since=${since}&limit=500`, {credentials:'include'});
-    if (dbg) dbg.textContent = `init: status=${r.status} ok=${r.ok} redir=${r.redirected}`;
-    if (!r.ok) return;
-    let msgs;
-    try { msgs = await r.json(); } catch(e) { if (dbg) dbg.textContent = 'init: json parse failed: '+e; return; }
-    if (dbg) dbg.textContent = `init: got ${msgs.length} msgs`;
-    if (msgs.length > 0) {
-      lastTs = msgs[msgs.length-1].ts;
-      processMsgs(msgs);
+      if (msgs.length > 0) {
+        lastTs = msgs[msgs.length - 1].ts;
+        processMsgs(msgs);
+      }
+    } catch (e) {
+      console.error(`Error loading initial telemetry state: ${e}`);
     }
-  } catch(e) { if (dbg) dbg.textContent = 'init: error: '+e; }
-}
-syncActiveState();
-loadInitialState().then(() => {
-  setInterval(poll, 1000);
-});
+  }
+
+  loadInitialState().then(() => {
+    setInterval(poll, 1000);
+  });
 </script>
 {% endblock %}

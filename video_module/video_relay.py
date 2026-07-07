@@ -14,7 +14,6 @@ Auto-detects camera presence locally — no server polling required.
 Runs as root (systemd service) so it can manage services and write /etc/default/.
 """
 
-import glob
 import hashlib
 import json
 import logging
@@ -26,8 +25,9 @@ import subprocess
 import sys
 import time
 import urllib.request
-import urllib.error
 from pathlib import Path
+from cameras_services import list_cameras
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,12 +47,6 @@ REPORT_EVERY      = 12
 RELAY_ENV_FILE    = "/etc/default/sirena-relay"
 RELAY_FLAG_FILE   = "/tmp/sirena_video_relay_active"
 VIDEO_MANAGER_URL = "http://localhost:9000/api/v1/config"
-
-CAMERA_PATTERNS   = [
-    "/dev/v4l/by-id/usb-Thermal*",
-    "/dev/v4l/by-id/usb-*Camera*",
-]
-
 
 # ─── Device ID ────────────────────────────────────────────────────────────────
 def _get_device_id() -> str:
@@ -87,10 +81,14 @@ def _get_stream_name() -> str:
 
 # ─── Local camera detection ───────────────────────────────────────────────────
 def _camera_available() -> bool:
-    for pattern in CAMERA_PATTERNS:
-        if glob.glob(pattern):
-            return True
-    return Path("/dev/video0").exists()
+    if list_cameras is not None:
+        try:
+            return bool(list_cameras(verbose=False))
+        except Exception as exc:
+            logger.warning(f"Не вдалось отримати список камер через udev: {exc}")
+
+    # Резервний варіант на випадок проблем з pyudev або udev у мінімальному образі.
+    return any(Path("/dev").glob("video*"))
 
 
 # ─── Server reporting ─────────────────────────────────────────────────────────

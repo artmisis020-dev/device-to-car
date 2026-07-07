@@ -5,6 +5,120 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="csrf-token" content="{{ csrf_token }}">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+:root {
+	--sirena-bg: #0B111B;
+	--sirena-surface: #121A28;
+	--sirena-border: #243044;
+	--sirena-header: #0E2033;
+	--sirena-text: #E2E8F2;
+	--sirena-muted: #8593A8;
+	--sirena-mono: #7E8DA6;
+	--sirena-ok: #5E9A78;
+	--sirena-online: #54B08A;
+	--sirena-warning: #C99A3E;
+	--sirena-danger: #C25B54;
+	--sirena-inactive: #5E6B80;
+	--sirena-accent: #3E7CA8;
+	--sirena-accent-soft: rgba(62, 124, 168, .18);
+}
+
+body {
+	background: var(--sirena-bg);
+	color: var(--sirena-text);
+}
+
+a {
+	color: var(--sirena-accent);
+}
+
+a:hover,
+a:focus {
+	color: #6F9FBE;
+}
+
+.btn-outline-info {
+	--bs-btn-color: var(--sirena-accent);
+	--bs-btn-border-color: var(--sirena-accent);
+	--bs-btn-hover-bg: var(--sirena-accent);
+	--bs-btn-hover-border-color: var(--sirena-accent);
+	--bs-btn-active-bg: var(--sirena-accent);
+	--bs-btn-active-border-color: var(--sirena-accent);
+}
+
+.btn-outline-secondary {
+	--bs-btn-color: var(--sirena-muted);
+	--bs-btn-border-color: var(--sirena-inactive);
+	--bs-btn-hover-bg: var(--sirena-inactive);
+	--bs-btn-hover-border-color: var(--sirena-inactive);
+	--bs-btn-active-bg: var(--sirena-inactive);
+	--bs-btn-active-border-color: var(--sirena-inactive);
+}
+
+.btn-outline-warning {
+	--bs-btn-color: var(--sirena-warning);
+	--bs-btn-border-color: var(--sirena-warning);
+	--bs-btn-hover-bg: var(--sirena-warning);
+	--bs-btn-hover-border-color: var(--sirena-warning);
+	--bs-btn-hover-color: #171006;
+	--bs-btn-active-bg: var(--sirena-warning);
+	--bs-btn-active-border-color: var(--sirena-warning);
+}
+
+.btn-outline-danger {
+	--bs-btn-color: var(--sirena-danger);
+	--bs-btn-border-color: var(--sirena-danger);
+	--bs-btn-hover-bg: var(--sirena-danger);
+	--bs-btn-hover-border-color: var(--sirena-danger);
+	--bs-btn-hover-color: #170807;
+	--bs-btn-active-bg: var(--sirena-danger);
+	--bs-btn-active-border-color: var(--sirena-danger);
+}
+
+.btn-primary {
+	--bs-btn-bg: var(--sirena-accent);
+	--bs-btn-border-color: var(--sirena-accent);
+	--bs-btn-hover-bg: #4D8AB4;
+	--bs-btn-hover-border-color: #4D8AB4;
+}
+
+.text-muted { color: var(--sirena-muted) !important; }
+.text-info { color: var(--sirena-accent) !important; }
+.text-warning { color: var(--sirena-warning) !important; }
+.text-success { color: var(--sirena-ok) !important; }
+.text-danger { color: var(--sirena-danger) !important; }
+.text-white { color: var(--sirena-text) !important; }
+.text-light { color: var(--sirena-text) !important; }
+.bg-secondary { background-color: var(--sirena-inactive) !important; }
+.bg-info { background-color: var(--sirena-accent) !important; }
+.bg-success { background-color: var(--sirena-ok) !important; }
+.bg-warning { background-color: var(--sirena-warning) !important; }
+.bg-danger { background-color: var(--sirena-danger) !important; }
+
+.btn-success {
+	--bs-btn-bg: var(--sirena-ok);
+	--bs-btn-border-color: var(--sirena-ok);
+	--bs-btn-hover-bg: #6CA987;
+	--bs-btn-hover-border-color: #6CA987;
+	--bs-btn-color: #07110d;
+}
+
+.btn-danger {
+	--bs-btn-bg: var(--sirena-danger);
+	--bs-btn-border-color: var(--sirena-danger);
+	--bs-btn-hover-bg: #CF6B63;
+	--bs-btn-hover-border-color: #CF6B63;
+	--bs-btn-color: #170807;
+}
+
+.btn-warning {
+	--bs-btn-bg: var(--sirena-warning);
+	--bs-btn-border-color: var(--sirena-warning);
+	--bs-btn-hover-bg: #D4AA57;
+	--bs-btn-hover-border-color: #D4AA57;
+	--bs-btn-color: #171006;
+}
+</style>
 {% block head %}{% endblock %}
 </head>
 <body{% block body_attrs %}{% endblock %}>

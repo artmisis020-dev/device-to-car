@@ -15,6 +15,9 @@ import urllib.request
 from pathlib import Path
 from typing import Dict, List
 
+from sirena_manager.utils.env import read_env, write_env
+from sirena_manager.utils.network import wireguard_ip
+from .cameras_services import list_cameras, node_for_id
 from .config import (
     ADMIN_SERVER_URL,
     BOOT_SEQUENCE,
@@ -29,9 +32,9 @@ from .config import (
     ServiceDefinition,
 )
 
-
 logger = logging.getLogger(__name__)
 ROOT_ENV_FILE = Path(ROOT_ENV_PATH)
+
 
 class SirenaSupervisor:
     def __init__(self) -> None:
@@ -77,16 +80,22 @@ class SirenaSupervisor:
             "services": services,
         }
 
-    def start_service(self, name: str) -> Dict:
+    def start_service(self, name: str, _started_chain: set | None = None) -> Dict:
         definition = self._get_service(name)
         if definition is None:
             return {"success": False, "error": "unknown service", "name": name}
         if not definition.controllable:
             return {"success": False, "error": "service is status-only", "name": name}
 
+        # Захист від циклів у depends_on, щоб уникнути нескінченної рекурсії.
+        chain = _started_chain or set()
+        if name in chain:
+            return {"success": False, "error": f"dependency cycle detected at '{name}'", "name": name}
+        chain = chain | {name}
+
         started: List[str] = []
         for dependency in definition.depends_on:
-            dependency_result = self.start_service(dependency)
+            dependency_result = self.start_service(dependency, _started_chain=chain)
             if not dependency_result.get("success"):
                 return dependency_result
             started.append(dependency)
@@ -114,7 +123,11 @@ class SirenaSupervisor:
         for unit in reversed(definition.units):
             result = self._run_systemctl("stop", unit, timeout=20)
             if result.returncode != 0:
-                errors.append(result.stderr.strip() or result.stdout.strip() or f"failed to stop {unit}")
+                errors.append(
+                    result.stderr.strip()
+                    or result.stdout.strip()
+                    or f"failed to stop {unit}"
+                )
 
         status = self.service_status(name)
         status.update({"success": not errors and not status.get("active", False)})
@@ -135,7 +148,7 @@ class SirenaSupervisor:
             "hardware": self._hardware_fingerprint(),
             "sirena_version": SIRENA_VERSION,
             "video_version": self._video_version(),
-            "ip": self._wireguard_ip(),
+            "ip": wireguard_ip(),
         }
 
         try:
@@ -150,7 +163,7 @@ class SirenaSupervisor:
     def heartbeat(self) -> Dict:
         payload = {
             "device_id": self._device_id(),
-            "ip": self._wireguard_ip(),
+            "ip": wireguard_ip(),
         }
 
         try:
@@ -183,29 +196,33 @@ class SirenaSupervisor:
             stopped.append(result)
         return {"success": True, "results": stopped}
 
-    def list_cameras(self) -> Dict:
-        cameras = self._discover_cameras()
-        active = self._read_env().get("VIDEO_DEVICE", "/dev/video0")
-        return {"success": True, "active": active, "cameras": cameras}
+    def list_camera_list(self) -> Dict:
+        active = read_env().get("VIDEO_DEVICE", "/dev/video0")
+        cameras_list = list_cameras()
+        return {
+            "success": True,
+            "active": active,
+            "cameras": [c.as_dict() for c in cameras_list],
+        }
 
-    def set_camera(self, camera_path: str) -> Dict:
-        camera_path = str(camera_path or "").strip()
+    def set_camera(self, id: str = "") -> Dict:
+        path = str(id).strip()
+        if not path:
+            return {"success": False, "error": "Missing camera's ID"}
+
+        cameras_list = list_cameras()
+        camera_path = node_for_id(id)
         if not camera_path:
-            return {"success": False, "error": "missing camera path"}
-
-        cameras = self._discover_cameras()
-        allowed_paths = {camera["path"] for camera in cameras}
-        if camera_path not in allowed_paths:
             return {
                 "success": False,
-                "error": "camera path is not available",
-                "requested": camera_path,
-                "available": cameras,
+                "error": f"Camera with ID:{id} is not available",
+                "requested": id,
+                "available": [c.as_dict() for c in cameras_list],
             }
 
-        env_values = self._read_env()
+        env_values = read_env()
         env_values["VIDEO_DEVICE"] = camera_path
-        self._write_env(env_values)
+        write_env(env_values)
 
         restart = self._run_systemctl("restart", VIDEO_STREAMER_UNIT, timeout=20)
         return {
@@ -218,76 +235,17 @@ class SirenaSupervisor:
     def _get_service(self, name: str) -> ServiceDefinition | None:
         return self.services.get(name)
 
-    def _discover_cameras(self) -> List[Dict]:
-        cameras: List[Dict] = []
-        by_id = Path("/dev/v4l/by-id")
-        try:
-            if by_id.exists():
-                for link in sorted(by_id.iterdir()):
-                    if "-video-index0" not in link.name:
-                        continue
-                    cameras.append({
-                        "name": link.name,
-                        "path": str(link),
-                        "target": str(link.resolve()),
-                    })
-        except Exception:
-            logger.exception("Failed discovering cameras from %s", by_id)
-
-        if cameras:
-            return cameras
-
-        for i in range(8):
-            dev = Path(f"/dev/video{i}")
-            if dev.exists():
-                cameras.append({"name": f"video{i}", "path": str(dev), "target": str(dev)})
-        return cameras
-
-    def _read_env(self) -> Dict[str, str]:
-        values: Dict[str, str] = {}
-        try:
-            for raw_line in ROOT_ENV_FILE.read_text(encoding="utf-8").splitlines():
-                line = raw_line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, value = line.split("=", 1)
-                values[key.strip()] = value.strip().strip('"')
-        except FileNotFoundError:
-            pass
-        return values
-
-    def _write_env(self, values: Dict[str, str]) -> None:
-        existing_lines = []
-        if ROOT_ENV_FILE.exists():
-            existing_lines = ROOT_ENV_FILE.read_text(encoding="utf-8").splitlines()
-
-        updated_lines = []
-        written = set()
-        for raw_line in existing_lines:
-            stripped = raw_line.strip()
-            if not stripped or stripped.startswith("#") or "=" not in raw_line:
-                updated_lines.append(raw_line)
-                continue
-            key = raw_line.split("=", 1)[0].strip()
-            if key in values:
-                updated_lines.append(f"{key}={values[key]}")
-                written.add(key)
-            else:
-                updated_lines.append(raw_line)
-
-        for key, value in values.items():
-            if key not in written:
-                updated_lines.append(f"{key}={value}")
-
-        ROOT_ENV_FILE.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
-
     def _telemetry_snapshot(self) -> Dict:
         path = Path(TELEMETRY_SNAPSHOT_PATH)
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(data, dict):
                 return {"success": True, "path": str(path), "data": data}
-            return {"success": False, "path": str(path), "error": "snapshot is not an object"}
+            return {
+                "success": False,
+                "path": str(path),
+                "error": "snapshot is not an object",
+            }
         except FileNotFoundError:
             return {"success": False, "path": str(path), "error": "snapshot not found"}
         except Exception as exc:
@@ -309,7 +267,9 @@ class SirenaSupervisor:
         try:
             result = self._run_systemctl(action, unit, timeout=5)
         except Exception as exc:
-            logger.exception("systemctl state check failed: action=%s unit=%s", action, unit)
+            logger.exception(
+                "systemctl state check failed: action=%s unit=%s", action, unit
+            )
             return str(exc)
         text = (result.stdout or result.stderr or "").strip()
         return text or "unknown"
@@ -338,7 +298,11 @@ class SirenaSupervisor:
 
         for iface in ("eth0", "wlan0"):
             try:
-                address = Path(f"/sys/class/net/{iface}/address").read_text(encoding="utf-8").strip()
+                address = (
+                    Path(f"/sys/class/net/{iface}/address")
+                    .read_text(encoding="utf-8")
+                    .strip()
+                )
                 if address:
                     parts.append(address)
                     break
@@ -354,33 +318,10 @@ class SirenaSupervisor:
 
     def _video_version(self) -> str:
         try:
-            result = self._run_systemctl("show", VIDEO_STATUS_UNIT, "--property=ActiveState", timeout=5)
+            result = self._run_systemctl(
+                "show", VIDEO_STATUS_UNIT, "--property=ActiveState", timeout=5
+            )
             return "active" if "active" in (result.stdout or "") else "inactive"
         except Exception:
             logger.exception("Failed getting video service state from systemctl")
             return "unknown"
-
-    def _wireguard_ip(self) -> str:
-        override_ip = os.environ.get("SIRENA_WG_IP", "").strip()
-        if override_ip:
-            return override_ip
-
-        for interface_name in WG_INTERFACES:
-            detected = self._ip_from_interface(interface_name)
-            if detected:
-                return detected
-        return ""
-
-    def _ip_from_interface(self, interface_name: str) -> str:
-        try:
-            cmd = ["ip", "-4", "addr", "show", "dev", interface_name]
-            output = subprocess.check_output(cmd, text=True)
-
-            for line in output.splitlines():
-                if "inet " in line:
-                    return line.split()[1].split("/")[0]
-        except Exception:
-            logger.debug("Не вийшло знайти WireGuard IP для інтерфейсу %s", interface_name)
-            return ""
-
-        return ""

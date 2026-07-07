@@ -2,30 +2,30 @@
 <style>
   .svp-status-line {
     display:flex; gap:1.35rem; align-items:center; flex-wrap:wrap;
-    padding:.7rem 0; color:#f0f6fc; font-size:.95rem;
+    padding:.7rem 0; color:var(--sirena-text); font-size:.95rem;
   }
-  .svp-status-line .ok { color:#00c978; }
-  .svp-status-line .muted { color:#b8c0cc; }
-  .svp-divider { width:1px; height:18px; background:#252c36; }
+  .svp-status-line .ok { color:var(--sirena-ok); }
+  .svp-status-line .muted { color:var(--sirena-muted); }
+  .svp-divider { width:1px; height:18px; background:var(--sirena-border); }
   .svp-cameras {
     display:flex; align-items:center; gap:.45rem; flex-wrap:wrap; min-width:220px;
   }
-  .svp-camera-label { color:#b8c0cc; font-size:.86rem; }
+  .svp-camera-label { color:var(--sirena-muted); font-size:.86rem; }
   .svp-camera-chip {
-    border:1px solid #303844; background:#151b23; color:#eef5ff;
+    border:1px solid var(--sirena-border); background:#172435; color:var(--sirena-text);
     border-radius:6px; padding:.22rem .55rem; font-size:.82rem; line-height:1.2;
     max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
   .svp-camera-chip.active {
-    border-color:#20c997; background:#133427; color:#baf7d4; font-weight:700;
+    border-color:var(--sirena-ok); background:rgba(94,154,120,.16); color:var(--sirena-text); font-weight:700;
   }
   button.svp-camera-chip:not(.active):hover {
-    border-color:#00c8ff; color:#9be7ff;
+    border-color:var(--sirena-accent); color:var(--sirena-text);
   }
   .svp-camera-chip:disabled { opacity:.65; cursor:wait; }
   .svp-card {
-    background:#161b22; border:1px solid #252c36; border-radius:8px;
-    overflow:hidden; color:#eef5ff;
+    background:var(--sirena-surface); border:1px solid var(--sirena-border); border-radius:8px;
+    overflow:hidden; color:var(--sirena-text);
   }
   .svp-compact {
     height:100%;
@@ -34,31 +34,31 @@
   }
   .svp-head {
     display:flex; justify-content:space-between; align-items:center; gap:.75rem;
-    padding:.75rem 1.1rem; background:#1c2128; border-bottom:1px solid #252c36;
+    padding:.75rem 1.1rem; background:var(--sirena-header); border-bottom:1px solid var(--sirena-border);
     font-weight:600;
   }
   .svp-actions { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
-  .svp-rec-state { color:#ff7892; font-size:.82rem; display:flex; align-items:center; gap:.35rem; }
-  .svp-rec-dot { width:10px; height:10px; border-radius:999px; background:#7a3142; display:inline-block; }
-  .svp-rec-dot.on { background:#ff4d6d; animation:svp-blink 1s infinite; }
+  .svp-rec-state { color:var(--sirena-danger); font-size:.82rem; display:flex; align-items:center; gap:.35rem; }
+  .svp-rec-dot { width:10px; height:10px; border-radius:999px; background:#713E3D; display:inline-block; }
+  .svp-rec-dot.on { background:var(--sirena-danger); animation:svp-blink 1s infinite; }
   @keyframes svp-blink { 0%,100%{opacity:1} 50%{opacity:.35} }
   .svp-video-shell { position:relative; background:#000; aspect-ratio:16/9; min-height:420px; }
   .svp-compact .svp-video-shell { min-height:0; }
   .svp-video { width:100%; height:100%; object-fit:contain; background:#000; display:block; }
   .svp-overlay {
     position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-    color:#dbe7f3; background:rgba(0,0,0,.45); text-align:center; padding:1rem;
+    color:var(--sirena-text); background:rgba(0,0,0,.45); text-align:center; padding:1rem;
   }
   .svp-overlay.hidden { display:none; }
   .svp-stats-grid {
     display:grid; grid-template-columns:repeat(6, minmax(110px,1fr)); gap:1px;
-    background:#252c36; border-top:1px solid #252c36;
+    background:var(--sirena-border); border-top:1px solid var(--sirena-border);
   }
   .svp-compact .svp-stats-grid { display:none; }
-  .svp-stat { background:#161b22; padding:.7rem .8rem; }
-  .svp-stat-label { color:#b8c0cc; font-size:.68rem; text-transform:uppercase; letter-spacing:.05em; }
-  .svp-stat-value { font-size:.92rem; font-weight:700; margin-top:.15rem; color:#f0f6fc; }
-  .svp-compact-link { color:#b8c9df; font-size:.86rem; padding:.65rem .85rem; border-top:1px solid #252c36; }
+  .svp-stat { background:var(--sirena-surface); padding:.7rem .8rem; }
+  .svp-stat-label { color:var(--sirena-muted); font-size:.68rem; text-transform:uppercase; letter-spacing:.05em; }
+  .svp-stat-value { font-size:.92rem; font-weight:700; margin-top:.15rem; color:var(--sirena-text); }
+  .svp-compact-link { color:var(--sirena-muted); font-size:.86rem; padding:.65rem .85rem; border-top:1px solid var(--sirena-border); }
   @media (max-width: 900px) {
     .svp-stats-grid { grid-template-columns:repeat(2, minmax(120px,1fr)); }
     .svp-video-shell { min-height:260px; }
@@ -127,7 +127,7 @@
     overlay.classList.toggle('hidden', !visible);
   };
   const cameraTitle = camera => {
-    const name = camera.name || camera.path || 'camera';
+    const name = camera.label || camera.name  || 'camera';
     const target = camera.target ? ` -> ${camera.target}` : '';
     return `${name}${target}`;
   };
@@ -172,9 +172,10 @@
   };
   const loadCamerasFromDevice = async () => {
     try {
-      return await realtimeCommand('camera.list');
+      // return await realtimeCommand('camera.list');
+      return await loadCamerasViaHttp();
     } catch (err) {
-      return loadCamerasViaHttp();
+      console.warn('Failed to load cameras via realtime command, falling back to HTTP API:', err);
     }
   };
   const switchCameraOnDevice = async cameraPath => {
@@ -315,7 +316,7 @@
         if (!isActive) {
           node.type = 'button';
           node.disabled = switchingCamera;
-          node.addEventListener('click', () => switchCamera(camera.path));
+          node.addEventListener('click', () => switchCamera(camera.id || camera.path));
         }
         list.appendChild(node);
       }

@@ -1,0 +1,50 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sirena tactical drone control mark">
+  <defs>
+    <radialGradient id="hub" cx="50%" cy="42%" r="65%">
+      <stop offset="0%" stop-color="#E7B765"/>
+      <stop offset="100%" stop-color="#C8902F"/>
+    </radialGradient>
+  </defs>
+
+  <g stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- reticle ring -->
+    <circle cx="128" cy="128" r="104" stroke="#5B6A82" stroke-width="3"/>
+    <circle cx="128" cy="128" r="116" stroke="#3A465A" stroke-width="2" stroke-dasharray="2 10"/>
+
+    <!-- side + bottom ticks -->
+    <line x1="232" y1="128" x2="214" y2="128" stroke="#5B6A82" stroke-width="3"/>
+    <line x1="24"  y1="128" x2="42"  y2="128" stroke="#5B6A82" stroke-width="3"/>
+    <line x1="128" y1="232" x2="128" y2="214" stroke="#5B6A82" stroke-width="3"/>
+
+    <!-- heading indicator (front) -->
+    <polyline points="106,42 128,22 150,42" stroke="#D9A441" stroke-width="6"/>
+    <polyline points="112,54 128,38 144,54" stroke="#8A6B2E" stroke-width="4"/>
+
+    <!-- arms (X frame) -->
+    <line x1="88" y1="88"  x2="168" y2="168" stroke="#46546B" stroke-width="15"/>
+    <line x1="168" y1="88" x2="88"  y2="168" stroke="#46546B" stroke-width="15"/>
+
+    <!-- rotors -->
+    <g stroke="#93A6C4" stroke-width="5" fill="#111927">
+      <circle cx="88"  cy="88"  r="27"/>
+      <circle cx="168" cy="88"  r="27"/>
+      <circle cx="88"  cy="168" r="27"/>
+      <circle cx="168" cy="168" r="27"/>
+    </g>
+
+    <!-- prop hints -->
+    <g stroke="#6B7C97" stroke-width="3" opacity="0.7">
+      <line x1="72"  y1="88"  x2="104" y2="88"/>
+      <line x1="152" y1="88"  x2="184" y2="88"/>
+      <line x1="72"  y1="168" x2="104" y2="168"/>
+      <line x1="152" y1="168" x2="184" y2="168"/>
+    </g>
+
+    <!-- command core -->
+    <circle cx="128" cy="128" r="24" fill="#161F2D" stroke="#2C3A4F" stroke-width="2"/>
+    <circle cx="128" cy="128" r="13" fill="url(#hub)"/>
+    <circle cx="128" cy="128" r="4"  fill="#161F2D"/>
+
+  </g>
+</svg>

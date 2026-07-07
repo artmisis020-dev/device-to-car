@@ -40,7 +40,7 @@ def api_video_get_stream(device_id):
         return jsonify({"error": "Stream URL not found"}), 404
 
     if stream_name and not video_service.is_stream_published(stream_name):
-        return jsonify({"error": f"no one is publishing to path '{stream_name}'"}), 409
+        return jsonify({"error": f"Стрім відсутній з '{stream_name}'"}), 409
 
     return jsonify({
         "stream_id": device_id,
