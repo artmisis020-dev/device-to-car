@@ -48,6 +48,13 @@ def _send_registry_post(endpoint, payload):
         return None
 
 
+async def _send_registry_post_async(endpoint, payload):
+    # urllib блокуючий (timeout до 10с) — виносимо в executor, інакше на час
+    # недоступності сервера замерзає весь event loop разом із відачею кадрів.
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _send_registry_post, endpoint, payload)
+
+
 def run_video_handshake():
     if not config.REGISTRY_ENABLED:
         return True
@@ -104,7 +111,7 @@ async def registry_heartbeat_task(pcs_set):
 
     while True:
         await asyncio.sleep(60)
-        r = _send_registry_post("/api/heartbeat", {"device_id": device_id})
+        r = await _send_registry_post_async("/api/heartbeat", {"device_id": device_id})
 
         if r is None:
             logging.warning("[Registry] Heartbeat: server unavailable")
@@ -131,7 +138,7 @@ async def registry_heartbeat_task(pcs_set):
             logging.info(f"[Registry] Waiting for re-approval (every {config.HANDSHAKE_INTERVAL}s)...")
             while True:
                 await asyncio.sleep(config.HANDSHAKE_INTERVAL)
-                r2 = _send_registry_post("/api/heartbeat", {"device_id": device_id})
+                r2 = await _send_registry_post_async("/api/heartbeat", {"device_id": device_id})
                 if r2 and r2.get("status") == "approved":
                     logging.info("[Registry] ✅ Access restored — resuming video service")
                     approve_access()
