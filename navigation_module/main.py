@@ -59,6 +59,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 GPS_QUEUE_SIZE         = 30      # розмір sliding window
 GPS_SPOOF_METERS_THRE  = 7000.0  # стрибок > 7 км → підозра на спуфінг
+GPS_SPOOF_BLOCK_SEC    = 60.0    # блок Starlink після спуф-стрибка (кожен новий стрибок перезаряджає)
+STARLINK_FAIL_THRESHOLD = 3      # к-ть фейлів gRPC поспіль до перемикання на fallback
 GPS_AZ_DIFF_THRE       = 20.0    # max відхилення азимуту від середнього (°)
 GPS_STDEV_AZ_THRE      = 8.0     # max кружне σ азимуту (°)
 GPS_STDEV_SPEED_THRE   = 15.0    # max σ швидкості (м/с)
@@ -106,6 +108,9 @@ class MavLinkGPSHub:
         self._stargps: StarGPSHandler = StarGPSHandler(maxlen=GPS_QUEUE_SIZE)
         self.starlink_stable: bool = False
         self.starlink_spoofed: bool = False
+        self._spoof_block_until: float = 0.0
+        self._algo_warned: bool = False
+        self._starlink_fail_count: int = 0
         self._forecast_list: List[GPSRecord] = []
         self._forecast_time: float = 0.0
 
@@ -130,7 +135,6 @@ class MavLinkGPSHub:
         self.lock = threading.Lock()
         self.starlink_service = starlink_service
         self.is_moving = False
-        self.detector = starlink.KalmanJumpDetector(jump_threshold_m=200)
 
     def _store_manual_coords(self, msg_data: Dict[str, Any], raw_alt: float) -> Dict[str, float]:
         lat = msg_data.get("latitude")
@@ -277,77 +281,69 @@ class MavLinkGPSHub:
         Перевіряє якість Starlink GPS за допомогою обраного алгоритму фільтрації.
         """
         h = self._stargps
+        now = time.time()
 
-        # Spoof-детекція: великий стрибок між двома сусідніми точками
+        # Spoof-детекція: великий стрибок між двома сусідніми точками блокує
+        # Starlink на GPS_SPOOF_BLOCK_SEC; кожен новий стрибок перезаряджає
+        # таймер, після спокійного таймауту блок знімається автоматично.
         if h.last_dist_diff > GPS_SPOOF_METERS_THRE and len(h) > 10:
-            self.starlink_spoofed = not self.starlink_spoofed
+            self.starlink_spoofed = True
+            self._spoof_block_until = now + GPS_SPOOF_BLOCK_SEC
             logger.warning(
-                f"[SPOOF] Starlink jump {h.last_dist_diff:.0f}m > {GPS_SPOOF_METERS_THRE:.0f}m, "
-                f"spoofed={self.starlink_spoofed}"
+                f"[SPOOF] Starlink jump {h.last_dist_diff:.0f}m > {GPS_SPOOF_METERS_THRE:.0f}m — "
+                f"блокую Starlink на {GPS_SPOOF_BLOCK_SEC:.0f}s"
             )
 
         if self.starlink_spoofed:
-            return False
+            if now < self._spoof_block_until:
+                return False
+            self.starlink_spoofed = False
+            logger.info("[SPOOF] Стрибків не було впродовж таймауту — блок Starlink знято")
 
         algo = getattr(self, "starlink_algo", "ARC4")
         if algo == "NO_FILTER":
             return True
 
-        # Для CMAD та ARC4 використовуємо оптимальне вікно (останні 7 азимутів)
-        # для забезпечення наднизької затримки (low-latency) позиціонування
-        window_size = 7
-        if len(h) < window_size:
+        if algo in ("ARC4", "CMAD"):
+            # Реалізації ARC4/CMAD закоментовані. Раніше ці гілки «провалювались»
+            # без return → None → Starlink назавжди лишався нестабільним.
+            # Поки алгоритми не повернуто — поводимось як NO_FILTER.
+            if not self._algo_warned:
+                self._algo_warned = True
+                logger.warning(
+                    f"STARLINK_ALGO={algo} не реалізовано — фільтр стабільності вимкнено (як NO_FILTER)"
+                )
             return True
+
+        # LINEAR_STD (оригінальний алгоритм)
+        if len(h) < 7:
+            return True   # вікно щойно стартувало — довіряємо (історична поведінка)
+        if len(h) < GPS_QUEUE_SIZE:
+            return False
 
         last = h.latest()
         if last is None:
             return False
 
-        # Збираємо останні азимути для розрахунків
-        az_window = [h[i].az for i in range(len(h) - window_size, len(h))]
-        speed = last.speed
+        std_spd = h.std_speed
+        std_az  = h.std_azimuth
+        avg_spd = h.avg_speed
+        avg_az  = h.avg_azimuth
 
-        # bypass для статики на землі
-        is_static = speed < 0.5
+        if any(math.isnan(x) for x in (std_spd, std_az, avg_spd, avg_az)):
+            return False
 
-        if algo == "ARC4":
-            pass
-            # if is_static:
-            #     return True
-            # metric, is_stable = self.arc4_hyst.update(az_window, speed)
-            # return is_stable
+        ch1 = abs(last.speed - avg_spd) < GPS_STDEV_KOE * std_spd
+        ch2 = std_spd < GPS_STDEV_SPEED_THRE
 
-        elif algo == "CMAD":
-            pass
-            # if is_static:
-            #     return True
-            # metric, is_stable = run_cmad(az_window, thr=8.0)
-            # return is_stable
-
+        if avg_spd < 0.5:
+            ch3 = True
+            ch4 = True
         else:
-            # LINEAR_STD (оригінальний алгоритм)
-            if len(h) < GPS_QUEUE_SIZE:
-                return False
+            ch3 = StarGPSHandler._bearing_difference_deg(last.az, avg_az) < GPS_AZ_DIFF_THRE
+            ch4 = std_az < GPS_STDEV_AZ_THRE
 
-            std_spd = h.std_speed
-            std_az  = h.std_azimuth
-            avg_spd = h.avg_speed
-            avg_az  = h.avg_azimuth
-
-            if any(math.isnan(x) for x in (std_spd, std_az, avg_spd, avg_az)):
-                return False
-
-            ch1 = abs(last.speed - avg_spd) < GPS_STDEV_KOE * std_spd
-            ch2 = std_spd < GPS_STDEV_SPEED_THRE
-
-            if avg_spd < 0.5:
-                ch3 = True
-                ch4 = True
-            else:
-                ch3 = StarGPSHandler._bearing_difference_deg(last.az, avg_az) < GPS_AZ_DIFF_THRE
-                ch4 = std_az < GPS_STDEV_AZ_THRE
-
-            return ch1 and ch2 and ch3 and ch4
+        return ch1 and ch2 and ch3 and ch4
 
     # -----------------------------------------------------------------------
     # Starlink worker
@@ -418,6 +414,7 @@ class MavLinkGPSHub:
                             with self.lock:
                                 self.starlink_available = True
                                 self.last_starlink_data = location
+                                self._starlink_fail_count = 0
 
                             #self.bridge.send_gps_input(lat=location["latitude"], lon=location["longitude"], alt=filtered.get('altitude', 0.0), sats=12)
 
@@ -462,20 +459,30 @@ class MavLinkGPSHub:
                                 )
 
                         else:
-                            with self.lock:
-                                self.starlink_available = False
-                            logger.warning("Starlink недоступен")
+                            self._register_starlink_failure("location unavailable")
 
                     except Exception as e:
-                        with self.lock:
-                            self.starlink_available = False
-                        logger.error(f"Помилка Starlink: {e}")
+                        self._register_starlink_failure(str(e))
 
                 time.sleep(1.0)
 
             except Exception as e:
                 logger.error(f"Starlink worker помилка: {e}")
                 time.sleep(5.0)
+
+    def _register_starlink_failure(self, reason: str) -> None:
+        """Один збій gRPC не вимикає Starlink: перемикаємось на fallback лише
+        після STARLINK_FAIL_THRESHOLD фейлів поспіль (до того тримаємо останні
+        дані — це секунди, а не хвилина RETRY-блекауту)."""
+        with self.lock:
+            self._starlink_fail_count += 1
+            fails = self._starlink_fail_count
+            if fails >= STARLINK_FAIL_THRESHOLD:
+                self.starlink_available = False
+        if fails >= STARLINK_FAIL_THRESHOLD:
+            logger.warning(f"Starlink недоступний (збій #{fails}): {reason} — джерело вимкнено")
+        else:
+            logger.warning(f"Starlink збій #{fails}/{STARLINK_FAIL_THRESHOLD}: {reason}")
 
     def _approx_distance_m(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         dlat_m = (lat2 - lat1) * 111320.0

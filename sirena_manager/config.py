@@ -20,6 +20,7 @@ VIDEO_STATUS_UNIT = "video-streamer.service"
 MAVLINK_ROUTER_UNIT = "mavlink-router.service"
 TELEMETRY_SENDER_UNIT = "telemetry-sender.service"
 FIRE_DEVICE_STATUS_UNIT = "fire-device-status.service"
+CRSF_BRIDGE_UNIT = "crsf-bridge.service"
 NAVIGATION_UNIT = "sirena-gps-hub.service"
 VIDEO_MANAGER_UNIT = "video-service-manager.service"
 VIDEO_RELAY_UNIT = "video-relay.service"
@@ -49,6 +50,11 @@ SERVICES = {
         label="Telemetry Sender",
         units=(TELEMETRY_SENDER_UNIT,),
         depends_on=("mavlink_router",),
+    ),
+    "crsf_bridge": ServiceDefinition(
+        name="crsf_bridge",
+        label="CRSF Bridge",
+        units=(CRSF_BRIDGE_UNIT,),
     ),
     "fire_device_status": ServiceDefinition(
         name="fire_device_status",
@@ -93,6 +99,7 @@ SERVICES = {
 BOOT_SEQUENCE = (
     "mavlink_router",
     "telemetry_sender",
+    "crsf_bridge",
     "fire_device_status",
     "navigation",
     "video_manager",
