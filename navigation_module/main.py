@@ -37,6 +37,7 @@ import starlink
 import mavlink_bridge
 import gps_priority
 import config
+from datetime import datetime
 try:
     from telemetry_snapshot import TelemetrySnapshotPublisher
 except ImportError:
@@ -373,9 +374,7 @@ class MavLinkGPSHub:
 
                         self.is_moving = self._stargps.kalman_awake
 
-                        # status = starlink.starlink_client.get_status()
-                        #
-                        #
+                        status = starlink.starlink_client.get_status()
                         # print(f"pnt_filter: {status.gps_stats.pnt_filter_convergence_state}")
                         # print(f"downlink: {status.downlink_throughput_bps:.1f} bps")
                         # print(f"uplink: {status.uplink_throughput_bps:.1f} bps")
@@ -386,26 +385,27 @@ class MavLinkGPSHub:
                         # print(f"elevation: {status.alignment_stats.boresight_elevation_deg:.4f} deg")
                         # print(
                         #     f"q: {status.ned2dish_quaternion.q_scalar:.6f} {status.ned2dish_quaternion.q_x:.6f} {status.ned2dish_quaternion.q_y:.6f} {status.ned2dish_quaternion.q_z:.6f}")
-                        #
-                        # data = {
-                        #     "pnt_filter": str(status.gps_stats.pnt_filter_convergence_state),
-                        #     "downlink_bps": status.downlink_throughput_bps,
-                        #     "uplink_bps": status.uplink_throughput_bps,
-                        #     "ping_ms": status.pop_ping_latency_ms,
-                        #     "obstruction": status.obstruction_stats.fraction_obstructed,
-                        #     "tilt_deg": status.alignment_stats.tilt_angle_deg,
-                        #     "azimuth_deg": status.alignment_stats.boresight_azimuth_deg,
-                        #     "elevation_deg": status.alignment_stats.boresight_elevation_deg,
-                        #     "quaternion": {
-                        #         "scalar": status.ned2dish_quaternion.q_scalar,
-                        #         "x": status.ned2dish_quaternion.q_x,
-                        #         "y": status.ned2dish_quaternion.q_y,
-                        #         "z": status.ned2dish_quaternion.q_z,
-                        #     }
-                        # }
-                        #
-                        # with open("/home/sirena/starlink_motion.jsonl", "a") as f:
-                        #     f.write(json.dumps(data) + "\n")
+
+                        data = {
+                            "pnt_filter": str(status.gps_stats.pnt_filter_convergence_state),
+                            "downlink_bps": status.downlink_throughput_bps,
+                            "uplink_bps": status.uplink_throughput_bps,
+                            "ping_ms": status.pop_ping_latency_ms,
+                            "obstruction": status.obstruction_stats.fraction_obstructed,
+                            "tilt_deg": status.alignment_stats.tilt_angle_deg,
+                            "azimuth_deg": status.alignment_stats.boresight_azimuth_deg,
+                            "elevation_deg": status.alignment_stats.boresight_elevation_deg,
+                            "quaternion": {
+                                "scalar": status.ned2dish_quaternion.q_scalar,
+                                "x": status.ned2dish_quaternion.q_x,
+                                "y": status.ned2dish_quaternion.q_y,
+                                "z": status.ned2dish_quaternion.q_z,
+                            }
+                        }
+
+                        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                        with open(f"/home/sirena/starlink_motion_{timestamp}.jsonl", "a") as f:
+                            f.write(json.dumps(data) + "\n")
 
                         if location and location.get("available"):
                             # 1. Оригінальний фільтр (moving average + outlier rejection)
