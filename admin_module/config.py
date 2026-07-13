@@ -1,5 +1,8 @@
 import os
 from dataclasses import dataclass
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 @dataclass(frozen=True)
@@ -25,42 +28,59 @@ class Settings:
 
     @classmethod
     def from_env(cls):
-        secret_key = os.environ.get("SIRENA_SECRET_KEY")
-        admin_password = os.environ.get("ADMIN_PASSWORD")
+        secret_key = os.getenv("SIRENA_SECRET_KEY")
+        admin_password = os.getenv("ADMIN_PASSWORD")
 
-        missing = []
-        if not secret_key:
-            missing.append("SIRENA_SECRET_KEY")
-        if not admin_password:
-            missing.append("ADMIN_PASSWORD")
-        if missing:
-            raise RuntimeError("Missing required environment variables: " + ", ".join(missing))
+        if not secret_key or not admin_password:
+            raise RuntimeError(
+                "Missing required environment variables: SIRENA_SECRET_KEY, ADMIN_PASSWORD"
+            )
 
         return cls(
             secret_key=secret_key,
             admin_password=admin_password,
-            db_path=os.environ.get("SIRENA_DB", "/opt/sirena-server/devices.db"),
-            recordings_dir=os.environ.get("SIRENA_RECORDINGS", "/opt/sirena-video/recordings"),
-            mediamtx_hls_port=_parse_int_env("MEDIAMTX_HLS_PORT", 8888, minimum=1, maximum=65535),
+            db_path=os.getenv("SIRENA_DB", "/opt/sirena-server/devices.db"),
+            recordings_dir=os.getenv(
+                "SIRENA_RECORDINGS", "/opt/sirena-video/recordings"
+            ),
+            mediamtx_hls_port=_parse_int_env(
+                "MEDIAMTX_HLS_PORT", 8888, minimum=1, maximum=65535
+            ),
             telemetry_ttl_h=_parse_int_env("TELEMETRY_TTL_H", 48, minimum=1),
-            host=os.environ.get("SIRENA_HOST", "0.0.0.0"),
+            host=os.getenv("SIRENA_HOST", "0.0.0.0"),
             port=_parse_int_env("SIRENA_PORT", 8080, minimum=1, maximum=65535),
             debug=_parse_bool_env("SIRENA_DEBUG", False),
             cookie_secure=_parse_bool_env("SIRENA_COOKIE_SECURE", False),
-            session_lifetime_minutes=_parse_int_env("SIRENA_SESSION_LIFETIME_MIN", 720, minimum=5),
-            login_max_attempts=_parse_int_env("SIRENA_LOGIN_MAX_ATTEMPTS", 10, minimum=1),
-            login_attempt_window_s=_parse_int_env("SIRENA_LOGIN_WINDOW_S", 600, minimum=10),
-            telemetry_max_batch=_parse_int_env("SIRENA_TELEMETRY_MAX_BATCH", 2000, minimum=1),
-            max_content_length=_parse_int_env("SIRENA_MAX_CONTENT_LENGTH", 2 * 1024 * 1024, minimum=1024),
-            webrtc_proxy_upstream=os.environ.get("WEBRTC_PROXY_UPSTREAM", "http://127.0.0.1:8092").strip(),
-            webrtc_proxy_timeout_s=_parse_int_env("WEBRTC_PROXY_TIMEOUT_S", 20, minimum=1, maximum=120),
-            mediamtx_webrtc_public_url=os.environ.get("MEDIAMTX_WEBRTC_PUBLIC_URL", "").strip().rstrip("/"),
+            session_lifetime_minutes=_parse_int_env(
+                "SIRENA_SESSION_LIFETIME_MIN", 720, minimum=5
+            ),
+            login_max_attempts=_parse_int_env(
+                "SIRENA_LOGIN_MAX_ATTEMPTS", 10, minimum=1
+            ),
+            login_attempt_window_s=_parse_int_env(
+                "SIRENA_LOGIN_WINDOW_S", 600, minimum=10
+            ),
+            telemetry_max_batch=_parse_int_env(
+                "SIRENA_TELEMETRY_MAX_BATCH", 2000, minimum=1
+            ),
+            max_content_length=_parse_int_env(
+                "SIRENA_MAX_CONTENT_LENGTH", 2 * 1024 * 1024, minimum=1024
+            ),
+            webrtc_proxy_upstream=os.getenv(
+                "WEBRTC_PROXY_UPSTREAM", "http://127.0.0.1:8092"
+            ).strip(),
+            webrtc_proxy_timeout_s=_parse_int_env(
+                "WEBRTC_PROXY_TIMEOUT_S", 20, minimum=1, maximum=120
+            ),
+            mediamtx_webrtc_public_url=os.getenv("MEDIAMTX_WEBRTC_PUBLIC_URL", "")
+            .strip()
+            .rstrip("/"),
         )
 
 
 def _parse_int_env(name, default, minimum=None, maximum=None):
     try:
-        value = int(os.environ.get(name, default))
+        value = int(os.getenv(name, default))
     except (TypeError, ValueError):
         value = default
 
@@ -72,7 +92,7 @@ def _parse_int_env(name, default, minimum=None, maximum=None):
 
 
 def _parse_bool_env(name, default=False):
-    raw = os.environ.get(name)
+    raw = os.getenv(name)
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
