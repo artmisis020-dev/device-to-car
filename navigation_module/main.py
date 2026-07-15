@@ -37,7 +37,7 @@ import starlink
 import mavlink_bridge
 import gps_priority
 import config
-from datetime import datetime
+import datetime
 try:
     from telemetry_snapshot import TelemetrySnapshotPublisher
 except ImportError:
@@ -360,6 +360,9 @@ class MavLinkGPSHub:
         """
         logger.info("Starlink worker запущен")
 
+        session_ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        motion_log_path = f"/home/sirena/logs/starlink_motion_{session_ts}.jsonl"
+
         while self.running:
             try:
                 now = time.time()
@@ -375,17 +378,6 @@ class MavLinkGPSHub:
                         self.is_moving = self._stargps.kalman_awake
 
                         status = starlink.starlink_client.get_status()
-                        # print(f"pnt_filter: {status.gps_stats.pnt_filter_convergence_state}")
-                        # print(f"downlink: {status.downlink_throughput_bps:.1f} bps")
-                        # print(f"uplink: {status.uplink_throughput_bps:.1f} bps")
-                        # print(f"ping: {status.pop_ping_latency_ms:.2f} ms")
-                        # print(f"obstruction: {status.obstruction_stats.fraction_obstructed:.4f}")
-                        # print(f"tilt: {status.alignment_stats.tilt_angle_deg:.4f} deg")
-                        # print(f"azimuth: {status.alignment_stats.boresight_azimuth_deg:.4f} deg")
-                        # print(f"elevation: {status.alignment_stats.boresight_elevation_deg:.4f} deg")
-                        # print(
-                        #     f"q: {status.ned2dish_quaternion.q_scalar:.6f} {status.ned2dish_quaternion.q_x:.6f} {status.ned2dish_quaternion.q_y:.6f} {status.ned2dish_quaternion.q_z:.6f}")
-
                         data = {
                             "pnt_filter": str(status.gps_stats.pnt_filter_convergence_state),
                             "downlink_bps": status.downlink_throughput_bps,
@@ -395,6 +387,9 @@ class MavLinkGPSHub:
                             "tilt_deg": status.alignment_stats.tilt_angle_deg,
                             "azimuth_deg": status.alignment_stats.boresight_azimuth_deg,
                             "elevation_deg": status.alignment_stats.boresight_elevation_deg,
+                            "lat": location.get("latitude"),
+                            "lon": location.get("longitude"),
+                            "alt": location.get("altitude"),
                             "quaternion": {
                                 "scalar": status.ned2dish_quaternion.q_scalar,
                                 "x": status.ned2dish_quaternion.q_x,
@@ -403,8 +398,7 @@ class MavLinkGPSHub:
                             }
                         }
 
-                        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                        with open(f"/home/sirena/starlink_motion_{timestamp}.jsonl", "a") as f:
+                        with open(motion_log_path, "a") as f:
                             f.write(json.dumps(data) + "\n")
 
                         if location and location.get("available"):
@@ -459,14 +453,20 @@ class MavLinkGPSHub:
                                 )
 
                         else:
+                            with open(motion_log_path, "a") as f:
+                                f.write(f"Starlink worker помилка: location unavailable\n")
                             self._register_starlink_failure("location unavailable")
 
                     except Exception as e:
+                        with open(motion_log_path, "a") as f:
+                            f.write(f"Starlink worker помилка: {str(e)}\n")
                         self._register_starlink_failure(str(e))
 
                 time.sleep(1.0)
 
             except Exception as e:
+                with open(motion_log_path, "a") as f:
+                    f.write(f"Starlink worker помилка: {e}\n")
                 logger.error(f"Starlink worker помилка: {e}")
                 time.sleep(5.0)
 
