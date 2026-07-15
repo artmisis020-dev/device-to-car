@@ -1,7 +1,7 @@
 import socket
 import pygame
 
-RPI_IP = "10.24.29.219"
+RPI_IP = "10.0.0.15"
 UDP_PORT = 5005
 
 CRSF_MIN = 172
@@ -27,7 +27,8 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 channels = [CRSF_MID] * 16
 clock = pygame.time.Clock()
 
-control_mode = "mavlink"          # стартовий режим — стандарт
+# control_mode = "mavlink"
+control_mode = "crsf"
 prev_toggle_pressed = False
 
 

@@ -8,8 +8,8 @@ REGISTRY_URL = os.environ.get("SIRENA_ADMIN_SERVER_URL", "http://127.0.0.1:8080"
 # УВАГА: цей порт не має збігатися з ROUTER_UART_PORT у mavlink_module
 # (там /dev/ttyAMA0 @115200 для MAVLink телеметрії). CRSF — це окремий
 # RC-канал керування і має йти на власний UART.
-CRSF_UART_PORT = os.environ.get("SIRENA_CRSF_UART_PORT", "/dev/ttyAMA0")
-CRSF_UART_BAUD = int(os.environ.get("SIRENA_CRSF_UART_BAUD", "420000"))
+CRSF_UART_PORT = os.environ.get("SIRENA_CRSF_UART_PORT", "/dev/ttyAMA2")
+CRSF_UART_BAUD = int(os.environ.get("SIRENA_CRSF_UART_BAUD", "416000"))
 
 # ─── UDP вхід каналів керування (з наземної станції / джойстика) ───────────────
 CRSF_BIND_HOST = os.environ.get("SIRENA_CRSF_BIND_HOST", "0.0.0.0")
@@ -23,6 +23,7 @@ CRSF_BIND_PORT = int(os.environ.get("SIRENA_CRSF_BIND_PORT", "5005"))
 CONTROL_MODE_MAVLINK = "mavlink"
 CONTROL_MODE_CRSF = "crsf"
 CONTROL_MODE_DEFAULT = os.environ.get("SIRENA_CONTROL_MODE", CONTROL_MODE_MAVLINK).strip().lower()
+# CONTROL_MODE_DEFAULT = os.environ.get("SIRENA_CONTROL_MODE", CONTROL_MODE_CRSF).strip().lower()
 CONTROL_MODE_UDP_PREFIX = b"MODE"
 
 # ─── Параметри CRSF протоколу ──────────────────────────────────────────────────
