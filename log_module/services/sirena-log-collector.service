@@ -1,0 +1,21 @@
+[Unit]
+Description=Sirena Log Collector (journald -> /home/sirena/logs)
+After=systemd-journald.service
+Wants=systemd-journald.service
+
+[Service]
+Type=simple
+User=sirena
+Group=systemd-journal
+WorkingDirectory=/opt/sirena-logging
+ExecStart=/usr/bin/python3 /opt/sirena-logging/log_collector_daemon.py
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sirena-log-collector
+Environment=PYTHONUNBUFFERED=1
+ReadWritePaths=/home/sirena/logs
+
+[Install]
+WantedBy=multi-user.target
