@@ -103,6 +103,13 @@ if [ -f "$PROJECT_DIR/video_module/install.sh" ]; then
   bash "$PROJECT_DIR/video_module/install.sh"
 else
   echo "Missing video_module/install.sh"
+fi 
+# logger повинен бути останнім
+if [ -f "$PROJECT_DIR/logging_module/install.sh" ]; then
+  normalize_shell_script "$PROJECT_DIR/logging_module/install.sh"
+  bash "$PROJECT_DIR/logging_module/install.sh"
+else
+  echo "Missing logging_module/install.sh"
 fi
 
 echo "Creating root manager venv..."
