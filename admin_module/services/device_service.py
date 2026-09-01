@@ -228,25 +228,6 @@ def get_device_detail(device_id):
     }
 
 
-def queue_fc_command(device_id, command, payload=None, note=""):
-    device = repository.get_device(device_id)
-    if not device:
-        return {"error": "unknown device"}, 404
-
-    command = str(command or "").strip().upper()
-    if command not in {"ARM", "DISARM", "RTL", "LOITER", "TAKEOFF"}:
-        return {"error": "unsupported command"}, 400
-
-    payload_text = None if payload is None else json.dumps(payload, separators=(",", ":"))
-    now = now_str()
-    repository.insert_fc_command(device_id, command, payload_text, now, now, note)
-    return {"status": "queued", "command": command, "device_id": device_id}, 200
-
-
-def list_fc_commands(device_id, limit=25):
-    return repository.list_fc_commands(device_id, limit=limit)
-
-
 def _device_manager_base_urls(device_id):
     row = repository.get_device(device_id)
     if not row:

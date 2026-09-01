@@ -146,6 +146,33 @@
     color: var(--sirena-text);
   }
 
+  .badge-gamepad-on {
+    background: var(--sirena-ok);
+    color: #0a1a12;
+  }
+
+  .badge-gamepad-off {
+    background: var(--sirena-inactive);
+    color: var(--sirena-text);
+  }
+
+  .stick-bar-track {
+    position: relative;
+    height: 10px;
+    border-radius: 5px;
+    background: var(--sirena-border);
+    overflow: hidden;
+  }
+
+  .stick-bar-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 0;
+    background: var(--sirena-accent);
+  }
+
   .status-dot {
     width: 10px;
     height: 10px;
@@ -378,15 +405,49 @@
   </div>
 
   <div class="row g-2">
-    <!-- Map -->
-    <div class="col-md-6">
-      <div class="card h-100">
+    <!-- Map + Control -->
+    <div class="col-md-6 d-flex flex-column gap-2">
+      <div class="card">
         <div class="card-header d-flex justify-content-between">
           🗺 GPS трек
           <button class="btn btn-sm btn-outline-secondary py-0" onclick="clearTrack()">Очистити трек</button>
         </div>
-        <div class="card-body p-1 h-100">
+        <div class="card-body p-1">
           <div id="map"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center py-1">
+          <span>🎮 Керування (MAVLink)</span>
+          <span id="gamepadBadge"><span class="badge badge-gamepad-off">Пульт: не підключено</span></span>
+        </div>
+        <div class="card-body p-2">
+          <div class="row g-2">
+            <div class="col-6">
+              <div class="d-flex justify-content-between small text-muted"><span>Roll</span><span id="axRollVal">0.00</span></div>
+              <div class="stick-bar-track"><div class="stick-bar-fill" id="axRoll"></div></div>
+            </div>
+            <div class="col-6">
+              <div class="d-flex justify-content-between small text-muted"><span>Pitch</span><span id="axPitchVal">0.00</span></div>
+              <div class="stick-bar-track"><div class="stick-bar-fill" id="axPitch"></div></div>
+            </div>
+            <div class="col-6">
+              <div class="d-flex justify-content-between small text-muted"><span>Throttle</span><span id="axThrottleVal">0.00</span></div>
+              <div class="stick-bar-track"><div class="stick-bar-fill" id="axThrottle"></div></div>
+            </div>
+            <div class="col-6">
+              <div class="d-flex justify-content-between small text-muted"><span>Yaw</span><span id="axYawVal">0.00</span></div>
+              <div class="stick-bar-track"><div class="stick-bar-fill" id="axYaw"></div></div>
+            </div>
+          </div>
+          <div class="d-flex flex-wrap gap-1 mt-2">
+            <button id="btnToggleControl" class="btn btn-sm btn-outline-danger" onclick="toggleControl()" disabled title="Стіки напряму керують дроном по RC_CHANNELS_OVERRIDE, поки увімкнено">▶ Керування</button>
+            <button id="btnArm" class="btn btn-sm btn-outline-danger" onclick="sendFcCommand('ARM', 'Озброїти дрон (ARM)?')">Arm</button>
+            <button id="btnDisarm" class="btn btn-sm btn-outline-secondary" onclick="sendFcCommand('DISARM', 'Роззброїти дрон (DISARM)?')">Disarm</button>
+            <button id="btnRtl" class="btn btn-sm btn-outline-warning" onclick="sendFcCommand('RTL', 'Повернути на точку старту (RTL)?')">RTL</button>
+            <button id="btnLoiter" class="btn btn-sm btn-outline-info" onclick="sendFcCommand('LOITER', 'Перевести в LOITER?')">Loiter</button>
+            <button id="btnTakeoff" class="btn btn-sm btn-outline-success" onclick="sendFcCommand('TAKEOFF', 'Виконати зліт (TAKEOFF)?')">Takeoff</button>
+          </div>
         </div>
       </div>
     </div>
@@ -846,6 +907,161 @@
       }
     } catch (e) {
       console.error(`Error loading initial telemetry state: ${e}`);
+    }
+  }
+
+  // ─── Джойстик / керування дроном по MAVLink ──────────────────────────────────
+  let gamepadIndex = null;
+  let controlEnabled = false;
+  let controlStickInterval = null;
+
+  function updateGamepadBadge(connected) {
+    document.getElementById('gamepadBadge').innerHTML = connected
+      ? '<span class="badge badge-gamepad-on">Пульт: підключено</span>'
+      : '<span class="badge badge-gamepad-off">Пульт: не підключено</span>';
+    document.getElementById('btnToggleControl').disabled = !connected;
+  }
+
+  window.addEventListener('gamepadconnected', (e) => {
+    gamepadIndex = e.gamepad.index;
+    updateGamepadBadge(true);
+  });
+
+  window.addEventListener('gamepaddisconnected', (e) => {
+    if (gamepadIndex === e.gamepad.index) {
+      gamepadIndex = null;
+      updateGamepadBadge(false);
+      if (controlEnabled) stopControl();
+    }
+  });
+
+  function readGamepadAxes() {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    if (gamepadIndex === null) return null;
+    const gp = pads[gamepadIndex];
+    if (!gp) return null;
+    return [gp.axes[0] || 0, gp.axes[1] || 0, gp.axes[2] || 0, gp.axes[3] || 0];
+  }
+
+  function setStickBar(id, value) {
+    const fill = document.getElementById(id);
+    const pct = Math.max(-1, Math.min(1, value)) * 50;
+    if (pct >= 0) {
+      fill.style.left = '50%';
+      fill.style.width = pct + '%';
+    } else {
+      fill.style.left = (50 + pct) + '%';
+      fill.style.width = (-pct) + '%';
+    }
+    document.getElementById(id + 'Val').textContent = value.toFixed(2);
+  }
+
+  function gamepadLoop() {
+    if (gamepadIndex === null) {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      for (const gp of pads) {
+        if (gp) { gamepadIndex = gp.index; updateGamepadBadge(true); break; }
+      }
+    }
+    const axes = readGamepadAxes();
+    if (axes) {
+      setStickBar('axRoll', axes[2]);
+      setStickBar('axPitch', -axes[3]);
+      setStickBar('axThrottle', -axes[1]);
+      setStickBar('axYaw', axes[0]);
+    }
+    requestAnimationFrame(gamepadLoop);
+  }
+  requestAnimationFrame(gamepadLoop);
+
+  async function toggleControl() {
+    if (controlEnabled) {
+      await stopControl();
+      return;
+    }
+    const btn = document.getElementById('btnToggleControl');
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/devices/' + DEVICE_ID + '/control/enable', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert('Помилка: ' + (data.error || `HTTP ${res.status}`));
+        return;
+      }
+      controlEnabled = true;
+      btn.textContent = '⏹ Стоп';
+      btn.className = 'btn btn-sm btn-danger';
+      controlStickInterval = setInterval(sendStick, 100);
+    } catch (e) {
+      alert('Помилка запиту: ' + e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function stopControl() {
+    controlEnabled = false;
+    if (controlStickInterval) {
+      clearInterval(controlStickInterval);
+      controlStickInterval = null;
+    }
+    const btn = document.getElementById('btnToggleControl');
+    btn.textContent = '▶ Керування';
+    btn.className = 'btn btn-sm btn-outline-danger';
+    try {
+      await fetch('/api/devices/' + DEVICE_ID + '/control/disable', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+      });
+    } catch (e) {
+      console.error('control disable failed', e);
+    }
+  }
+
+  async function sendStick() {
+    if (!controlEnabled) return;
+    const axes = readGamepadAxes();
+    if (!axes) {
+      await stopControl();
+      return;
+    }
+    try {
+      await fetch('/api/devices/' + DEVICE_ID + '/control/stick', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ axes })
+      });
+    } catch (e) {
+      console.error('stick send failed', e);
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && controlEnabled) stopControl();
+  });
+
+  const FC_COMMAND_BUTTONS = { ARM: 'btnArm', DISARM: 'btnDisarm', RTL: 'btnRtl', LOITER: 'btnLoiter', TAKEOFF: 'btnTakeoff' };
+
+  async function sendFcCommand(command, confirmMessage) {
+    if (!confirm(confirmMessage)) return;
+    const btn = document.getElementById(FC_COMMAND_BUTTONS[command]);
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳';
+    try {
+      const res = await fetch('/api/devices/' + DEVICE_ID + '/commands', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert('Помилка: ' + (data.error || `HTTP ${res.status}`));
+      }
+    } catch (e) {
+      alert('Помилка запиту: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
     }
   }
 

@@ -4,3 +4,4 @@ requests>=2.31
 fastapi>=0.111
 uvicorn[standard]>=0.30
 pydantic>=2.7
+pymavlink>=2.4
