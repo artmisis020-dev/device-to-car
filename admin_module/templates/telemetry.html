@@ -440,6 +440,9 @@
               <div class="stick-bar-track"><div class="stick-bar-fill" id="axYaw"></div></div>
             </div>
           </div>
+          <div class="d-flex gap-2 mt-2 small text-muted">
+            AUX: <span id="aux1" class="badge badge-gamepad-off">1</span><span id="aux2" class="badge badge-gamepad-off">2</span><span id="aux3" class="badge badge-gamepad-off">3</span><span id="aux4" class="badge badge-gamepad-off">4</span>
+          </div>
           <div class="d-flex flex-wrap gap-1 mt-2">
             <button id="btnToggleControl" class="btn btn-sm btn-outline-danger" onclick="toggleControl()" disabled title="Стіки напряму керують дроном по RC_CHANNELS_OVERRIDE, поки увімкнено">▶ Керування</button>
             <button id="btnArm" class="btn btn-sm btn-outline-danger" onclick="sendFcCommand('ARM', 'Озброїти дрон (ARM)?')">Arm</button>
@@ -943,6 +946,16 @@
     return [gp.axes[0] || 0, gp.axes[1] || 0, gp.axes[2] || 0, gp.axes[3] || 0];
   }
 
+  const AUX_BUTTON_INDICES = [0, 1, 2, 3];
+
+  function readGamepadButtons() {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    if (gamepadIndex === null) return null;
+    const gp = pads[gamepadIndex];
+    if (!gp) return null;
+    return gp.buttons.map(b => (typeof b === 'object' ? b.value : b));
+  }
+
   function setStickBar(id, value) {
     const fill = document.getElementById(id);
     const pct = Math.max(-1, Math.min(1, value)) * 50;
@@ -969,6 +982,14 @@
       setStickBar('axPitch', -axes[3]);
       setStickBar('axThrottle', -axes[1]);
       setStickBar('axYaw', axes[0]);
+    }
+    const buttons = readGamepadButtons();
+    if (buttons) {
+      AUX_BUTTON_INDICES.forEach((btnIdx, auxNum) => {
+        const el = document.getElementById('aux' + (auxNum + 1));
+        const pressed = (buttons[btnIdx] || 0) > 0.5;
+        el.className = 'badge ' + (pressed ? 'badge-gamepad-on' : 'badge-gamepad-off');
+      });
     }
     requestAnimationFrame(gamepadLoop);
   }
@@ -1026,10 +1047,11 @@
       await stopControl();
       return;
     }
+    const buttons = readGamepadButtons() || [];
     try {
       await fetch('/api/devices/' + DEVICE_ID + '/control/stick', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ axes })
+        body: JSON.stringify({ axes, buttons })
       });
     } catch (e) {
       console.error('stick send failed', e);
