@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 
 from flask import current_app
+import requests
 
 from ..helpers import is_valid, now_str
 from . import repository
@@ -227,20 +228,44 @@ def get_device_detail(device_id):
     }
 
 
-def queue_fc_command(device_id, command, payload=None, note=""):
-    device = repository.get_device(device_id)
-    if not device:
-        return {"error": "unknown device"}, 404
+def _device_manager_base_urls(device_id):
+    row = repository.get_device(device_id)
+    if not row:
+        return [], {"error": "device not found"}, 404
 
-    command = str(command or "").strip().upper()
-    if command not in {"ARM", "DISARM", "RTL", "LOITER", "TAKEOFF"}:
-        return {"error": "unsupported command"}, 400
+    urls = []
+    ip = str(row["ip"] or "").strip()
+    if ip:
+        urls.append(f"http://{ip}:9070")
 
-    payload_text = None if payload is None else json.dumps(payload, separators=(",", ":"))
-    now = now_str()
-    repository.insert_fc_command(device_id, command, payload_text, now, now, note)
-    return {"status": "queued", "command": command, "device_id": device_id}, 200
+    hostname = str(row["hostname"] or "").strip()
+    if hostname:
+        urls.append(f"http://{hostname}.local:9070")
+
+    seen = set()
+    unique_urls = []
+    for url in urls:
+        if url not in seen:
+            seen.add(url)
+            unique_urls.append(url)
+
+    if not unique_urls:
+        return [], {"error": "device manager address not found"}, 404
+
+    return unique_urls, None, 200
 
 
-def list_fc_commands(device_id, limit=25):
-    return repository.list_fc_commands(device_id, limit=limit)
+def restart_mavlink(device_id):
+    base_urls, error, status = _device_manager_base_urls(device_id)
+    if error:
+        return error, status
+
+    errors = []
+    for base_url in base_urls:
+        try:
+            response = requests.post(f"{base_url}/api/v1/services/mavlink_router/restart", timeout=30)
+            payload = response.json() if response.content else {}
+            return payload, response.status_code
+        except Exception as exc:
+            errors.append(f"{base_url}: {exc}")
+    return {"error": "mavlink restart failed", "detail": "; ".join(errors)}, 502

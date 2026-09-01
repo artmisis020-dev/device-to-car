@@ -19,7 +19,10 @@ from collections import deque
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL    = 5.0    # seconds between flow-detection checks
-BATCH_INTERVAL   = 2.0    # seconds between telemetry batch sends
+BATCH_INTERVAL   = 0.2    # seconds between telemetry batch sends — kept short
+                          # so the admin's live SSE view feels real-time; the
+                          # server-side DB write is just a logging trail now,
+                          # not the pilot's delivery path.
 BATCH_MAX_SIZE   = 500    # max messages per HTTP POST
 QUEUE_MAXLEN     = 5000   # in-memory buffer (~10s at 500 msg/s)
 NO_DATA_TIMEOUT  = 30.0   # seconds without MAVLink before auto-stop

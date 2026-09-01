@@ -19,5 +19,10 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=video-streamer
 
+Environment=RECORD_ENABLED=1
+Environment=RECORD_SEGMENT_SEC=60
+Environment=RECORD_MIN_FREE_MB=50
+# Environment=RECORD_DIR=/opt/sirena-video/recordings/local
+
 [Install]
 WantedBy=multi-user.target

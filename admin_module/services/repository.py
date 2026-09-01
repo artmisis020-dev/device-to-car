@@ -175,12 +175,22 @@ def get_hostname(device_id):
 
 def insert_fc_command(device_id, command, payload, created_at, updated_at, note=""):
     with get_db() as db:
-        db.execute(
+        cur = db.execute(
             """
             INSERT INTO fc_commands (device_id, command, payload, status, created_at, updated_at, note)
             VALUES (?, ?, ?, 'queued', ?, ?, ?)
             """,
             (device_id, command, payload, created_at, updated_at, note),
+        )
+        db.commit()
+        return cur.lastrowid
+
+
+def update_fc_command_status(command_id, status, updated_at, note=""):
+    with get_db() as db:
+        db.execute(
+            "UPDATE fc_commands SET status=?, updated_at=?, note=? WHERE id=?",
+            (status, updated_at, note, command_id),
         )
         db.commit()
 

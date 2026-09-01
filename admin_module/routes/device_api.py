@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 
 from ..helpers import json_body, parse_int, require_admin
-from ..services import device_service
+from ..services import control_service, device_service
 
 
 device_api_bp = Blueprint("device_api", __name__)
@@ -68,17 +68,45 @@ def api_delete(device_id):
     return jsonify(payload), status
 
 
+@device_api_bp.route("/api/devices/<device_id>/mavlink/restart", methods=["POST"])
+@require_admin
+def api_mavlink_restart(device_id):
+    payload, status = device_service.restart_mavlink(device_id)
+    return jsonify(payload), status
+
+
 @device_api_bp.route("/api/devices/<device_id>/commands", methods=["GET", "POST"])
 @require_admin
 def api_device_commands(device_id):
     if request.method == "GET":
-        return jsonify(device_service.list_fc_commands(device_id))
+        return jsonify(control_service.list_commands(device_id))
 
     payload = json_body()
-    result, status = device_service.queue_fc_command(
+    result, status = control_service.send_command(
         device_id,
         payload.get("command", ""),
         payload.get("payload"),
-        payload.get("note", ""),
     )
+    return jsonify(result), status
+
+
+@device_api_bp.route("/api/devices/<device_id>/control/enable", methods=["POST"])
+@require_admin
+def api_control_enable(device_id):
+    result, status = control_service.enable_control(device_id)
+    return jsonify(result), status
+
+
+@device_api_bp.route("/api/devices/<device_id>/control/stick", methods=["POST"])
+@require_admin
+def api_control_stick(device_id):
+    body = json_body()
+    result, status = control_service.update_stick(device_id, body.get("axes", []), body.get("buttons", []))
+    return jsonify(result), status
+
+
+@device_api_bp.route("/api/devices/<device_id>/control/disable", methods=["POST"])
+@require_admin
+def api_control_disable(device_id):
+    result, status = control_service.disable_control(device_id)
     return jsonify(result), status

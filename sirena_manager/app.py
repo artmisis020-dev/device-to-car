@@ -49,6 +49,10 @@ def create_app() -> Flask:
     def restart_service(name: str):
         return jsonify(supervisor.restart_service(name))
 
+    @app.post("/api/v1/video/restart")
+    def restart_video():
+        return jsonify(supervisor.restart_video_chain())
+
     @app.post("/api/v1/bootstrap/start")
     def start_bootstrap():
         return jsonify(supervisor.start_boot_sequence())

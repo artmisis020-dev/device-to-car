@@ -10,6 +10,7 @@ import os
 import shlex
 import socket
 import subprocess
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -29,6 +30,7 @@ from .config import (
     TELEMETRY_SNAPSHOT_PATH,
     VIDEO_STREAMER_UNIT,
     VIDEO_STATUS_UNIT,
+    WEBRTC_CAMERA_UNIT,
     ServiceDefinition,
 )
 
@@ -140,6 +142,43 @@ class SirenaSupervisor:
         if not stop_result.get("success") and stop_result.get("error"):
             return stop_result
         return self.start_service(name)
+
+    def restart_video_chain(self) -> Dict:
+        """Перезапускає весь відео-ланцюг: video_manager -> video_relay -> video_streamer.
+
+        Спершу зупиняє webrtc_camera, бо він конкурує за той самий пристрій камери
+        з video_streamer (одночасне утримання /dev/videoN призводить до "device busy").
+        """
+        self._run_systemctl("stop", WEBRTC_CAMERA_UNIT, timeout=15)
+        time.sleep(2)
+
+        results: List[Dict] = []
+        for name in ("video_manager", "video_relay"):
+            result = self.restart_service(name)
+            if not result.get("success"):
+                # systemd інколи звітує "Job canceled" через накладання з власним
+                # Restart=on-failure юніта (video-relay буває тримає SIGTERM до ~20с
+                # через graceful shutdown), хоча за 15-20с сервіс сам стає active.
+                # Опитуємо статус, перш ніж визнавати крок провальним.
+                for _ in range(8):
+                    time.sleep(3)
+                    result = self.service_status(name)
+                    if result.get("active"):
+                        break
+                result["success"] = result.get("active", False)
+            results.append(result)
+            if not result.get("success"):
+                return {"success": False, "failed_at": name, "results": results}
+            time.sleep(2)
+
+        restart = self._run_systemctl("restart", VIDEO_STREAMER_UNIT, timeout=20)
+        streamer_status = self.service_status("video_streamer")
+        streamer_status["success"] = restart.returncode == 0
+        if restart.returncode != 0:
+            streamer_status["error"] = restart.stderr.strip() or restart.stdout.strip()
+        results.append(streamer_status)
+
+        return {"success": restart.returncode == 0, "results": results}
 
     def ensure_registered(self) -> Dict:
         payload = {

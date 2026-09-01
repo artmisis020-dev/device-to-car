@@ -198,6 +198,22 @@ def cameras(device_id):
     return {"error": "camera manager unavailable", "detail": "; ".join(errors)}, 502
 
 
+def restart_video(device_id):
+    base_urls, error, status = _device_manager_base_urls(device_id)
+    if error:
+        return error, status
+
+    errors = []
+    for base_url in base_urls:
+        try:
+            response = requests.post(f"{base_url}/api/v1/video/restart", timeout=30)
+            payload = response.json() if response.content else {}
+            return payload, response.status_code
+        except Exception as exc:
+            errors.append(f"{base_url}: {exc}")
+    return {"error": "video restart failed", "detail": "; ".join(errors)}, 502
+
+
 def switch_camera(device_id, camera_path):
     camera_path = str(camera_path or "").strip()
     if not camera_path:

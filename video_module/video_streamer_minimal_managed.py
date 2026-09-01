@@ -3,9 +3,11 @@
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import gi
@@ -16,7 +18,6 @@ from gi.repository import GLib, Gst
 
 Gst.init(None)
 
-
 _CONFIGURED_VIDEO_DEVICE = os.environ.get("VIDEO_DEVICE", "/dev/video0")
 VIDEO_DEVICE = resolve_video_device(_CONFIGURED_VIDEO_DEVICE)
 
@@ -24,7 +25,7 @@ print(f"[INFO] Використовується відеопристрій: {VID
 
 if VIDEO_DEVICE != _CONFIGURED_VIDEO_DEVICE:
     print(f"[WARN] VIDEO_DEVICE={_CONFIGURED_VIDEO_DEVICE} не знайдено, використовую {VIDEO_DEVICE}", flush=True)
-    
+
 if not os.path.exists(VIDEO_DEVICE):
     available = ", ".join(video_nodes()) or "немає"
     raise RuntimeError(
@@ -90,6 +91,48 @@ if H264_PROFILE not in _H264_PROFILE_MAP:
     print(f"[WARN] Invalid H264_PROFILE={H264_PROFILE}, using main", flush=True)
     H264_PROFILE = "main"
 
+# ─── Локальний запис відео ────────────────────────────────────────────────────
+# RECORD_ENABLED=1 — увімкнути запис на диск (паралельно зі стрімом)
+# RECORD_DIR — куди писати файли
+# RECORD_SEGMENT_SEC — тривалість одного файлу-сегмента (сек). Сегментація
+#                           важлива: при раптовому вимкненні живлення втрачається
+#                           лише поточний сегмент, а не весь запис.
+# RECORD_MIN_FREE_MB — мінімум вільного місця; якщо менше — старі сегменти
+#                           видаляються перед стартом (0 = не чистити)
+RECORD_ENABLED = os.environ.get("RECORD_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
+RECORD_DIR = os.environ.get("RECORD_DIR", "/opt/sirena-video/recordings/local").rstrip("/")
+RECORD_SEGMENT_SEC = max(5, env_int("RECORD_SEGMENT_SEC", 60))
+RECORD_MIN_FREE_MB = env_int("RECORD_MIN_FREE_MB", 500)
+
+
+def prepare_record_dir() -> str:
+    """Створює папку сесії з міткою часу і за потреби чистить старі записи."""
+    session = time.strftime("%Y-%m-%d_%H-%M-%S")
+    session_dir = os.path.join(RECORD_DIR, session)
+    os.makedirs(session_dir, exist_ok=True)
+
+    if RECORD_MIN_FREE_MB > 0:
+        try:
+            st = os.statvfs(RECORD_DIR)
+            free_mb = st.f_bavail * st.f_frsize // (1024 * 1024)
+            if free_mb < RECORD_MIN_FREE_MB:
+                # Видаляємо найстаріші сесії, поки не звільниться місце
+                sessions = sorted(
+                    d for d in os.listdir(RECORD_DIR)
+                    if os.path.isdir(os.path.join(RECORD_DIR, d)) and d != session
+                )
+                for old in sessions:
+                    shutil.rmtree(os.path.join(RECORD_DIR, old), ignore_errors=True)
+                    st = os.statvfs(RECORD_DIR)
+                    free_mb = st.f_bavail * st.f_frsize // (1024 * 1024)
+                    print(f"[REC] Видалено стару сесію {old}, вільно {free_mb} MB", flush=True)
+                    if free_mb >= RECORD_MIN_FREE_MB:
+                        break
+        except Exception as exc:
+            print(f"[WARN] Не вдалось перевірити/звільнити місце: {exc}", flush=True)
+
+    return session_dir
+
 # ultrafast/superfast/veryfast/... — швидші пресети не додають затримки
 # (без lookahead/B-frames), лише гірша якість/бітрейт-ефективність за
 # той самий CPU-бюджет.
@@ -98,7 +141,7 @@ X264_SPEED_PRESET = os.environ.get("X264_SPEED_PRESET", "superfast").strip().low
 V4L2_IO_MODE = os.environ.get("V4L2_IO_MODE", os.environ.get("SIRENA_V4L2_IO_MODE", "rw")).strip().lower()
 
 
-if not SIRENA_RELAY_TARGET:
+if not SIRENA_RELAY_TARGET and not RECORD_ENABLED:
     # Без цілі ретрансляції стрімити нікуди. Виходимо чисто (exit 0), щоб
     # Restart=on-failure не крутив crash-loop до StartLimitBurst і юніт не
     # лягав у failed; video-relay сам рестартне сервіс, коли запише
@@ -177,8 +220,42 @@ def create_pipeline_string() -> str:
         "capsfilter caps=\"video/x-raw,format=I420\" ! "
         f"{encoder_chain} ! "
         "h264parse config-interval=1 ! "
-        f"rtspclientsink location=\"{SIRENA_RELAY_TARGET}\" protocols=udp latency=0"
+        f"{build_sink_chain()}"
     )
+
+
+def build_sink_chain() -> str:
+    """Кінець пайплайна: стрім, запис"""
+    branches = []
+
+    if SIRENA_RELAY_TARGET:
+        branches.append(
+            "queue max-size-buffers=0 max-size-bytes=0 max-size-time=1000000000 ! "
+            f"rtspclientsink location=\"{SIRENA_RELAY_TARGET}\" protocols=udp latency=0"
+        )
+
+    if RECORD_ENABLED:
+        session_dir = prepare_record_dir()
+        location = os.path.join(session_dir, "seg_%05d.mp4")
+        print(f"[REC] Запис увімкнено -> {location} (сегменти по {RECORD_SEGMENT_SEC}s)", flush=True)
+        branches.append(
+            "queue max-size-buffers=0 max-size-bytes=0 max-size-time=3000000000 ! "
+            "h264parse ! "
+            "splitmuxsink name=recsink async-finalize=true "
+            f"location=\"{location}\" "
+            f"max-size-time={RECORD_SEGMENT_SEC * 1_000_000_000} "
+            "muxer-factory=mp4mux"
+        )
+
+    if len(branches) == 1:
+        return branches[0]
+
+    # Обидві гілки: tee розгалужує один H.264 потік на стрім і на запис.
+    return (
+            "tee name=out_tee "
+            + " ".join(f"out_tee. ! {b}" for b in branches)
+    )
+
 
 class BusMessageHandler:
     def __init__(self, loop: GLib.MainLoop, pipeline: Gst.Element, runtime_state):

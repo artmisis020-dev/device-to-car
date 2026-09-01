@@ -50,6 +50,13 @@ def api_video_get_stream(device_id):
     }), 200
 
 
+@video_api_bp.route("/api/devices/<device_id>/video/restart", methods=["POST"])
+@require_admin
+def api_video_restart(device_id):
+    payload, status = video_service.restart_video(device_id)
+    return jsonify(payload), status
+
+
 @video_api_bp.route("/api/video/<device_id>/cameras", methods=["GET"])
 @require_admin
 def api_video_cameras(device_id):
