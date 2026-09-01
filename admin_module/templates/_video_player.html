@@ -50,6 +50,13 @@
     color:var(--sirena-text); background:rgba(0,0,0,.45); text-align:center; padding:1rem;
   }
   .svp-overlay.hidden { display:none; }
+  .svp-settings-row {
+    display:flex; gap:.5rem; align-items:center; flex-wrap:wrap;
+    padding:.5rem .8rem; border-top:1px solid var(--sirena-border);
+  }
+  .svp-compact .svp-settings-row { padding:.4rem .6rem; gap:.35rem; }
+  .svp-compact .svp-settings-row select,
+  .svp-compact .svp-settings-row input { font-size:.8rem; padding:.15rem .35rem; }
   .svp-stats-grid {
     display:grid; grid-template-columns:repeat(6, minmax(110px,1fr)); gap:1px;
     background:var(--sirena-border); border-top:1px solid var(--sirena-border);
@@ -89,6 +96,15 @@
   <div class="svp-video-shell">
     <video id="svpVideo" class="svp-video" autoplay playsinline muted controls></video>
     <div id="svpOverlay" class="svp-overlay">Очікування WebRTC стріму...</div>
+  </div>
+  <div class="svp-settings-row">
+    <span class="svp-camera-label">Якість:</span>
+    <input id="svpFps" type="number" min="1" max="60" class="form-control form-control-sm" style="width:70px" title="FPS" placeholder="FPS">
+    <input id="svpBitrate" type="number" min="100" class="form-control form-control-sm" style="width:95px" title="Бітрейт, kbps" placeholder="kbps">
+    <input id="svpWidth" type="number" min="1" class="form-control form-control-sm" style="width:85px" title="Ширина" placeholder="W">
+    <input id="svpHeight" type="number" min="1" class="form-control form-control-sm" style="width:85px" title="Висота" placeholder="H">
+    <button id="svpApplySettings" class="btn btn-sm btn-outline-info" type="button">Застосувати</button>
+    <span id="svpSettingsStatus" class="svp-camera-label"></span>
   </div>
   <div class="svp-stats-grid">
     <div class="svp-stat"><div class="svp-stat-label">З'єднання</div><div class="svp-stat-value" id="svpStatConn">-</div></div>
@@ -352,6 +368,60 @@
     }
   }
 
+  let applyingSettings = false;
+
+  async function loadVideoSettings() {
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/video/settings`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'unavailable');
+      if (el('svpMode')) el('svpMode').value = data.mode || 'srt';
+      if (el('svpFps')) el('svpFps').value = data.fps ?? '';
+      if (el('svpBitrate')) el('svpBitrate').value = data.bitrate ?? '';
+      if (el('svpWidth')) el('svpWidth').value = data.width ?? '';
+      if (el('svpHeight')) el('svpHeight').value = data.height ?? '';
+    } catch (err) {
+      setText('svpSettingsStatus', 'Налаштування недоступні');
+    }
+  }
+
+  async function applyVideoSettings() {
+    if (applyingSettings) return;
+    applyingSettings = true;
+    const btn = el('svpApplySettings');
+    if (btn) btn.disabled = true;
+    setText('svpSettingsStatus', 'Застосування...');
+
+    const body = {
+      mode: el('svpMode')?.value,
+      fps: el('svpFps')?.value ? Number(el('svpFps').value) : null,
+      bitrate: el('svpBitrate')?.value ? Number(el('svpBitrate').value) : null,
+      width: el('svpWidth')?.value ? Number(el('svpWidth').value) : null,
+      height: el('svpHeight')?.value ? Number(el('svpHeight').value) : null,
+    };
+
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/video/settings`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok || data.success === false) {
+        throw new Error((data.applied && data.applied.error) || data.error || `HTTP ${res.status}`);
+      }
+      setText('svpSettingsStatus', 'Стрім перепідключається...');
+      stopPeer();
+      setTimeout(connectStream, 3000);
+      setTimeout(() => setText('svpSettingsStatus', ''), 6000);
+    } catch (err) {
+      setText('svpSettingsStatus', 'Помилка: ' + err.message);
+    } finally {
+      applyingSettings = false;
+      if (btn) btn.disabled = false;
+    }
+  }
+
   function stopPeer() {
     if (statsTimer) clearInterval(statsTimer);
     statsTimer = null;
@@ -430,9 +500,11 @@
 
   el('svpReconnect')?.addEventListener('click', connectStream);
   el('svpRecord')?.addEventListener('click', toggleRecord);
+  el('svpApplySettings')?.addEventListener('click', applyVideoSettings);
   window.addEventListener('beforeunload', stopPeer);
   syncRecordState();
   loadCameras();
+  loadVideoSettings();
   connectStream();
   if (!compact) setInterval(syncRecordState, 5000);
   if (!compact) setInterval(loadCameras, 10000);

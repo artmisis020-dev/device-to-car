@@ -69,3 +69,17 @@ def api_video_cameras(device_id):
 def api_video_switch_camera(device_id):
     payload, status = video_service.switch_camera(device_id, json_body().get("camera", ""))
     return jsonify(payload), status
+
+
+@video_api_bp.route("/api/devices/<device_id>/video/settings", methods=["GET"])
+@require_admin
+def api_video_get_settings(device_id):
+    payload, status = video_service.get_video_settings(device_id)
+    return jsonify(payload), status
+
+
+@video_api_bp.route("/api/devices/<device_id>/video/settings", methods=["POST"])
+@require_admin
+def api_video_set_settings(device_id):
+    payload, status = video_service.set_video_settings(device_id, json_body())
+    return jsonify(payload), status

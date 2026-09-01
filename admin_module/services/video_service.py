@@ -155,7 +155,7 @@ def whep_url(device_id):
     return f"{stream.rstrip('/')}/whep"
 
 
-def _device_manager_base_urls(device_id):
+def _device_manager_base_urls(device_id, port=9070):
     row = repository.get_device(device_id)
     if not row:
         return [], {"error": "device not found"}, 404
@@ -163,11 +163,11 @@ def _device_manager_base_urls(device_id):
     urls = []
     ip = str(row["ip"] or "").strip()
     if ip:
-        urls.append(f"http://{ip}:9070")
+        urls.append(f"http://{ip}:{port}")
 
     hostname = str(row["hostname"] or "").strip()
     if hostname:
-        urls.append(f"http://{hostname}.local:9070")
+        urls.append(f"http://{hostname}.local:{port}")
 
     seen = set()
     unique_urls = []
@@ -236,3 +236,48 @@ def switch_camera(device_id, camera_path):
         except Exception as exc:
             errors.append(f"{base_url}: {exc}")
     return {"error": "camera switch failed", "detail": "; ".join(errors)}, 502
+
+
+# ─── Живі налаштування якості (video-service-manager, порт 9000) ─────────────
+# Окремий сервіс від sirena_manager (порт 9070) вище — саме video-service-manager
+# читає/пише sirena_video_config.json, звідки capture_relay/video_streamer
+# беруть fps/bitrate/roздільність.
+
+def get_video_settings(device_id):
+    base_urls, error, status = _device_manager_base_urls(device_id, port=9000)
+    if error:
+        return error, status
+
+    errors = []
+    for base_url in base_urls:
+        try:
+            response = requests.get(f"{base_url}/api/v1/config", timeout=5)
+            response.raise_for_status()
+            return response.json(), 200
+        except Exception as exc:
+            errors.append(f"{base_url}: {exc}")
+    return {"error": "video manager unavailable", "detail": "; ".join(errors)}, 502
+
+
+def set_video_settings(device_id, payload):
+    allowed = {"mode", "fps", "bitrate", "width", "height"}
+    body = {k: v for k, v in (payload or {}).items() if k in allowed and v is not None}
+    if not body:
+        return {"error": "no settings provided"}, 400
+
+    base_urls, error, status = _device_manager_base_urls(device_id, port=9000)
+    if error:
+        return error, status
+
+    errors = []
+    for base_url in base_urls:
+        try:
+            # Застосування рестартує активний відео-юніт на пристрої — може
+            # тривати кілька секунд, поки video-service-manager зупиняє інший
+            # режим і піднімає потрібний.
+            response = requests.post(f"{base_url}/api/v1/config", json=body, timeout=30)
+            payload_out = response.json() if response.content else {}
+            return payload_out, response.status_code
+        except Exception as exc:
+            errors.append(f"{base_url}: {exc}")
+    return {"error": "video settings update failed", "detail": "; ".join(errors)}, 502

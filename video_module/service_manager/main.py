@@ -99,8 +99,12 @@ async def get_config(request):
 
 
 async def set_config(request):
-    MANAGER.set_config(await request.json())
-    return web.json_response({"success": True, "config": MANAGER.get_config()})
+    applied = MANAGER.set_config(await request.json())
+    return web.json_response({
+        "success": bool(applied.get("success")),
+        "config": MANAGER.get_config(),
+        "applied": applied,
+    })
 
 
 async def get_status(request):

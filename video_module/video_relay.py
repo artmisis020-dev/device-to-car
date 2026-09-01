@@ -7,8 +7,8 @@ Auto-detects camera presence locally — no server polling required.
   Camera removed → stops relay automatically
   State re-reported every poll cycle to keep server DB in sync.
 
-  SRT mode        → writes env file (rtsp:// target) + restarts video-streamer
-  SRT Relay mode  → writes env file (srt:// target) + restarts srt-relay-capture
+  Пише env-файл з SRT-таргетом і рестартує srt-relay-capture.service —
+  єдиний відео-шлях (WebRTC та RTSP-relay через video-streamer прибрані).
 
 Runs as root (systemd service) so it can manage services and write /etc/default/.
 """
@@ -39,17 +39,12 @@ _UNSAFE_STREAM_CHARS = re.compile(r"[^A-Za-z0-9_.-]+")
 ADMIN_SERVER_URL  = os.environ.get("SIRENA_ADMIN_SERVER_URL", "http://127.0.0.1:8080").rstrip("/")
 REGISTRY_URL      = ADMIN_SERVER_URL
 SERVER_SRT_HOST   = os.environ.get("SIRENA_SRT_HOST", "10.0.0.1")
-# Різні протоколи -> різні порти на mediamtx (rtspAddress/srtAddress у
-# mediamtx.yml). Раніше це була одна спільна змінна -- коректна лише для
-# того режиму, чий порт випадково збігався зі значенням в .env.
-SERVER_RTSP_PORT  = int(os.environ.get("SIRENA_RTSP_PORT", "8554"))
 SERVER_SRT_PORT   = int(os.environ.get("SIRENA_SRT_PORT", "8890"))
 SRT_LATENCY_MS    = int(os.environ.get("SRT_LATENCY_MS", "200"))
 POLL_INTERVAL     = float(os.environ.get("SIRENA_VIDEO_RELAY_POLL_INTERVAL", "5.0"))
 REPORT_EVERY      = 12
 
 RELAY_ENV_FILE    = "/etc/default/sirena-relay"
-VIDEO_MANAGER_URL = "http://localhost:9000/api/v1/config"
 
 # ─── Device ID ────────────────────────────────────────────────────────────────
 def _get_device_id() -> str:
@@ -108,59 +103,22 @@ def _report_to_server(device_id: str, active: bool):
         logger.debug(f"Server report error (non-fatal): {e}")
 
 
-def _get_current_mode(fallback: str = "srt") -> str:
-    """Питає режим у video-service-manager; якщо той недоступний — повертає
-    fallback (останній відомий режим), щоб тимчасовий рестарт менеджера не
-    перемикав relay наосліп і не вбивав робочий стрім."""
-    try:
-        req = urllib.request.Request(VIDEO_MANAGER_URL, method="GET")
-        with urllib.request.urlopen(req, timeout=3) as r:
-            data = json.loads(r.read().decode())
-            return data.get("mode", fallback)
-    except Exception as e:
-        logger.debug(f"Video manager unreachable, keeping mode '{fallback}': {e}")
-        return fallback
-
-
-# ─── SRT relay ────────────────────────────────────────────────────────────────
-def _restart_video_streamer():
+# ─── SRT relay capture ──────────────────────────────────────────────────────
+def _restart_srt_relay_capture():
     # reset-failed знімає rate-limit лічильник: якщо юніт встиг влетіти у
     # StartLimitBurst і стан failed, звичайний restart його вже не підніме.
     #
     # timeout тут критичний: цей виклик буває синхронно всередині SIGTERM-
-    # обробника relay (_cleanup). Без таймауту повільний/завислий restart
-    # video-streamer блокує сам relay від завершення, і systemd врешті вбиває
-    # весь cgroup через TimeoutStopSec (~90с) замість штатної зупинки.
+    # обробника relay (_cleanup). Без таймауту завислий restart тримає
+    # relay від завершення, і systemd вбиває весь cgroup через
+    # TimeoutStopSec (~90с) замість штатної зупинки.
     try:
-        subprocess.run(["systemctl", "reset-failed", "video-streamer"],
+        subprocess.run(["systemctl", "reset-failed", "srt-relay-capture"],
                        check=False, capture_output=True, timeout=10)
-        subprocess.run(["systemctl", "restart", "video-streamer"],
+        subprocess.run(["systemctl", "restart", "srt-relay-capture"],
                        check=False, timeout=15)
     except subprocess.TimeoutExpired:
-        logger.warning("Тайм-аут systemctl restart video-streamer — продовжуємо без очікування")
-
-
-def _enable_srt_relay(stream_name: str):
-    target = f"rtsp://{SERVER_SRT_HOST}:{SERVER_RTSP_PORT}/{stream_name}"
-    Path(RELAY_ENV_FILE).write_text(f'SIRENA_RELAY_TARGET="{target}"\n')
-    _restart_video_streamer()
-    logger.info(f"[RTSP] Relay enabled -> {target}")
-
-
-def _disable_srt_relay():
-    try:
-        Path(RELAY_ENV_FILE).unlink(missing_ok=True)
-    except Exception:
-        pass
-    _restart_video_streamer()
-    logger.info("[SRT] Relay disabled")
-
-
-# ─── SRT relay capture ──────────────────────────────────────────────────────
-def _restart_srt_relay_capture():
-    subprocess.run(["systemctl", "reset-failed", "srt-relay-capture"],
-                   check=False, capture_output=True)
-    subprocess.run(["systemctl", "restart", "srt-relay-capture"], check=False)
+        logger.warning("Тайм-аут systemctl restart srt-relay-capture — продовжуємо без очікування")
 
 
 def _enable_srt_relay_capture(stream_name: str):
@@ -185,16 +143,13 @@ def main():
     device_id    = _get_device_id()
     stream_name  = _get_stream_name()
     active       = False
-    last_mode: str | None = None
     poll_count   = 0
 
     logger.info(f"Video Relay started (auto-mode) — device={device_id[:12]}… stream={stream_name}")
 
     def _cleanup(sig, frame):
         logger.info("Shutting down relay…")
-        if last_mode == "srt":
-            _disable_srt_relay()
-        elif last_mode == "srt-relay":
+        if active:
             _disable_srt_relay_capture()
         _report_to_server(device_id, False)
         sys.exit(0)
@@ -204,46 +159,23 @@ def main():
 
     while True:
         should_relay = _camera_available()
-        current_mode = _get_current_mode(last_mode or "srt")
         poll_count  += 1
 
         # ── Activate ─────────────────────────────────────────────────────────
         if should_relay and not active:
-            logger.info(f"▶ Camera detected — starting relay (mode={current_mode})")
-            if current_mode == "srt":
-                _enable_srt_relay(stream_name)
-            else:
-                _enable_srt_relay_capture(stream_name)
-            active    = True
-            last_mode = current_mode
+            logger.info("▶ Camera detected — starting relay")
+            _enable_srt_relay_capture(stream_name)
+            active     = True
             _report_to_server(device_id, True)
             poll_count = 0
 
         # ── Deactivate ───────────────────────────────────────────────────────
         elif not should_relay and active:
             logger.info("⏹ Camera gone — stopping relay")
-            if last_mode == "srt":
-                _disable_srt_relay()
-            else:
-                _disable_srt_relay_capture()
-            active    = False
-            last_mode = None
+            _disable_srt_relay_capture()
+            active     = False
             _report_to_server(device_id, False)
             poll_count = 0
-
-        # ── Mode switched ─────────────────────────────────────────────────────
-        elif active and current_mode != last_mode:
-            logger.info(f"Mode switched {last_mode}→{current_mode}")
-            if last_mode == "srt":
-                _disable_srt_relay()
-            else:
-                _disable_srt_relay_capture()
-            time.sleep(2)
-            if current_mode == "srt":
-                _enable_srt_relay(stream_name)
-            else:
-                _enable_srt_relay_capture(stream_name)
-            last_mode = current_mode
 
         # ── Periodic re-report to keep DB in sync ────────────────────────────
         elif poll_count % REPORT_EVERY == 0:

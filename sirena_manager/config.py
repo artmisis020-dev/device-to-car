@@ -16,7 +16,6 @@ WG_INTERFACES = tuple(
     for iface in os.environ.get("SIRENA_WG_INTERFACES", "wg0,Gerbera").split(",")
     if iface.strip()
 )
-VIDEO_STATUS_UNIT = "video-streamer.service"
 MAVLINK_ROUTER_UNIT = "mavlink-router.service"
 TELEMETRY_SENDER_UNIT = "telemetry-sender.service"
 FIRE_DEVICE_STATUS_UNIT = "fire-device-status.service"
@@ -24,8 +23,10 @@ CRSF_BRIDGE_UNIT = "crsf-bridge.service"
 NAVIGATION_UNIT = "sirena-gps-hub.service"
 VIDEO_MANAGER_UNIT = "video-service-manager.service"
 VIDEO_RELAY_UNIT = "video-relay.service"
-WEBRTC_CAMERA_UNIT = "webrtc-camera.service"
-VIDEO_STREAMER_UNIT = "video-streamer.service"
+# Єдиний відео-шлях: нативний GStreamer SRT-relay capture. WebRTC
+# (webrtc-camera.service) і RTSP-relay (video-streamer.service) видалені
+# повністю — конкурента за /dev/videoN більше нема.
+SRT_RELAY_CAPTURE_UNIT = "srt-relay-capture.service"
 ROOT_ENV_PATH = os.environ.get("SIRENA_ROOT_ENV_PATH", "/opt/sirena/.env")
 TELEMETRY_SNAPSHOT_PATH = os.environ.get("SIRENA_TELEMETRY_SNAPSHOT_PATH", "/tmp/sirena_mavlink_snapshot.json")
 
@@ -79,17 +80,10 @@ SERVICES = {
         units=(VIDEO_RELAY_UNIT,),
         depends_on=("video_manager",),
     ),
-    "webrtc_camera": ServiceDefinition(
-        name="webrtc_camera",
-        label="WebRTC Camera",
-        units=(WEBRTC_CAMERA_UNIT,),
-        depends_on=("video_relay",),
-        controllable=False,
-    ),
-    "video_streamer": ServiceDefinition(
-        name="video_streamer",
-        label="SRT Video Streamer",
-        units=(VIDEO_STREAMER_UNIT,),
+    "srt_relay_capture": ServiceDefinition(
+        name="srt_relay_capture",
+        label="SRT Relay Capture",
+        units=(SRT_RELAY_CAPTURE_UNIT,),
         depends_on=("video_relay",),
         controllable=False,
     ),

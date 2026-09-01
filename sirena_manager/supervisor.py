@@ -28,9 +28,7 @@ from .config import (
     SIRENA_VERSION,
     SYSTEMCTL,
     TELEMETRY_SNAPSHOT_PATH,
-    VIDEO_STREAMER_UNIT,
-    VIDEO_STATUS_UNIT,
-    WEBRTC_CAMERA_UNIT,
+    SRT_RELAY_CAPTURE_UNIT,
     ServiceDefinition,
 )
 
@@ -144,14 +142,12 @@ class SirenaSupervisor:
         return self.start_service(name)
 
     def restart_video_chain(self) -> Dict:
-        """Перезапускає весь відео-ланцюг: video_manager -> video_relay -> video_streamer.
+        """Перезапускає весь відео-ланцюг: video_manager -> video_relay -> srt_relay_capture.
 
-        Спершу зупиняє webrtc_camera, бо він конкурує за той самий пристрій камери
-        з video_streamer (одночасне утримання /dev/videoN призводить до "device busy").
+        Єдиний відео-шлях (WebRTC і RTSP-relay видалені) — конкурента за
+        /dev/videoN більше нема, окремо нічого зупиняти перед рестартом не
+        треба.
         """
-        self._run_systemctl("stop", WEBRTC_CAMERA_UNIT, timeout=15)
-        time.sleep(2)
-
         results: List[Dict] = []
         for name in ("video_manager", "video_relay"):
             result = self.restart_service(name)
@@ -171,8 +167,8 @@ class SirenaSupervisor:
                 return {"success": False, "failed_at": name, "results": results}
             time.sleep(2)
 
-        restart = self._run_systemctl("restart", VIDEO_STREAMER_UNIT, timeout=20)
-        streamer_status = self.service_status("video_streamer")
+        restart = self._run_systemctl("restart", SRT_RELAY_CAPTURE_UNIT, timeout=20)
+        streamer_status = self.service_status("srt_relay_capture")
         streamer_status["success"] = restart.returncode == 0
         if restart.returncode != 0:
             streamer_status["error"] = restart.stderr.strip() or restart.stdout.strip()
@@ -263,7 +259,7 @@ class SirenaSupervisor:
         env_values["VIDEO_DEVICE"] = camera_path
         write_env(env_values)
 
-        restart = self._run_systemctl("restart", VIDEO_STREAMER_UNIT, timeout=20)
+        restart = self._run_systemctl("restart", SRT_RELAY_CAPTURE_UNIT, timeout=20)
         return {
             "success": restart.returncode == 0,
             "active": camera_path,
@@ -358,7 +354,7 @@ class SirenaSupervisor:
     def _video_version(self) -> str:
         try:
             result = self._run_systemctl(
-                "show", VIDEO_STATUS_UNIT, "--property=ActiveState", timeout=5
+                "show", SRT_RELAY_CAPTURE_UNIT, "--property=ActiveState", timeout=5
             )
             return "active" if "active" in (result.stdout or "") else "inactive"
         except Exception:

@@ -46,12 +46,17 @@ class ServiceManager:
         with self._lock:
             return dict(self.config)
 
-    def set_config(self, data: Dict):
+    def set_config(self, data: Dict) -> Dict:
         with self._lock:
             for key in ("mode", "fps", "bitrate", "camera", "width", "height"):
                 if key in data and data[key] is not None:
                     self.config[key] = data[key]
             self._save_config()
+            mode = self.config.get("mode", "srt")
+        # Застосовуємо одразу — інакше fps/bitrate/roздільність з панелі
+        # чекали б наступного ручного рестарту (start_service вже коректно
+        # зупиняє інші режими й рестартує потрібні юніти).
+        return self.start_service(mode)
 
     def discover_cameras(self) -> List[Tuple[str, str]]:
         cameras = []

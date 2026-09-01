@@ -10,10 +10,6 @@ SERVICES = {
         "name": "SRT Relay (Capture)",
         "systemd_units": ["srt-relay-capture.service"],
     },
-    "srt": {
-        "name": "SRT Streams",
-        "systemd_units": ["video-streamer.service"],
-    },
 }
 
 SIRENA_UNITS = ["sirena-gps-hub.service"]
@@ -24,7 +20,7 @@ TELEMETRY_UNIT = "telemetry-sender.service"
 GPS_MODES = ["AUTO", "STARLINK", "BEITIAN"]
 
 DEFAULT_CONFIG = {
-    "mode": os.environ.get("SIRENA_VIDEO_MODE", "srt"),
+    "mode": os.environ.get("SIRENA_VIDEO_MODE", "srt-relay"),
     "fps": int(os.environ.get("SIRENA_VIDEO_FPS", "30")),
     "bitrate": int(os.environ.get("SIRENA_VIDEO_BITRATE", "1000")),
     "camera": None,
