@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 def wireguard_ip() -> str:
-    override_ip = os.environ.get("SIRENA_WG_IP", "10.0.0.7").strip()
+    override_ip = os.environ.get("SIRENA_WG_IP", "").strip()
     if override_ip:
         return override_ip
 

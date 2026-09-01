@@ -241,6 +241,8 @@
     </span>
     <div class="d-flex gap-2">
       <!-- <button id="btnToggle" class="btn btn-sm btn-success" onclick="toggleTelemetry()">▶ Старт</button> -->
+      <button id="btnRestartMavlink" class="btn btn-sm btn-outline-info" onclick="restartMavlink()">🔄 MAVLink</button>
+      <button id="btnRestartVideo" class="btn btn-sm btn-outline-info" onclick="restartVideo()">🔄 Відео</button>
       <button class="btn btn-sm btn-outline-warning" onclick="clearTelemetry()">🗑 Очистити</button>
       <a href="/" class="btn btn-sm btn-outline-secondary">← Назад</a>
     </div>
@@ -508,6 +510,43 @@
     });
     msgTotal = 0; msgCounts = {}; msgTimes = {};
     document.getElementById('msgCount').textContent = '0';
+  }
+
+  async function restartServiceOnDevice(button, endpoint, confirmMessage, busyLabel) {
+    if (!confirm(confirmMessage)) return;
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = busyLabel;
+    try {
+      const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        alert('Помилка: ' + (data.error || data.detail || `HTTP ${res.status}`));
+      }
+    } catch (e) {
+      alert('Помилка запиту: ' + e.message);
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }
+
+  function restartMavlink() {
+    restartServiceOnDevice(
+      document.getElementById('btnRestartMavlink'),
+      '/api/devices/' + DEVICE_ID + '/mavlink/restart',
+      'Перезапустити MAVLink router на пристрої?',
+      '⏳ MAVLink…'
+    );
+  }
+
+  function restartVideo() {
+    restartServiceOnDevice(
+      document.getElementById('btnRestartVideo'),
+      '/api/devices/' + DEVICE_ID + '/video/restart',
+      'Перезапустити весь відео-ланцюг на пристрої?',
+      '⏳ Відео…'
+    );
   }
 
   // function updateToggleBtn() {

@@ -124,9 +124,18 @@ def _get_current_mode(fallback: str = "srt") -> str:
 def _restart_video_streamer():
     # reset-failed знімає rate-limit лічильник: якщо юніт встиг влетіти у
     # StartLimitBurst і стан failed, звичайний restart його вже не підніме.
-    subprocess.run(["systemctl", "reset-failed", "video-streamer"],
-                   check=False, capture_output=True)
-    subprocess.run(["systemctl", "restart", "video-streamer"], check=False)
+    #
+    # timeout тут критичний: цей виклик буває синхронно всередині SIGTERM-
+    # обробника relay (_cleanup). Без таймауту повільний/завислий restart
+    # video-streamer блокує сам relay від завершення, і systemd врешті вбиває
+    # весь cgroup через TimeoutStopSec (~90с) замість штатної зупинки.
+    try:
+        subprocess.run(["systemctl", "reset-failed", "video-streamer"],
+                       check=False, capture_output=True, timeout=10)
+        subprocess.run(["systemctl", "restart", "video-streamer"],
+                       check=False, timeout=15)
+    except subprocess.TimeoutExpired:
+        logger.warning("Тайм-аут systemctl restart video-streamer — продовжуємо без очікування")
 
 
 def _enable_srt_relay(stream_name: str):

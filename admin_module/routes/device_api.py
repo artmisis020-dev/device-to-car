@@ -68,6 +68,13 @@ def api_delete(device_id):
     return jsonify(payload), status
 
 
+@device_api_bp.route("/api/devices/<device_id>/mavlink/restart", methods=["POST"])
+@require_admin
+def api_mavlink_restart(device_id):
+    payload, status = device_service.restart_mavlink(device_id)
+    return jsonify(payload), status
+
+
 @device_api_bp.route("/api/devices/<device_id>/commands", methods=["GET", "POST"])
 @require_admin
 def api_device_commands(device_id):
