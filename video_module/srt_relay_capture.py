@@ -109,7 +109,7 @@ def create_pipeline_string() -> "tuple[str, bool]":
         input_chain = (
             f"v4l2src device={config.DEVICE} io-mode=mmap ! "
             f"video/x-raw,format=YUY2,width={config.WIDTH},height={config.HEIGHT},framerate={config.FPS}/1 ! "
-            "queue max-size-buffers=2 leaky=downstream ! "
+            "queue max-size-buffers=1 leaky=downstream ! "
             "videoconvert ! "
         )
 

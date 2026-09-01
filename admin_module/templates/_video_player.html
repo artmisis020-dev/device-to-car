@@ -290,6 +290,19 @@
       if (!answer.ok) throw new Error(`MediaMTX WHEP не відповів (${answer.status})`);
 
       await pc.setRemoteDescription({type: 'answer', sdp: await answer.text()});
+
+      // Мінімізуємо джиттер-буфер приймача (Chrome): за замовчуванням
+      // браузер сам собі тримає ~100-200мс запасу на джитер, який ми тут
+      // не контролюємо на боці GStreamer/SRT — playoutDelayHint=0 просить
+      // WebRTC-стек мінімізувати цю затримку. No-op у браузерах, що не
+      // підтримують властивість (Firefox/Safari).
+      pc.getReceivers().forEach(receiver => {
+        try {
+          if ('playoutDelayHint' in receiver) receiver.playoutDelayHint = 0;
+          if ('jitterBufferTarget' in receiver) receiver.jitterBufferTarget = 0;
+        } catch (e) {}
+      });
+
       statsTimer = setInterval(updateStats, 1000);
     } catch (err) {
       stopPeer();
