@@ -101,7 +101,7 @@ def api_control_enable(device_id):
 @require_admin
 def api_control_stick(device_id):
     body = json_body()
-    result, status = control_service.update_stick(device_id, body.get("axes", []), body.get("buttons", []))
+    result, status = control_service.update_stick(device_id, body.get("axes", []), body.get("aux", []))
     return jsonify(result), status
 
 
