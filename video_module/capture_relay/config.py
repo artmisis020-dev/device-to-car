@@ -62,7 +62,7 @@ H264_PROFILE_INFO = _H264_PROFILE_MAP[H264_PROFILE]  # (v4l2_profile_id, caps_pr
 # ultrafast/superfast/veryfast/... — швидші пресети не додають затримки
 # (без lookahead/B-frames), лише гірша якість/бітрейт-ефективність за
 # той самий CPU-бюджет.
-X264_SPEED_PRESET = os.environ.get("X264_SPEED_PRESET", "superfast").strip().lower()
+X264_SPEED_PRESET = os.environ.get("X264_SPEED_PRESET", "ultrafast").strip().lower()
 
 SIRENA_RELAY_TARGET = os.environ.get("SIRENA_RELAY_TARGET", "").strip().strip('"')
 
