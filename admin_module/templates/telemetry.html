@@ -837,28 +837,40 @@
     }
   }
 
-  // ─── HTTP polling loop та історія з БД ───────────────────────────────────────
-  let pollErrors = 0;
-  async function poll() {
-    try {
-      const r = await fetch(`/api/telemetry/latest/${DEVICE_ID}?since=${lastTs}&limit=500`);
-      if (r.status === 403 || r.redirected) {
-        window.location.href = '/login';
+  // ─── Жива трансляція телеметрії (SSE) ────────────────────────────────────────
+  // БД (/api/telemetry/latest) лишається лише для початкового бекфілу історії
+  // (loadInitialState) — доставка живих даних пілоту йде напряму через SSE,
+  // без поллінгу того самого сховища.
+  let liveSource = null;
+
+  function startLiveTelemetry() {
+    liveSource = new EventSource(`/api/devices/${DEVICE_ID}/telemetry/live`);
+    liveSource.onmessage = (e) => {
+      let msg;
+      try {
+        msg = JSON.parse(e.data);
+      } catch (err) {
         return;
       }
-      const msgs = await r.json();
-      if (msgs.length > 0) {
-        lastTs = msgs[msgs.length - 1].ts;
-        processMsgs(msgs);
-        pollErrors = 0;
+      lastTs = msg.ts;
+      processMsgs([msg]);
+    };
+    liveSource.onerror = async () => {
+      // EventSource реконектиться сам; додатково перевіряємо, чи не
+      // протермінувалась сесія (SSE-помилка ховає HTTP-статус від нас).
+      try {
+        const r = await fetch(`/api/telemetry/latest/${DEVICE_ID}?since=${lastTs}&limit=1`);
+        if (r.status === 403 || r.redirected) {
+          window.location.href = '/login';
+        }
+      } catch (err) {
+        // мережа лежить — просто чекаємо на реконект EventSource
       }
-    } catch (e) {
-      console.error(`Polling error: ${e}`);
-      pollErrors++;
-    }
-    const telemetryAllowedTimeForMissing = 5;
+    };
+  }
 
-    // Оновлення стану підключення
+  function refreshStatusBadge() {
+    const telemetryAllowedTimeForMissing = 5;
     const now = Date.now() / 1000;
     const alive = (now - lastMsgTime) < telemetryAllowedTimeForMissing && lastMsgTime > 0;
     const dot = document.getElementById('statusDot');
@@ -873,14 +885,13 @@
     }
 
     // Швидкість повідомлень за останню секунду
-    const rate = (msgTotal - prevMsgTotal) / 1;
+    const rate = msgTotal - prevMsgTotal;
     prevMsgTotal = msgTotal;
     document.getElementById('msgRate').textContent = rate.toFixed(0);
 
     document.getElementById('statusText').textContent = alive
       ? (telActive ? '🟢 Стрім йде' : '🟡 Дані надходять, запис вимкнено')
       : (telActive ? '🟡 Очікування пристрою…' : '⚫ Телеметрія вимкнена');
-
   }
 
 
@@ -1088,7 +1099,8 @@
   }
 
   loadInitialState().then(() => {
-    setInterval(poll, 1000);
+    startLiveTelemetry();
+    setInterval(refreshStatusBadge, 1000);
   });
 </script>
 {% endblock %}

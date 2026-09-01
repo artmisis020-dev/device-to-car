@@ -1,10 +1,11 @@
 import json
+import queue
 import time
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request
 
 from ..helpers import json_body, parse_int, require_admin, sanitize_payload
-from ..services import telemetry_service
+from ..services import telemetry_service, telemetry_stream
 
 
 telemetry_api_bp = Blueprint("telemetry_api", __name__)
@@ -63,3 +64,25 @@ def api_telemetry_latest(device_id):
 @require_admin
 def api_telemetry_stats(device_id):
     return jsonify(telemetry_service.stats(device_id))
+
+
+@telemetry_api_bp.route("/api/devices/<device_id>/telemetry/live", methods=["GET"])
+@require_admin
+def api_telemetry_live(device_id):
+    def stream():
+        q = telemetry_stream.subscribe(device_id)
+        try:
+            while True:
+                try:
+                    msg = q.get(timeout=15)
+                    yield f"data: {json.dumps(msg, separators=(',', ':'))}\n\n"
+                except queue.Empty:
+                    yield ": ping\n\n"
+        finally:
+            telemetry_stream.unsubscribe(device_id, q)
+
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
