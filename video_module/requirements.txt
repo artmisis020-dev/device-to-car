@@ -1,7 +1,3 @@
 aiohttp
-aiohttp_jinja2
-aiortc
-av
 PyYAML
 pyudev
-pymavlink

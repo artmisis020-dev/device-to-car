@@ -18,7 +18,7 @@ echo "=== Sirena Video Uninstall ==="
 echo "1. Зупинка та деактивація системних сервісів..."
 SERVICES=(
     "video-service-manager.service"
-    "webrtc-camera.service"
+    "srt-relay-capture.service"
     "video-streamer.service"
     "video-relay.service"
 )

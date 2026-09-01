@@ -1,0 +1,24 @@
+[Unit]
+Description=Sirena SRT Relay Capture (camera → SRT, no local viewer)
+After=network-online.target video-relay.service
+Wants=network-online.target video-relay.service
+StartLimitIntervalSec=60
+StartLimitBurst=12
+
+[Service]
+Type=simple
+User=sirena
+WorkingDirectory=/opt/sirena-video
+Environment=PYTHONPATH=/opt/sirena-video
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/opt/sirena/.env
+EnvironmentFile=-/etc/default/sirena-relay
+ExecStart=/opt/sirena-video/venv/bin/python3 /opt/sirena-video/srt_relay_capture.py
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=srt-relay-capture
+
+[Install]
+WantedBy=multi-user.target

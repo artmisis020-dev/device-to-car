@@ -4,8 +4,7 @@ import urllib.request
 import json
 import time
 import logging
-import asyncio
-import webrtc.config as config
+import capture_relay.config as config
 
 _video_approved = True  # Глобальний прапорець доступу всередині модуля
 
@@ -46,13 +45,6 @@ def _send_registry_post(endpoint, payload):
     except Exception as e:
         logging.debug(f"Registry {endpoint} error: {e}")
         return None
-
-
-async def _send_registry_post_async(endpoint, payload):
-    # urllib блокуючий (timeout до 10с) — виносимо в executor, інакше на час
-    # недоступності сервера замерзає весь event loop разом із відачею кадрів.
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _send_registry_post, endpoint, payload)
 
 
 def run_video_handshake():
@@ -105,13 +97,18 @@ def approve_access():
     _video_approved = True
 
 
-async def registry_heartbeat_task(pcs_set):
+def heartbeat_loop(on_revoke=None):
+    """Блокуючий цикл — призначений для окремого threading.Thread (пайплайн
+    крутиться на GLib.MainLoop в головному потоці, тож тут без asyncio).
+
+    При revoke викликає on_revoke() один раз (очікується, що той зупинить
+    пайплайн), і тримає _video_approved=False, поки сервер знову не підтвердить."""
     device_id = get_hardware_id()
     logging.info("[Registry] Video heartbeat worker started")
 
     while True:
-        await asyncio.sleep(60)
-        r = await _send_registry_post_async("/api/heartbeat", {"device_id": device_id})
+        time.sleep(60)
+        r = _send_registry_post("/api/heartbeat", {"device_id": device_id})
 
         if r is None:
             logging.warning("[Registry] Heartbeat: server unavailable")
@@ -124,24 +121,21 @@ async def registry_heartbeat_task(pcs_set):
                 approve_access()
             else:
                 logging.debug("[Registry] Heartbeat OK")
-        else:
-            if is_video_approved():
-                logging.warning(f"[Registry] ⏸ Access revoked ({status}) — suspending video service")
-                revoke_access()
+            continue
 
-                # Закриваємо всі активні WebRTC з'єднання
-                for pc in list(pcs_set):
-                    asyncio.ensure_future(pc.close())
-                pcs_set.clear()
+        if is_video_approved():
+            logging.warning(f"[Registry] ⏸ Access revoked ({status}) — suspending video service")
+            revoke_access()
+            if on_revoke:
+                on_revoke()
 
-            # Швидке опитування до моменту відновлення доступу
-            logging.info(f"[Registry] Waiting for re-approval (every {config.HANDSHAKE_INTERVAL}s)...")
-            while True:
-                await asyncio.sleep(config.HANDSHAKE_INTERVAL)
-                r2 = await _send_registry_post_async("/api/heartbeat", {"device_id": device_id})
-                if r2 and r2.get("status") == "approved":
-                    logging.info("[Registry] ✅ Access restored — resuming video service")
-                    approve_access()
-                    break
-                if r2 is None:
-                    logging.warning("[Registry] Re-approval check: server unavailable")
+        logging.info(f"[Registry] Waiting for re-approval (every {config.HANDSHAKE_INTERVAL}s)...")
+        while True:
+            time.sleep(config.HANDSHAKE_INTERVAL)
+            r2 = _send_registry_post("/api/heartbeat", {"device_id": device_id})
+            if r2 and r2.get("status") == "approved":
+                logging.info("[Registry] ✅ Access restored — resuming video service")
+                approve_access()
+                break
+            if r2 is None:
+                logging.warning("[Registry] Re-approval check: server unavailable")

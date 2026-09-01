@@ -109,7 +109,10 @@ class ServiceManager:
                 if not still_busy:
                     break
             _time.sleep(0.5)  # буфер для ядра V4L2
-            r = subprocess.run(["sudo", "systemctl", "start"] + units,
+            # restart, а не start: якщо юніт уже активний, звичайний start —
+            # no-op і нові fps/bitrate/роздільність з панелі не підхопляться
+            # без ручного stop+start.
+            r = subprocess.run(["sudo", "systemctl", "restart"] + units,
                                capture_output=True, text=True, timeout=20)
             return {"success": r.returncode == 0, "mode": key, "units": units,
                     "error": r.stderr if r.returncode != 0 else None}

@@ -206,6 +206,53 @@ def list_formats(device: str) -> str:
         return f"(could not query {device}: {e})"
 
 
+_FOURCC_ALIASES = {"YUY2": "YUYV", "YUYV": "YUYV", "MJPG": "MJPG", "JPEG": "MJPG"}
+
+
+def _parse_formats_ext(device: str) -> list[tuple[str, int, int, int]]:
+    """Розбирає вивід `list_formats()` у список (fourcc, width, height, fps)."""
+    modes: list[tuple[str, int, int, int]] = []
+    fourcc = None
+    size = None
+    for line in list_formats(device).splitlines():
+        line = line.strip()
+        m = re.match(r"^\[\d+\]:\s*'(\w+)'", line)
+        if m:
+            fourcc = m.group(1)
+            continue
+        m = re.match(r"^Size:\s*\S*\s*(\d+)x(\d+)", line)
+        if m:
+            size = (int(m.group(1)), int(m.group(2)))
+            continue
+        m = re.search(r"\(([\d.]+)\s*fps\)", line)
+        if m and fourcc and size:
+            modes.append((fourcc, size[0], size[1], round(float(m.group(1)))))
+    return modes
+
+
+def supports_mode(device: str, input_format: str, width: int, height: int, fps: int) -> bool:
+    """Перевіряє, чи камера дійсно вміє задану комбінацію формат/роздільність/fps
+    -- щоб зловити невідповідність до старту GStreamer-пайплайна чіткою
+    помилкою, а не незрозумілим збоєм негоціації caps.
+
+    Фейлиться "відкрито" (повертає True), якщо не вдалось опитати камеру --
+    краще спробувати старт і побачити реальну помилку, ніж заблокувати
+    легітимний запуск через збій самого опитування."""
+    wanted = _FOURCC_ALIASES.get(input_format.upper())
+    if wanted is None:
+        return True
+    try:
+        modes = _parse_formats_ext(device)
+    except Exception:
+        return True
+    if not modes:
+        return True
+    return any(
+        fc == wanted and w == width and h == height and abs(f - fps) <= 1
+        for fc, w, h, f in modes
+    )
+
+
 """Для тестування цього модуля можна запустити його напряму: python3 cameras_services.py (але треба бути в енві)"""
 if __name__ == "__main__":
     cams = list_cameras()

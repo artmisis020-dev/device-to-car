@@ -29,7 +29,6 @@ apt-get install -y \
     avahi-daemon \
     python3-pip \
     python3-venv \
-    python3-cairo \
     python3-gi \
     python3-gst-1.0 \
     gir1.2-gstreamer-1.0 \
@@ -53,7 +52,7 @@ chmod 0440 "$SUDOERS_FILE"
 
 echo "3. Зупинка старих сервісів..."
 systemctl stop video-service-manager 2>/dev/null || true
-systemctl stop webrtc-camera         2>/dev/null || true
+systemctl stop srt-relay-capture     2>/dev/null || true
 systemctl stop video-streamer        2>/dev/null || true
 
 echo "4. Розгортання файлів проєкту..."
@@ -73,7 +72,7 @@ if [ -f "$INSTALL_DIR/requirements.txt" ]; then
     echo "Встановлення залежностей з requirements.txt..."
     sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt"
 else
-    sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install aiohttp aiortc av PyYAML aiohttp_jinja2
+    sudo -u "$SERVICE_USER" "$INSTALL_DIR/venv/bin/pip" install aiohttp PyYAML pyudev
 fi
 
 chmod -R 755 "$INSTALL_DIR"
@@ -84,7 +83,7 @@ cp "$DEPLOY_DIR/services/"*.service /etc/systemd/system/
 systemctl enable --now avahi-daemon
 systemctl daemon-reload
 
-echo "Старт video-service-manager/webrtc-camera/video-streamer залишено root manager-у (sirena-manager.service)."
+echo "Старт video-service-manager/srt-relay-capture/video-streamer залишено root manager-у (sirena-manager.service)."
 
 echo ""
 echo "=== Готово ==="

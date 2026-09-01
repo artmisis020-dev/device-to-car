@@ -1,9 +1,6 @@
 # main.py
 import logging
 from aiohttp import web
-import aiohttp_jinja2
-import jinja2
-from pathlib import Path
 
 # Імпортуємо наші модулі
 import config
@@ -12,24 +9,6 @@ from manager import MANAGER
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
-
-# Визначаємо шлях до папки з шаблонами поруч із цим файлом
-BASE_DIR = Path(__file__).resolve().parent
-TEMPLATES_DIR = BASE_DIR / "templates"
-
-
-# ─── HTTP ОБРОБНИК СТОРІНКИ (ОНОВЛЕНИЙ) ────────────────────────────────────────
-@aiohttp_jinja2.template("index.html")
-async def index(request):
-    """
-    Завдяки декоратору @aiohttp_jinja2.template ми просто повертаємо
-    словник із даними, які Jinja2 автоматично підставить у файл templates/index.html
-    """
-    conf = helpers.read_conf_js()
-    gps_mode = conf.get("source_mode", "AUTO").upper()
-
-    # Повертаємо контекст для шаблону
-    return {"gps_mode": gps_mode}
 
 
 # ─── API: Video ───────────────────────────────────────────────────────────────
@@ -140,11 +119,7 @@ async def stop_service(request):
 def main():
     app = web.Application()
 
-    # КРИТИЧНО: Налаштовуємо підтримку шаблонів Jinja2
-    aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader(str(TEMPLATES_DIR)))
-
-    # Реєстрація маршрутів (роутів)
-    app.router.add_get("/", index)
+    # Реєстрація маршрутів (роутів) — лише JSON API, без HTML/браузерного UI
     app.router.add_get("/api/v1/cameras", cameras_api)
     app.router.add_get("/api/v1/config", get_config)
     app.router.add_post("/api/v1/config", set_config)

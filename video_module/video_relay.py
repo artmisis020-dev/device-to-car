@@ -7,9 +7,8 @@ Auto-detects camera presence locally — no server polling required.
   Camera removed → stops relay automatically
   State re-reported every poll cycle to keep server DB in sync.
 
-  SRT mode    → writes env file + restarts video-streamer
-  WebRTC mode → writes flag file /tmp/sirena_video_relay_active
-                webrtc_camera.py detects it and starts its own GStreamer relay
+  SRT mode        → writes env file (rtsp:// target) + restarts video-streamer
+  SRT Relay mode  → writes env file (srt:// target) + restarts srt-relay-capture
 
 Runs as root (systemd service) so it can manage services and write /etc/default/.
 """
@@ -40,13 +39,16 @@ _UNSAFE_STREAM_CHARS = re.compile(r"[^A-Za-z0-9_.-]+")
 ADMIN_SERVER_URL  = os.environ.get("SIRENA_ADMIN_SERVER_URL", "http://127.0.0.1:8080").rstrip("/")
 REGISTRY_URL      = ADMIN_SERVER_URL
 SERVER_SRT_HOST   = os.environ.get("SIRENA_SRT_HOST", "10.0.0.1")
-SERVER_SRT_PORT   = int(os.environ.get("SIRENA_SRT_PORT", "8554"))
+# Різні протоколи -> різні порти на mediamtx (rtspAddress/srtAddress у
+# mediamtx.yml). Раніше це була одна спільна змінна -- коректна лише для
+# того режиму, чий порт випадково збігався зі значенням в .env.
+SERVER_RTSP_PORT  = int(os.environ.get("SIRENA_RTSP_PORT", "8554"))
+SERVER_SRT_PORT   = int(os.environ.get("SIRENA_SRT_PORT", "8890"))
 SRT_LATENCY_MS    = int(os.environ.get("SRT_LATENCY_MS", "200"))
 POLL_INTERVAL     = float(os.environ.get("SIRENA_VIDEO_RELAY_POLL_INTERVAL", "5.0"))
 REPORT_EVERY      = 12
 
 RELAY_ENV_FILE    = "/etc/default/sirena-relay"
-RELAY_FLAG_FILE   = "/tmp/sirena_video_relay_active"
 VIDEO_MANAGER_URL = "http://localhost:9000/api/v1/config"
 
 # ─── Device ID ────────────────────────────────────────────────────────────────
@@ -130,7 +132,7 @@ def _restart_video_streamer():
 
 
 def _enable_srt_relay(stream_name: str):
-    target = f"rtsp://{SERVER_SRT_HOST}:{SERVER_SRT_PORT}/{stream_name}"
+    target = f"rtsp://{SERVER_SRT_HOST}:{SERVER_RTSP_PORT}/{stream_name}"
     Path(RELAY_ENV_FILE).write_text(f'SIRENA_RELAY_TARGET="{target}"\n')
     _restart_video_streamer()
     logger.info(f"[RTSP] Relay enabled -> {target}")
@@ -145,17 +147,28 @@ def _disable_srt_relay():
     logger.info("[SRT] Relay disabled")
 
 
-# ─── WebRTC relay ─────────────────────────────────────────────────────────────
-def _enable_webrtc_relay(stream_name: str):
+# ─── SRT relay capture ──────────────────────────────────────────────────────
+def _restart_srt_relay_capture():
+    subprocess.run(["systemctl", "reset-failed", "srt-relay-capture"],
+                   check=False, capture_output=True)
+    subprocess.run(["systemctl", "restart", "srt-relay-capture"], check=False)
+
+
+def _enable_srt_relay_capture(stream_name: str):
     target = (f"srt://{SERVER_SRT_HOST}:{SERVER_SRT_PORT}"
               f"?mode=caller&latency={SRT_LATENCY_MS}&streamid=publish:{stream_name}")
-    Path(RELAY_FLAG_FILE).write_text(target)
-    logger.info(f"[WebRTC] Relay flag written → {target}")
+    Path(RELAY_ENV_FILE).write_text(f'SIRENA_RELAY_TARGET="{target}"\n')
+    _restart_srt_relay_capture()
+    logger.info(f"[SRT-Relay] Relay enabled -> {target}")
 
 
-def _disable_webrtc_relay():
-    Path(RELAY_FLAG_FILE).unlink(missing_ok=True)
-    logger.info("[WebRTC] Relay flag removed")
+def _disable_srt_relay_capture():
+    try:
+        Path(RELAY_ENV_FILE).unlink(missing_ok=True)
+    except Exception:
+        pass
+    _restart_srt_relay_capture()
+    logger.info("[SRT-Relay] Relay disabled")
 
 
 # ─── Main loop ────────────────────────────────────────────────────────────────
@@ -172,8 +185,8 @@ def main():
         logger.info("Shutting down relay…")
         if last_mode == "srt":
             _disable_srt_relay()
-        elif last_mode == "webrtc":
-            _disable_webrtc_relay()
+        elif last_mode == "srt-relay":
+            _disable_srt_relay_capture()
         _report_to_server(device_id, False)
         sys.exit(0)
 
@@ -191,7 +204,7 @@ def main():
             if current_mode == "srt":
                 _enable_srt_relay(stream_name)
             else:
-                _enable_webrtc_relay(stream_name)
+                _enable_srt_relay_capture(stream_name)
             active    = True
             last_mode = current_mode
             _report_to_server(device_id, True)
@@ -203,7 +216,7 @@ def main():
             if last_mode == "srt":
                 _disable_srt_relay()
             else:
-                _disable_webrtc_relay()
+                _disable_srt_relay_capture()
             active    = False
             last_mode = None
             _report_to_server(device_id, False)
@@ -215,12 +228,12 @@ def main():
             if last_mode == "srt":
                 _disable_srt_relay()
             else:
-                _disable_webrtc_relay()
+                _disable_srt_relay_capture()
             time.sleep(2)
             if current_mode == "srt":
                 _enable_srt_relay(stream_name)
             else:
-                _enable_webrtc_relay(stream_name)
+                _enable_srt_relay_capture(stream_name)
             last_mode = current_mode
 
         # ── Periodic re-report to keep DB in sync ────────────────────────────

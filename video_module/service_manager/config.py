@@ -6,9 +6,9 @@ MANAGER_HOST = os.environ.get("SIRENA_VIDEO_MANAGER_HOST", "0.0.0.0")
 MANAGER_PORT = int(os.environ.get("SIRENA_VIDEO_MANAGER_PORT", "9000"))
 
 SERVICES = {
-    "webrtc": {
-        "name": "WebRTC Cameras",
-        "systemd_units": ["webrtc-camera.service"],
+    "srt-relay": {
+        "name": "SRT Relay (Capture)",
+        "systemd_units": ["srt-relay-capture.service"],
     },
     "srt": {
         "name": "SRT Streams",
