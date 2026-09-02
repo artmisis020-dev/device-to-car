@@ -179,6 +179,12 @@
     padding: 2px 6px;
   }
 
+  .axis-invert-check {
+    display: inline-flex; align-items: center; gap: 2px;
+    font-size: 0.7rem; margin: 0; cursor: pointer; user-select: none;
+  }
+  .axis-invert-check input { margin: 0; cursor: pointer; }
+
   .status-dot {
     width: 10px;
     height: 10px;
@@ -432,28 +438,28 @@
           <div class="row g-2">
             <div class="col-6">
               <div class="d-flex justify-content-between align-items-center small text-muted">
-                <span class="d-flex align-items-center gap-1">Roll <button type="button" class="btn btn-outline-secondary btn-calibrate" onclick="calibrateAxis('roll', this)" title="Поворуши стік Roll ~1.5с, щоб прив'язати правильну вісь">Прив'язати</button></span>
+                <span class="d-flex align-items-center gap-1">Roll <button type="button" class="btn btn-outline-secondary btn-calibrate" onclick="calibrateAxis('roll', this)" title="Поворуши стік Roll ~1.5с, щоб прив'язати правильну вісь">Прив'язати</button><label class="axis-invert-check" title="Інвертувати напрямок цієї осі"><input type="checkbox" id="axInvertRoll" onchange="setAxisInvert('roll', this.checked)">інв.</label></span>
                 <span id="axRollVal">0.00</span>
               </div>
               <div class="stick-bar-track"><div class="stick-bar-fill" id="axRoll"></div></div>
             </div>
             <div class="col-6">
               <div class="d-flex justify-content-between align-items-center small text-muted">
-                <span class="d-flex align-items-center gap-1">Pitch <button type="button" class="btn btn-outline-secondary btn-calibrate" onclick="calibrateAxis('pitch', this)" title="Поворуши стік Pitch ~1.5с, щоб прив'язати правильну вісь">Прив'язати</button></span>
+                <span class="d-flex align-items-center gap-1">Pitch <button type="button" class="btn btn-outline-secondary btn-calibrate" onclick="calibrateAxis('pitch', this)" title="Поворуши стік Pitch ~1.5с, щоб прив'язати правильну вісь">Прив'язати</button><label class="axis-invert-check" title="Інвертувати напрямок цієї осі"><input type="checkbox" id="axInvertPitch" onchange="setAxisInvert('pitch', this.checked)">інв.</label></span>
                 <span id="axPitchVal">0.00</span>
               </div>
               <div class="stick-bar-track"><div class="stick-bar-fill" id="axPitch"></div></div>
             </div>
             <div class="col-6">
               <div class="d-flex justify-content-between align-items-center small text-muted">
-                <span class="d-flex align-items-center gap-1">Throttle <button type="button" class="btn btn-outline-secondary btn-calibrate" onclick="calibrateAxis('throttle', this)" title="Поворуши стік Throttle ~1.5с, щоб прив'язати правильну вісь">Прив'язати</button></span>
+                <span class="d-flex align-items-center gap-1">Throttle <button type="button" class="btn btn-outline-secondary btn-calibrate" onclick="calibrateAxis('throttle', this)" title="Поворуши стік Throttle від мінімуму до максимуму й назад ~1.5с, щоб прив'язати вісь і її діапазон">Прив'язати</button><label class="axis-invert-check" title="Інвертувати напрямок цієї осі"><input type="checkbox" id="axInvertThrottle" onchange="setAxisInvert('throttle', this.checked)">інв.</label></span>
                 <span id="axThrottleVal">0.00</span>
               </div>
               <div class="stick-bar-track"><div class="stick-bar-fill" id="axThrottle"></div></div>
             </div>
             <div class="col-6">
               <div class="d-flex justify-content-between align-items-center small text-muted">
-                <span class="d-flex align-items-center gap-1">Yaw <button type="button" class="btn btn-outline-secondary btn-calibrate" onclick="calibrateAxis('yaw', this)" title="Поворуши стік Yaw ~1.5с, щоб прив'язати правильну вісь">Прив'язати</button></span>
+                <span class="d-flex align-items-center gap-1">Yaw <button type="button" class="btn btn-outline-secondary btn-calibrate" onclick="calibrateAxis('yaw', this)" title="Поворуши стік Yaw ~1.5с, щоб прив'язати правильну вісь">Прив'язати</button><label class="axis-invert-check" title="Інвертувати напрямок цієї осі"><input type="checkbox" id="axInvertYaw" onchange="setAxisInvert('yaw', this.checked)">інв.</label></span>
                 <span id="axYawVal">0.00</span>
               </div>
               <div class="stick-bar-track"><div class="stick-bar-fill" id="axYaw"></div></div>
@@ -471,10 +477,37 @@
             <button id="btnGamepadPrimary" class="btn btn-sm btn-outline-primary" onclick="onGamepadPrimaryClick()" title="Стіки напряму керують дроном по RC_CHANNELS_OVERRIDE, після підтвердження">🎮 Підключити пульт</button>
             <button id="btnArm" class="btn btn-sm btn-outline-secondary" onclick="sendFcCommand('ARM', 'Озброїти дрон (ARM)?')">Arm</button>
             <button id="btnDisarm" class="btn btn-sm btn-outline-secondary" onclick="sendFcCommand('DISARM', 'Роззброїти дрон (DISARM)?')">Disarm</button>
-            <button id="btnRtl" class="btn btn-sm btn-outline-secondary" onclick="sendFcCommand('RTL', 'Повернути на точку старту (RTL)?')">RTL</button>
-            <button id="btnLoiter" class="btn btn-sm btn-outline-secondary" onclick="sendFcCommand('LOITER', 'Перевести в LOITER?')">Loiter</button>
-            <button id="btnTakeoff" class="btn btn-sm btn-outline-secondary" onclick="sendFcCommand('TAKEOFF', 'Виконати зліт (TAKEOFF)?')">Takeoff</button>
+            <button id="btnAcro" class="btn btn-sm btn-outline-secondary" onclick="sendFcCommand('ACRO', 'Перевести в ACRO?')">Acro</button>
+            <button id="btnStabilize" class="btn btn-sm btn-outline-secondary" onclick="sendFcCommand('STABILIZE', 'Перевести в STABILIZE?')">Stabilize</button>
+            <button id="btnAltHold" class="btn btn-sm btn-outline-secondary" onclick="sendFcCommand('ALT_HOLD', 'Перевести в ALT_HOLD?')">Alt Hold</button>
           </div>
+        </div>
+      </div>
+    </div>
+    <!-- Неблокуючий модал підтвердження для Arm/Disarm/RTL/Loiter/Takeoff.
+         Навмисно НЕ window.confirm()/alert(): нативний діалог синхронно
+         блокує JS-потік, через що зупиняється і setInterval(sendStick),
+         і requestAnimationFrame(gamepadLoop) — за секунду-дві очікування
+         кліку користувача на діалозі браузер встигає вирішити, що пульт
+         "відключився" (Gamepad API не оновлюється без активного опитування),
+         а сервер тим часом рве RC_CHANNELS_OVERRIDE сесію по watchdog
+         (STICK_TIMEOUT_SEC=0.5с без нового стіку) — керування "злітає". -->
+    <div class="modal fade" id="fcConfirmModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+          <div class="modal-body" id="fcConfirmModalBody"></div>
+          <div class="modal-footer py-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="fcConfirmCancelBtn">Скасувати</button>
+            <button type="button" class="btn btn-sm btn-danger" id="fcConfirmOkBtn">Підтвердити</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index:1080">
+      <div id="fcToast" class="toast align-items-center text-bg-danger border-0" role="alert">
+        <div class="d-flex">
+          <div class="toast-body" id="fcToastBody"></div>
+          <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
         </div>
       </div>
     </div>
@@ -1009,8 +1042,32 @@
   // ігрових джойстиків.
   let axisMap = { yaw: 0, throttle: 1, roll: 2, pitch: 3 };
 
+  // Сирий діапазон осі на конкретному пульті не завжди -1..1 (як у
+  // звичайного геймпада) — RC-передавачі через USB-HID часто віддають
+  // важіль throttle як 0..1 (не біполярний). Замість того щоб хардкодити
+  // діапазон, калібрування саме заміряє min/max під час прогону стіка і
+  // потім лінійно розтягує його в канонічні -1..1.
+  let axisRange = {
+    yaw: { min: -1, max: 1 }, throttle: { min: -1, max: 1 },
+    roll: { min: -1, max: 1 }, pitch: { min: -1, max: 1 },
+  };
+  // Напрямок теж не можна вгадати наперед для нестандартного пульта —
+  // раніше сервер жорстко інвертував pitch/throttle під конвенцію
+  // звичайного геймпада, що виявилось невірним для цього RC-пульта
+  // (throttle йшов "too high" на холостому ходу). Тепер напрямок — явний
+  // перемикач "інв." в UI на кожен канал, дефолт false.
+  let axisInvert = { yaw: false, throttle: false, roll: false, pitch: false };
+
   function axisMapStorageKey(gp) {
     return 'sirena_axis_map:' + (gp && gp.id ? gp.id : 'default');
+  }
+
+  function axisRangeStorageKey(gp) {
+    return 'sirena_axis_range:' + (gp && gp.id ? gp.id : 'default');
+  }
+
+  function axisInvertStorageKey(gp) {
+    return 'sirena_axis_invert:' + (gp && gp.id ? gp.id : 'default');
   }
 
   function saveAxisMap() {
@@ -1018,6 +1075,7 @@
       const pads = navigator.getGamepads ? navigator.getGamepads() : [];
       const gp = gamepadIndex !== null ? pads[gamepadIndex] : null;
       localStorage.setItem(axisMapStorageKey(gp), JSON.stringify(axisMap));
+      localStorage.setItem(axisRangeStorageKey(gp), JSON.stringify(axisRange));
     } catch (e) { /* приватний режим / заблоковане сховище — не критично */ }
   }
 
@@ -1025,7 +1083,39 @@
     try {
       const raw = localStorage.getItem(axisMapStorageKey(gp));
       if (raw) axisMap = Object.assign({ yaw: 0, throttle: 1, roll: 2, pitch: 3 }, JSON.parse(raw));
+      const rawRange = localStorage.getItem(axisRangeStorageKey(gp));
+      if (rawRange) {
+        axisRange = Object.assign(
+          { yaw: { min: -1, max: 1 }, throttle: { min: -1, max: 1 }, roll: { min: -1, max: 1 }, pitch: { min: -1, max: 1 } },
+          JSON.parse(rawRange)
+        );
+      }
+      const rawInvert = localStorage.getItem(axisInvertStorageKey(gp));
+      axisInvert = Object.assign(
+        { yaw: false, throttle: false, roll: false, pitch: false },
+        rawInvert ? JSON.parse(rawInvert) : {}
+      );
+      for (const ch of ['yaw', 'throttle', 'roll', 'pitch']) {
+        const el = document.getElementById('axInvert' + ch[0].toUpperCase() + ch.slice(1));
+        if (el) el.checked = !!axisInvert[ch];
+      }
     } catch (e) { /* приватний режим / заблоковане сховище — не критично */ }
+  }
+
+  function setAxisInvert(channel, value) {
+    axisInvert[channel] = !!value;
+    try {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      const gp = gamepadIndex !== null ? pads[gamepadIndex] : null;
+      localStorage.setItem(axisInvertStorageKey(gp), JSON.stringify(axisInvert));
+    } catch (e) { /* приватний режим / заблоковане сховище — не критично */ }
+  }
+
+  function normalizeAxis(raw, range, invert) {
+    const span = range.max - range.min;
+    let norm = Math.abs(span) > 0.05 ? ((raw - range.min) / span) * 2 - 1 : 0;
+    norm = Math.max(-1, Math.min(1, norm));
+    return invert ? -norm : norm;
   }
 
   function calibrateAxis(channel, btnEl) {
@@ -1038,6 +1128,7 @@
     btnEl.textContent = '…';
     btnEl.disabled = true;
     let best = { index: -1, delta: 0 };
+    const ranges = {}; // index -> {min, max} за весь час прогону, для будь-якої осі
     const started = performance.now();
     (function sample() {
       const p = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -1046,6 +1137,9 @@
         g.axes.forEach((v, i) => {
           const delta = Math.abs(v - (baseline[i] || 0));
           if (delta > best.delta) best = { index: i, delta };
+          const r = ranges[i] || (ranges[i] = { min: v, max: v });
+          if (v < r.min) r.min = v;
+          if (v > r.max) r.max = v;
         });
       }
       if (performance.now() - started < 1500) {
@@ -1056,9 +1150,13 @@
       btnEl.textContent = original;
       if (best.index >= 0 && best.delta > 0.2) {
         axisMap[channel] = best.index;
+        const r = ranges[best.index];
+        // Замалий розмах під час прогону (майже не рухали) — лишаємо
+        // дефолтний -1..1, інакше нормалізація ділила б на майже нуль.
+        axisRange[channel] = (r && r.max - r.min > 0.2) ? { min: r.min, max: r.max } : { min: -1, max: 1 };
         saveAxisMap();
       } else {
-        alert('Рух не зафіксовано — поворуши стік сильніше і спробуй ще раз');
+        alert('Рух не зафіксовано — поворуши стік сильніше (від мінімуму до максимуму) і спробуй ще раз');
       }
     })();
   }
@@ -1161,7 +1259,12 @@
     const gp = pads[gamepadIndex];
     if (!gp) return null;
     const a = gp.axes;
-    return [a[axisMap.yaw] || 0, a[axisMap.throttle] || 0, a[axisMap.roll] || 0, a[axisMap.pitch] || 0];
+    return [
+      normalizeAxis(a[axisMap.yaw] || 0, axisRange.yaw, axisInvert.yaw),
+      normalizeAxis(a[axisMap.throttle] || 0, axisRange.throttle, axisInvert.throttle),
+      normalizeAxis(a[axisMap.roll] || 0, axisRange.roll, axisInvert.roll),
+      normalizeAxis(a[axisMap.pitch] || 0, axisRange.pitch, axisInvert.pitch),
+    ];
   }
 
   function readGamepadButtons() {
@@ -1225,9 +1328,12 @@
     }
     const axes = readGamepadAxes();
     if (axes) {
+      // Показуємо саме те, що піде в stick_to_rc() без додаткового
+      // знаку — напрямок/нормалізація вже застосовані в readGamepadAxes()
+      // (калібрування + чекбокс "інв."), тож бар = реальне значення каналу.
       setStickBar('axRoll', axes[2]);
-      setStickBar('axPitch', -axes[3]);
-      setStickBar('axThrottle', -axes[1]);
+      setStickBar('axPitch', axes[3]);
+      setStickBar('axThrottle', axes[1]);
       setStickBar('axYaw', axes[0]);
     }
     if (gamepadIndex !== null) {
@@ -1307,10 +1413,19 @@
     }
     const aux = readGamepadAux();
     try {
-      await fetch('/api/devices/' + DEVICE_ID + '/control/stick', {
+      const res = await fetch('/api/devices/' + DEVICE_ID + '/control/stick', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ axes, aux })
       });
+      if (res.status === 409) {
+        // Сервер сам розірвав RC-сесію (watchdog: >0.5с без нового стіку —
+        // напр. вкладка на мить згубила фокус) — не продовжуємо мовчки
+        // слати стіки в порожнечу, синхронізуємо UI з реальним станом.
+        console.warn('control session expired server-side, resetting UI');
+        await stopControl(true);
+        setControlState(gamepadIndex !== null ? 'connected' : 'disconnected');
+        showFcToast('Сесію керування розірвано (тайм-аут) — підтверди пульт ще раз');
+      }
     } catch (e) {
       console.error('stick send failed', e);
     }
@@ -1320,10 +1435,41 @@
     if (document.hidden && controlState === 'armed') stopControl();
   });
 
-  const FC_COMMAND_BUTTONS = { ARM: 'btnArm', DISARM: 'btnDisarm', RTL: 'btnRtl', LOITER: 'btnLoiter', TAKEOFF: 'btnTakeoff' };
+  const FC_COMMAND_BUTTONS = { ARM: 'btnArm', DISARM: 'btnDisarm', ACRO: 'btnAcro', STABILIZE: 'btnStabilize', ALT_HOLD: 'btnAltHold' };
+
+  // Модальне підтвердження без блокування JS-потоку (див. коментар біля
+  // розмітки #fcConfirmModal) — на відміну від window.confirm(), не зупиняє
+  // ні gamepad-цикл, ні інтервал відправки стіків, поки користувач вирішує.
+  function confirmAsync(message) {
+    return new Promise((resolve) => {
+      const modalEl = document.getElementById('fcConfirmModal');
+      document.getElementById('fcConfirmModalBody').textContent = message;
+      const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+      const okBtn = document.getElementById('fcConfirmOkBtn');
+      const cancelBtn = document.getElementById('fcConfirmCancelBtn');
+      let decided = false;
+      const onOk = () => { decided = true; modal.hide(); resolve(true); };
+      const onCancel = () => { decided = true; modal.hide(); resolve(false); };
+      const onHidden = () => {
+        okBtn.removeEventListener('click', onOk);
+        cancelBtn.removeEventListener('click', onCancel);
+        modalEl.removeEventListener('hidden.bs.modal', onHidden);
+        if (!decided) resolve(false);
+      };
+      okBtn.addEventListener('click', onOk, { once: true });
+      cancelBtn.addEventListener('click', onCancel, { once: true });
+      modalEl.addEventListener('hidden.bs.modal', onHidden, { once: true });
+      modal.show();
+    });
+  }
+
+  function showFcToast(message) {
+    document.getElementById('fcToastBody').textContent = message;
+    bootstrap.Toast.getOrCreateInstance(document.getElementById('fcToast'), { delay: 5000 }).show();
+  }
 
   async function sendFcCommand(command, confirmMessage) {
-    if (!confirm(confirmMessage)) return;
+    if (!(await confirmAsync(confirmMessage))) return;
     const btn = document.getElementById(FC_COMMAND_BUTTONS[command]);
     const original = btn.textContent;
     btn.disabled = true;
@@ -1335,10 +1481,10 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert('Помилка: ' + (data.error || `HTTP ${res.status}`));
+        showFcToast('Помилка: ' + (data.error || `HTTP ${res.status}`));
       }
     } catch (e) {
-      alert('Помилка запиту: ' + e.message);
+      showFcToast('Помилка запиту: ' + e.message);
     } finally {
       btn.disabled = false;
       btn.textContent = original;

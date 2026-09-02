@@ -279,6 +279,8 @@
   let recordActive = false;
   let lastVideoStats = null;
   let switchingCamera = false;
+  let disconnectGraceTimer = null;
+  let reconnectTimer = null;
 
   const el = id => document.getElementById(id);
   const setText = (id, value) => {
@@ -386,7 +388,7 @@
   }
 
   async function connectStream() {
-    stopPeer();
+    stopPeer(); // теж скасовує будь-який запланований авто-реконект (див. stopPeer)
     setOverlay('Підключення WebRTC стріму...');
     setText('svpStreamStatus', 'Підключення');
     setText('svpStatConn', 'new');
@@ -397,6 +399,7 @@
       setText('svpWebrtcUrl', streamInfo.stream_url);
 
       pc = new RTCPeerConnection();
+      const myPc = pc; // див. коментар нижче — захист від "чужих" подій
       pc.addTransceiver('video', {direction: 'recvonly'});
       pc.addTransceiver('audio', {direction: 'recvonly'});
 
@@ -409,11 +412,29 @@
       };
 
       pc.onconnectionstatechange = () => {
-        setText('svpStatConn', pc.connectionState);
-        if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
-          setOverlay('WebRTC стрім відключено');
-          const status = el('svpStreamStatus');
-          if (status) status.className = 'muted';
+
+        if (pc !== myPc) return;
+        setText('svpStatConn', myPc.connectionState);
+
+        if (myPc.connectionState === 'connected') {
+          if (disconnectGraceTimer) { clearTimeout(disconnectGraceTimer); disconnectGraceTimer = null; }
+          return;
+        }
+
+        if (myPc.connectionState === 'disconnected') {
+          // Часто самовідновлюється за пару секунд (ICE keepalive) — не
+          // смикаємо оверлей і не перепідключаємось одразу, а чекаємо.
+          if (!disconnectGraceTimer) {
+            disconnectGraceTimer = setTimeout(() => {
+              disconnectGraceTimer = null;
+              if (pc === myPc && myPc.connectionState === 'disconnected') scheduleReconnect();
+            }, 4000);
+          }
+          return;
+        }
+
+        if (['failed', 'closed'].includes(myPc.connectionState)) {
+          scheduleReconnect();
         }
       };
 
@@ -440,11 +461,6 @@
 
       await pc.setRemoteDescription({type: 'answer', sdp: await answer.text()});
 
-      // Мінімізуємо джиттер-буфер приймача (Chrome): за замовчуванням
-      // браузер сам собі тримає ~100-200мс запасу на джитер, який ми тут
-      // не контролюємо на боці GStreamer/SRT — playoutDelayHint=0 просить
-      // WebRTC-стек мінімізувати цю затримку. No-op у браузерах, що не
-      // підтримують властивість (Firefox/Safari).
       pc.getReceivers().forEach(receiver => {
         try {
           if ('playoutDelayHint' in receiver) receiver.playoutDelayHint = 0;
@@ -458,7 +474,19 @@
       setText('svpStreamStatus', 'Офлайн');
       setText('svpStatConn', '-');
       setOverlay(err.message || 'WebRTC стрім недоступний');
+      scheduleReconnect();
     }
+  }
+
+  function scheduleReconnect() {
+    if (reconnectTimer) return; // вже заплановано — не дублюємо
+    setOverlay('WebRTC стрім відключено — перепідключення...');
+    const status = el('svpStreamStatus');
+    if (status) status.className = 'muted';
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connectStream();
+    }, 3000);
   }
 
   async function loadCameras() {
@@ -590,6 +618,8 @@
     if (statsTimer) clearInterval(statsTimer);
     statsTimer = null;
     lastVideoStats = null;
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    if (disconnectGraceTimer) { clearTimeout(disconnectGraceTimer); disconnectGraceTimer = null; }
     if (pc) {
       pc.getSenders().forEach(sender => sender.track && sender.track.stop());
       pc.getReceivers().forEach(receiver => receiver.track && receiver.track.stop());
