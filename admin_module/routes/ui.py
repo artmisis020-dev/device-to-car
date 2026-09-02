@@ -3,7 +3,7 @@ from urllib.parse import urljoin
 import requests
 from flask import Blueprint, Response, current_app, render_template, request
 
-from ..helpers import require_admin
+from ..helpers import require_admin, require_device_access, require_login
 from ..services import device_service
 
 
@@ -30,8 +30,20 @@ def index():
     return render_template("index.html")
 
 
-@ui_bp.route("/telemetry/<device_id>")
+@ui_bp.route("/room")
+@require_login
+def room():
+    return render_template("room.html")
+
+
+@ui_bp.route("/users")
 @require_admin
+def users_page():
+    return render_template("users.html")
+
+
+@ui_bp.route("/telemetry/<device_id>")
+@require_device_access
 def telemetry_page(device_id):
     dev = device_service.get_device(device_id)
     if not dev:
@@ -40,7 +52,7 @@ def telemetry_page(device_id):
 
 
 @ui_bp.route("/video/<device_id>")
-@require_admin
+@require_device_access
 def video_page(device_id):
     dev = device_service.get_device(device_id)
     if not dev:
@@ -94,7 +106,7 @@ def webrtc_proxy(path):
 
 
 @ui_bp.route("/devices/<device_id>")
-@require_admin
+@require_device_access
 def device_detail_page(device_id):
     dev = device_service.get_device(device_id)
     if not dev:

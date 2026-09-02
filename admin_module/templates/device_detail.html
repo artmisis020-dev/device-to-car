@@ -90,10 +90,16 @@ body { background:var(--sirena-bg); color:var(--sirena-text); }
 <nav class="navbar navbar-dark" style="background:var(--sirena-header);border-bottom:1px solid var(--sirena-border)">
   <div class="container-fluid">
     <span class="navbar-brand fw-semibold">🧭 {{ hostname }} / {{ device_id[:12] }}</span>
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 align-items-center">
+      <span class="text-light small">{{ current_user.username }}</span>
       <a href="/telemetry/{{ device_id }}" class="btn btn-sm btn-light">Телеметрія</a>
       <a href="/video/{{ device_id }}" class="btn btn-sm btn-light">Відео</a>
+      {% if current_user and current_user.role == 'admin' %}
       <a href="/" class="btn btn-sm btn-light">Назад до списку пристроїв</a>
+      {% else %}
+      <a href="/room" class="btn btn-sm btn-light">Назад до кімнати</a>
+      {% endif %}
+      <a href="/logout" class="btn btn-sm btn-outline-light">Вийти</a>
     </div>
   </div>
 </nav>
@@ -102,7 +108,12 @@ body { background:var(--sirena-bg); color:var(--sirena-text); }
   <div class="row g-3 mb-3">
     <div class="col-xl-4">
       <div class="card h-100">
-        <div class="card-header">Профайл літака</div>
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>Профайл літака</span>
+          {% if current_user and current_user.role == 'admin' %}
+          <button class="btn btn-sm btn-outline-info py-0" onclick="openOwnerReassign('{{ device_id }}')">Змінити власника</button>
+          {% endif %}
+        </div>
         <div class="card-body">
           <div class="kv" id="profileBox">Завантаження…</div>
         </div>
@@ -170,6 +181,9 @@ body { background:var(--sirena-bg); color:var(--sirena-text); }
     </div>
   </div>
 </div>
+{% if current_user and current_user.role == 'admin' %}
+{% include "_owner_reassign_modal.html" %}
+{% endif %}
 {% endblock %}
 {% block scripts %}
 {{ super() }}
@@ -437,6 +451,7 @@ async function loadDetail() {
   const lastSeenExact = utcToLocalText(device.last_seen);
   const profile = [
     ['ID Пристрою', device.device_id],
+    ['Власник', device.owner_username || '—'],
     ['Hostname', device.hostname || '—'],
     ['IP', device.ip || '—'],
     ['Hardware', device.hardware || '—'],
@@ -488,6 +503,7 @@ async function sendCommand(command, payload = null) {
   loadDetail();
 }
 
+window.onOwnerReassigned = loadDetail;
 loadDetail();
 setInterval(loadDetail, 10000);
 </script>

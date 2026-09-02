@@ -53,6 +53,8 @@ body { background:var(--sirena-bg); color:var(--sirena-text); }
     <span class="navbar-brand fw-bold">🛰 Sirena Дашборд</span>
     <div class="d-flex gap-2 align-items-center">
       <span class="text-light small" id="clock"></span>
+      <span class="text-light small">{{ current_user.username }}</span>
+      <a href="/users" class="btn btn-sm btn-outline-light">Користувачі</a>
       <a href="/logout" class="btn btn-sm btn-outline-light">Вийти</a>
     </div>
   </div>
@@ -70,7 +72,8 @@ body { background:var(--sirena-bg); color:var(--sirena-text); }
         <table class="table table-hover mb-0" id="devTable">
           <thead><tr>
             <th>Статус</th><th>Hostname</th><th>IP</th><th>Hardware ID</th>
-            <th>Версія Sirena</th><th>Час останнього пінгу</th><th>Дійсний до</th><th>Дії</th>
+            <th>Версія Sirena</th><th>Час останнього пінгу</th><th>Дійсний до</th>
+            <th>Власник</th><th>Код прив'язки</th><th>Дії</th>
           </tr></thead>
           <tbody id="devBody"></tbody>
         </table>
@@ -124,6 +127,7 @@ body { background:var(--sirena-bg); color:var(--sirena-text); }
     </div>
   </div></div>
 </div>
+{% include "_owner_reassign_modal.html" %}
 {% endblock %}
 {% block scripts %}
 {{ super() }}
@@ -131,6 +135,7 @@ body { background:var(--sirena-bg); color:var(--sirena-text); }
 let currentDeviceId = null;
 const approveModal = new bootstrap.Modal(document.getElementById('approveModal'));
 const revokeModal  = new bootstrap.Modal(document.getElementById('revokeModal'));
+window.onOwnerReassigned = loadDevices;
 
 document.querySelectorAll('input[name="revokeType"]').forEach(r => {
   r.addEventListener('change', () => {
@@ -244,6 +249,14 @@ async function loadDevices() {
       <td><span class="badge bg-secondary">${esc(d.sirena_version || '-')}</span></td>
       <td class="small ${lastSeenClass(d.last_seen)}" title="${esc(utcToLocalText(d.last_seen))}">${esc(timeAgoUa(d.last_seen))}</td>
       <td class="small" title="UTC: ${esc(d.valid_until||'-')}">${esc(utcToLocalText(d.valid_until))}</td>
+      <td class="small">
+        ${d.owner_username ? esc(d.owner_username) : '<span class="text-muted">—</span>'}
+        <button class="btn btn-sm action-btn icon-only py-0 px-1 ms-1" onclick="openOwnerReassign('${d.device_id}')" title="Призначити/перепризначити власника">👤</button>
+      </td>
+      <td class="small">
+        ${d.claim_code ? `<code>${esc(d.claim_code)}</code>` : '<span class="text-muted">—</span>'}
+        <button class="btn btn-sm action-btn icon-only py-0 px-1 ms-1" onclick="genCode('${d.device_id}')" title="Згенерувати новий код">⟳</button>
+      </td>
       <td>
         <a href="/devices/${d.device_id}" class="btn btn-sm action-btn icon-only py-0 px-2 me-1 actions-btn" title="Open detail page">Дашборд</a>
         <a href="/telemetry/${d.device_id}" class="btn btn-sm action-btn py-0 px-2 me-1 actions-btn" title="Телеметрія">${telBadge}</a>
@@ -255,7 +268,14 @@ async function loadDevices() {
     </tr>`;
   }).join('');
   document.getElementById('devBody').innerHTML = body ||
-    '<tr><td colspan="9" class="text-center text-muted py-4">Пристрої не зареєстровані</td></tr>';
+    '<tr><td colspan="10" class="text-center text-muted py-4">Пристрої не зареєстровані</td></tr>';
+}
+
+async function genCode(id) {
+  const res = await fetch(`/api/devices/${id}/claim_code`, {method: 'POST'});
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { alert(data.error || 'Не вдалось згенерувати код'); return; }
+  loadDevices();
 }
 
 function openApprove(id) { currentDeviceId = id; approveModal.show(); }

@@ -1,8 +1,11 @@
-import hmac
 import threading
 import time
 
 from flask import Blueprint, current_app, redirect, render_template, request, session, url_for
+
+from .. import security
+from ..helpers import now_str
+from ..services import repository, user_service
 
 
 auth_bp = Blueprint("auth", __name__)
@@ -44,19 +47,32 @@ def login():
     error = ""
     if request.method == "POST":
         client_ip = _client_ip()
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+
         if _is_rate_limited(client_ip):
             error = "Too many attempts. Try again later."
             return render_template("login.html", error=error), 429
 
-        if hmac.compare_digest(request.form.get("password", ""), current_app.config["ADMIN_PASSWORD"]):
+        user = user_service.get_by_username(username) if username else None
+        valid = (
+            user
+            and user["is_active"]
+            and security.verify_password(password, user["password_hash"])
+        )
+
+        if valid:
             session.clear()
-            session["admin"] = True
+            session["user_id"] = user["id"]
             session.permanent = True
             _clear_attempts(client_ip)
-            return redirect(url_for("ui.index"))
+            repository.insert_auth_log(now_str(), username, client_ip, True, "")
+            return redirect(url_for("ui.index") if user["role"] == "admin" else url_for("ui.room"))
 
         _record_failed_attempt(client_ip)
-        error = "Wrong password"
+        reason = "unknown username" if not user else ("inactive" if not user["is_active"] else "bad password")
+        repository.insert_auth_log(now_str(), username or "(empty)", client_ip, False, reason)
+        error = "Невірний логін або пароль"
     return render_template("login.html", error=error)
 
 

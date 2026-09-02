@@ -2,7 +2,7 @@ import math
 from datetime import datetime, timezone
 from functools import wraps
 
-from flask import redirect, request, session, url_for
+from flask import g, jsonify, redirect, request, url_for
 
 
 def now_str():
@@ -22,11 +22,58 @@ def is_valid(device):
     return True
 
 
+def current_user():
+    return g.get("user")
+
+
+def _forbidden(message="forbidden"):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": message}), 403
+    return message, 403
+
+
+def require_login(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not g.get("user"):
+            return redirect(url_for("auth.login"))
+        return f(*args, **kwargs)
+
+    return decorated
+
+
 def require_admin(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not session.get("admin"):
+        if not g.get("user"):
             return redirect(url_for("auth.login"))
+        if g.user["role"] != "admin":
+            return _forbidden()
+        return f(*args, **kwargs)
+
+    return decorated
+
+
+def require_device_access(f):
+    """Для будь-якого view з <device_id> в URL: адмін бачить усе, звичайний
+    користувач — лише пристрої, де він owner_user_id. Замінює require_admin
+    на device-scoped маршрутах (не стакати обидва декоратори на один view)."""
+
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        # Локальний імпорт — уникаємо циклу helpers<->services (device_service
+        # імпортує з helpers, а тут helpers імпортував би назад services).
+        from .services import device_service
+
+        if not g.get("user"):
+            return redirect(url_for("auth.login"))
+        device = device_service.get_device(kwargs.get("device_id"))
+        if not device:
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "device not found"}), 404
+            return "Device not found", 404
+        if g.user["role"] != "admin" and device["owner_user_id"] != g.user["id"]:
+            return _forbidden()
         return f(*args, **kwargs)
 
     return decorated

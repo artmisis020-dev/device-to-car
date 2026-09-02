@@ -1,6 +1,164 @@
 from ..db import get_db
 
 
+# ─── Users ────────────────────────────────────────────────────────────────────
+
+def insert_user(username, role, password_hash, password_enc, created_at, created_by):
+    with get_db() as db:
+        cur = db.execute(
+            """
+            INSERT INTO users (username, role, password_hash, password_enc, is_active, created_at, created_by)
+            VALUES (?, ?, ?, ?, 1, ?, ?)
+            """,
+            (username, role, password_hash, password_enc, created_at, created_by),
+        )
+        db.commit()
+        return cur.lastrowid
+
+
+def get_user_by_id(user_id):
+    with get_db() as db:
+        return db.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+
+
+def get_user_by_username(username):
+    with get_db() as db:
+        return db.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+
+
+def list_users():
+    with get_db() as db:
+        rows = db.execute("SELECT * FROM users ORDER BY created_at DESC, id DESC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_user_password(user_id, password_hash, password_enc):
+    with get_db() as db:
+        db.execute(
+            "UPDATE users SET password_hash=?, password_enc=? WHERE id=?",
+            (password_hash, password_enc, user_id),
+        )
+        db.commit()
+
+
+# ─── Device ownership / claim codes ────────────────────────────────────────────
+
+def set_device_owner(device_id, owner_user_id):
+    with get_db() as db:
+        db.execute("UPDATE devices SET owner_user_id=? WHERE device_id=?", (owner_user_id, device_id))
+        db.commit()
+
+
+def set_claim_code(device_id, code):
+    with get_db() as db:
+        db.execute("UPDATE devices SET claim_code=? WHERE device_id=?", (code, device_id))
+        db.commit()
+
+
+def clear_claim_code(device_id):
+    with get_db() as db:
+        db.execute("UPDATE devices SET claim_code=NULL WHERE device_id=?", (device_id,))
+        db.commit()
+
+
+def get_device_by_claim_code(code):
+    with get_db() as db:
+        return db.execute("SELECT * FROM devices WHERE claim_code=?", (code,)).fetchone()
+
+
+def list_devices_for_owner(owner_user_id):
+    with get_db() as db:
+        rows = db.execute(
+            "SELECT * FROM devices WHERE owner_user_id=? ORDER BY last_seen DESC", (owner_user_id,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ─── Device claims ──────────────────────────────────────────────────────────────
+
+def create_claim(device_id, user_id, code_used, requested_at):
+    with get_db() as db:
+        cur = db.execute(
+            """
+            INSERT INTO device_claims (device_id, user_id, code_used, status, requested_at)
+            VALUES (?, ?, ?, 'pending', ?)
+            """,
+            (device_id, user_id, code_used, requested_at),
+        )
+        db.commit()
+        return cur.lastrowid
+
+
+def get_claim(claim_id):
+    with get_db() as db:
+        return db.execute("SELECT * FROM device_claims WHERE id=?", (claim_id,)).fetchone()
+
+
+def list_pending_claims_joined():
+    with get_db() as db:
+        rows = db.execute(
+            """
+            SELECT
+                c.id, c.device_id, c.code_used, c.requested_at,
+                d.hostname AS device_hostname,
+                d.owner_user_id AS current_owner_id,
+                owner.username AS current_owner_username,
+                requester.id AS requester_id,
+                requester.username AS requester_username
+            FROM device_claims c
+            JOIN devices d ON d.device_id = c.device_id
+            JOIN users requester ON requester.id = c.user_id
+            LEFT JOIN users owner ON owner.id = d.owner_user_id
+            WHERE c.status = 'pending'
+            ORDER BY c.requested_at
+            """
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_claims_for_user(user_id):
+    with get_db() as db:
+        rows = db.execute(
+            """
+            SELECT c.*, d.hostname AS device_hostname
+            FROM device_claims c
+            JOIN devices d ON d.device_id = c.device_id
+            WHERE c.user_id=?
+            ORDER BY c.requested_at DESC
+            """,
+            (user_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def decide_claim(claim_id, status, decided_at, decided_by):
+    with get_db() as db:
+        db.execute(
+            "UPDATE device_claims SET status=?, decided_at=?, decided_by=? WHERE id=?",
+            (status, decided_at, decided_by, claim_id),
+        )
+        db.commit()
+
+
+# ─── Auth log ────────────────────────────────────────────────────────────────
+
+def insert_auth_log(ts, username, ip, success, reason):
+    with get_db() as db:
+        db.execute(
+            "INSERT INTO auth_log (ts, username, ip, success, reason) VALUES (?, ?, ?, ?, ?)",
+            (ts, username, ip, 1 if success else 0, reason),
+        )
+        db.commit()
+
+
+def list_auth_log(limit=200):
+    with get_db() as db:
+        rows = db.execute(
+            "SELECT * FROM auth_log ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_device(device_id):
     with get_db() as db:
         return db.execute("SELECT * FROM devices WHERE device_id=?", (device_id,)).fetchone()
@@ -8,7 +166,14 @@ def get_device(device_id):
 
 def list_devices():
     with get_db() as db:
-        rows = db.execute("SELECT * FROM devices ORDER BY last_seen DESC").fetchall()
+        rows = db.execute(
+            """
+            SELECT devices.*, users.username AS owner_username
+            FROM devices
+            LEFT JOIN users ON users.id = devices.owner_user_id
+            ORDER BY devices.last_seen DESC
+            """
+        ).fetchall()
     return [dict(r) for r in rows]
 
 

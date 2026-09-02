@@ -39,8 +39,12 @@
     {% if error %}<div class="alert alert-danger py-2">{{ error }}</div>{% endif %}
     <form method="post">
       <div class="mb-3">
-        <label class="form-label">Пароль адміністратора</label>
-        <input type="password" name="password" class="form-control" autofocus>
+        <label class="form-label">Ім'я користувача</label>
+        <input type="text" name="username" class="form-control" autofocus autocapitalize="off" autocorrect="off">
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Пароль</label>
+        <input type="password" name="password" class="form-control">
       </div>
       <button class="btn btn-primary w-100">Ввійти</button>
     </form>

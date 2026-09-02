@@ -33,7 +33,11 @@
     <span class="navbar-brand">{{ hostname }} - Відео</span>
     <div class="actions">
       <a href="/devices/{{ device_id }}" class="btn btn-sm btn-outline-info">Профіль літака</a>
+      {% if current_user and current_user.role == 'admin' %}
       <a href="/" class="btn btn-sm btn-outline-secondary">Назад</a>
+      {% else %}
+      <a href="/room" class="btn btn-sm btn-outline-secondary">Назад</a>
+      {% endif %}
     </div>
   </div>
 </nav>

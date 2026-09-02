@@ -5,7 +5,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Settings:
     secret_key: str
-    admin_password: str
+    password_enc_key: str
     db_path: str
     recordings_dir: str
     mediamtx_hls_port: int
@@ -26,19 +26,19 @@ class Settings:
     @classmethod
     def from_env(cls):
         secret_key = os.environ.get("SIRENA_SECRET_KEY")
-        admin_password = os.environ.get("ADMIN_PASSWORD")
+        password_enc_key = os.environ.get("SIRENA_PASSWORD_ENC_KEY")
 
         missing = []
         if not secret_key:
             missing.append("SIRENA_SECRET_KEY")
-        if not admin_password:
-            missing.append("ADMIN_PASSWORD")
+        if not password_enc_key:
+            missing.append("SIRENA_PASSWORD_ENC_KEY")
         if missing:
             raise RuntimeError("Missing required environment variables: " + ", ".join(missing))
 
         return cls(
             secret_key=secret_key,
-            admin_password=admin_password,
+            password_enc_key=password_enc_key,
             db_path=os.environ.get("SIRENA_DB", "/opt/sirena-server/devices.db"),
             recordings_dir=os.environ.get("SIRENA_RECORDINGS", "/opt/sirena-video/recordings"),
             mediamtx_hls_port=_parse_int_env("MEDIAMTX_HLS_PORT", 8888, minimum=1, maximum=65535),

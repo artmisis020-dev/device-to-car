@@ -206,8 +206,15 @@ def get_device_detail(device_id):
         except Exception:
             return raw_value
 
+    device_dict = dict(device)
+    if device_dict.get("owner_user_id"):
+        owner = repository.get_user_by_id(device_dict["owner_user_id"])
+        device_dict["owner_username"] = owner["username"] if owner else None
+    else:
+        device_dict["owner_username"] = None
+
     return {
-        "device": dict(device),
+        "device": device_dict,
         "is_valid": is_valid(device),
         "online": is_online(device),
         "telemetry": {

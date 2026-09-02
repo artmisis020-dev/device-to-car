@@ -1,7 +1,7 @@
 import secrets
 from datetime import timedelta
 
-from flask import Flask, jsonify, request, session
+from flask import Flask, g, jsonify, request, session
 from werkzeug.exceptions import HTTPException
 
 from .config import Settings
@@ -10,7 +10,9 @@ from .routes.auth import auth_bp
 from .routes.device_api import device_api_bp
 from .routes.telemetry_api import telemetry_api_bp
 from .routes.ui import ui_bp
+from .routes.user_api import user_api_bp
 from .routes.video_api import video_api_bp
+from .services import user_service
 from .services.cleanup import CleanupScheduler
 
 
@@ -21,7 +23,7 @@ def create_app(settings=None):
     app = Flask(__name__, template_folder="templates")
     app.config.update(
         SECRET_KEY=settings.secret_key,
-        ADMIN_PASSWORD=settings.admin_password,
+        PASSWORD_ENC_KEY=settings.password_enc_key,
         SIRENA_DB=settings.db_path,
         SIRENA_RECORDINGS=settings.recordings_dir,
         MEDIAMTX_HLS_PORT=settings.mediamtx_hls_port,
@@ -49,6 +51,7 @@ def create_app(settings=None):
     app.register_blueprint(device_api_bp)
     app.register_blueprint(telemetry_api_bp)
     app.register_blueprint(video_api_bp)
+    app.register_blueprint(user_api_bp)
 
     _register_error_handlers(app)
     _register_security_hooks(app)
@@ -81,12 +84,16 @@ def _register_security_hooks(app):
             session["csrf_token"] = secrets.token_urlsafe(32)
 
     @app.before_request
-    def enforce_admin_csrf_on_state_change():
+    def load_logged_in_user():
+        g.user = user_service.get_session_user()
+
+    @app.before_request
+    def enforce_login_csrf_on_state_change():
         if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
             return None
         if not request.path.startswith("/api/"):
             return None
-        if not session.get("admin"):
+        if not session.get("user_id"):
             return None
 
         sent = request.headers.get("X-CSRF-Token")
@@ -106,5 +113,5 @@ def _register_security_hooks(app):
         return response
 
     @app.context_processor
-    def inject_csrf_token():
-        return {"csrf_token": session.get("csrf_token", "")}
+    def inject_template_globals():
+        return {"csrf_token": session.get("csrf_token", ""), "current_user": g.get("user")}

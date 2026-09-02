@@ -57,6 +57,11 @@
   .svp-compact .svp-settings-row { padding:.4rem .6rem; gap:.35rem; }
   .svp-compact .svp-settings-row select,
   .svp-compact .svp-settings-row input { font-size:.8rem; padding:.15rem .35rem; }
+  .svp-quality-field .input-group-text {
+    padding:.15rem .4rem; font-size:.75rem; color:var(--sirena-muted);
+    background:var(--sirena-surface); border-color:var(--sirena-border);
+  }
+  .svp-compact .svp-quality-field .input-group-text { padding:.15rem .3rem; font-size:.7rem; }
   .svp-adaptive-check { margin:0; white-space:nowrap; }
   .svp-adaptive-check .form-check-label { font-size:.8rem; }
   .svp-stats-grid {
@@ -236,10 +241,22 @@
   </div>
   <div class="svp-settings-row">
     <span class="svp-camera-label">Якість:</span>
-    <input id="svpFps" type="number" min="1" max="60" class="form-control form-control-sm" style="width:70px" title="FPS" placeholder="FPS">
-    <input id="svpBitrate" type="number" min="100" class="form-control form-control-sm" style="width:95px" title="Бітрейт, kbps" placeholder="kbps">
-    <input id="svpWidth" type="number" min="1" class="form-control form-control-sm" style="width:85px" title="Ширина" placeholder="W">
-    <input id="svpHeight" type="number" min="1" class="form-control form-control-sm" style="width:85px" title="Висота" placeholder="H">
+    <div class="input-group input-group-sm svp-quality-field" style="width:100px" title="Кадрів на секунду">
+      <span class="input-group-text">FPS</span>
+      <input id="svpFps" type="number" min="1" max="60" class="form-control" placeholder="30">
+    </div>
+    <div class="input-group input-group-sm svp-quality-field" style="width:135px" title="Бітрейт, kbps">
+      <span class="input-group-text">kbps</span>
+      <input id="svpBitrate" type="number" min="100" class="form-control" placeholder="1500">
+    </div>
+    <div class="input-group input-group-sm svp-quality-field" style="width:110px" title="Ширина, px">
+      <span class="input-group-text">Ш</span>
+      <input id="svpWidth" type="number" min="1" class="form-control" placeholder="640">
+    </div>
+    <div class="input-group input-group-sm svp-quality-field" style="width:110px" title="Висота, px">
+      <span class="input-group-text">В</span>
+      <input id="svpHeight" type="number" min="1" class="form-control" placeholder="512">
+    </div>
     <div class="form-check form-check-inline svp-adaptive-check" title="Автоматично знижувати/підвищувати бітрейт під якість SRT-лінку. Якщо вимкнено — застосовується лише бітрейт, виставлений вище, без автопідстройки.">
       <input class="form-check-input" type="checkbox" id="svpAdaptiveBitrate">
       <label class="form-check-label" for="svpAdaptiveBitrate">Авто-бітрейт</label>

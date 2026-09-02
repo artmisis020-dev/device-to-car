@@ -4,7 +4,7 @@ import time
 
 from flask import Blueprint, Response, current_app, jsonify, request
 
-from ..helpers import json_body, parse_int, require_admin, sanitize_payload
+from ..helpers import json_body, parse_int, require_admin, require_device_access, sanitize_payload
 from ..services import telemetry_service, telemetry_stream
 
 
@@ -12,13 +12,13 @@ telemetry_api_bp = Blueprint("telemetry_api", __name__)
 
 
 @telemetry_api_bp.route("/api/devices/<device_id>/telemetry/start", methods=["POST"])
-@require_admin
+@require_device_access
 def api_telemetry_start(device_id):
     return jsonify(telemetry_service.set_active(device_id, True))
 
 
 @telemetry_api_bp.route("/api/devices/<device_id>/telemetry/stop", methods=["POST"])
-@require_admin
+@require_device_access
 def api_telemetry_stop(device_id):
     return jsonify(telemetry_service.set_active(device_id, False))
 
@@ -47,7 +47,7 @@ def api_telemetry_ingest():
 
 
 @telemetry_api_bp.route("/api/telemetry/latest/<device_id>", methods=["GET"])
-@require_admin
+@require_device_access
 def api_telemetry_latest(device_id):
     try:
         since = float(request.args.get("since", time.time() - 2))
@@ -61,13 +61,13 @@ def api_telemetry_latest(device_id):
 
 
 @telemetry_api_bp.route("/api/telemetry/stats/<device_id>", methods=["GET"])
-@require_admin
+@require_device_access
 def api_telemetry_stats(device_id):
     return jsonify(telemetry_service.stats(device_id))
 
 
 @telemetry_api_bp.route("/api/devices/<device_id>/telemetry/live", methods=["GET"])
-@require_admin
+@require_device_access
 def api_telemetry_live(device_id):
     def stream():
         q = telemetry_stream.subscribe(device_id)
