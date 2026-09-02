@@ -70,6 +70,116 @@
     .svp-stats-grid { grid-template-columns:repeat(2, minmax(120px,1fr)); }
     .svp-video-shell { min-height:260px; }
   }
+
+  /* ─── OSD-оверлей (телеметрія з MAVLink, накладена поверх відео) ─── */
+  @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&display=swap');
+
+  .svp-osd { position:absolute; inset:0; pointer-events:none; font-variant-numeric:tabular-nums; }
+  .svp-osd[hidden] { display:none; }
+  .svp-osd-demo-badge {
+    position:absolute; top:8px; left:50%; transform:translateX(-50%);
+    background:rgba(200,40,40,.85); color:#fff; font-weight:700; font-size:.7rem;
+    padding:2px 10px; border-radius:4px; letter-spacing:.08em;
+  }
+  .svp-osd-top-left, .svp-osd-top-right, .svp-osd-bottom-left, .svp-osd-bottom-right {
+    position:absolute; padding:5px 9px;
+  }
+  .svp-osd-top-left { top:0; left:0; }
+  .svp-osd-top-right { top:0; right:0; text-align:right; }
+  .svp-osd-bottom-left { bottom:0; left:0; }
+  .svp-osd-bottom-right { bottom:0; right:0; text-align:right; }
+  .svp-osd-top-center {
+    position:absolute; top:5px; left:50%; transform:translateX(-50%);
+  }
+  .svp-osd-bottom-center {
+    position:absolute; bottom:5px; left:50%; transform:translateX(-50%);
+    font-size:1.35rem; font-weight:700;
+  }
+  .svp-osd-unit { font-size:.65em; margin-left:2px; opacity:.85; }
+  .svp-osd-mode { text-transform:uppercase; font-size:.85em; opacity:.9; }
+  /* Штучний горизонт: дві розділені планки + центральна крапка (класична
+     FPV-реттикла), а не суцільна лінія — JS повертає/зсуває саме
+     контейнер .svp-osd-horizon (transform: rotate/translate) під
+     roll/pitch, розмітка всередині незмінна. */
+  .svp-osd-horizon {
+    position:absolute; top:50%; left:50%;
+    transform:translate(-50%,-50%);
+    display:flex; align-items:center; gap:16px;
+  }
+  .svp-osd-horizon-bar { position:relative; width:70px; height:2px; background:currentColor; }
+  .svp-osd-horizon-bar::before {
+    content:''; position:absolute; top:-5px; width:2px; height:12px; background:currentColor;
+  }
+  .svp-osd-horizon-bar-left::before { left:0; }
+  .svp-osd-horizon-bar-right::before { right:0; }
+  .svp-osd-horizon-dot { flex:none; width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .svp-compact .svp-osd { font-size:.72rem; }
+  .svp-compact .svp-osd-bottom-center { font-size:1rem; }
+  .svp-compact .svp-osd-horizon { gap:10px; }
+  .svp-compact .svp-osd-horizon-bar { width:44px; }
+
+  /* Walksnail — строгий, чіткий FPV-OSD */
+  .svp-osd[data-skin="walksnail"] {
+    font-family:'Consolas','Courier New',monospace;
+    color:#f2f2f2;
+    text-shadow:0 0 2px #000,0 0 4px #000,1px 1px 0 #000;
+  }
+  .svp-osd[data-skin="walksnail"] .svp-osd-armed { color:#ff5050; font-weight:700; }
+  .svp-osd[data-skin="walksnail"] .svp-osd-armed.disarmed { color:#8fd18f; }
+
+  /* HelloKitty — рожевий, кавайний */
+  .svp-osd[data-skin="hellokitty"] {
+    font-family:'Baloo 2',cursive,sans-serif;
+    color:#a83263;
+  }
+  .svp-osd[data-skin="hellokitty"] .svp-osd-top-left,
+  .svp-osd[data-skin="hellokitty"] .svp-osd-top-right,
+  .svp-osd[data-skin="hellokitty"] .svp-osd-bottom-left,
+  .svp-osd[data-skin="hellokitty"] .svp-osd-bottom-right,
+  .svp-osd[data-skin="hellokitty"] .svp-osd-top-center,
+  .svp-osd[data-skin="hellokitty"] .svp-osd-bottom-center {
+    background:rgba(255,214,232,.9);
+    border:2px solid #ff8fb8;
+    border-radius:14px;
+    box-shadow:0 2px 6px rgba(168,50,99,.25);
+  }
+  .svp-osd[data-skin="hellokitty"] .svp-osd-demo-badge { background:#ff8fb8; color:#6b1d40; }
+  .svp-osd[data-skin="hellokitty"] .svp-osd-armed { color:#e0457e; font-weight:700; }
+  .svp-osd[data-skin="hellokitty"] .svp-osd-armed.disarmed { color:#a83263; }
+  .svp-osd[data-skin="hellokitty"] .svp-osd-horizon-bar,
+  .svp-osd[data-skin="hellokitty"] .svp-osd-horizon-bar::before { background:#ff8fb8; }
+  .svp-osd[data-skin="hellokitty"] .svp-osd-horizon-dot {
+    width:auto; height:auto; background:none; border-radius:0;
+    font-size:1rem; font-weight:700; line-height:1; color:#ff8fb8;
+    text-shadow:0 1px 1px rgba(168,50,99,.4);
+  }
+  .svp-osd[data-skin="hellokitty"] .svp-osd-horizon-dot::before { content:'^-^'; }
+
+  /* Нічний режим — суворий, монохромний NVG-стиль: без м'якого світіння,
+     гострі кути, тонка рамка замість заливки, розріджені великі літери. */
+  .svp-osd[data-skin="night"] {
+    font-family:'Consolas','Courier New',monospace;
+    color:#3ddc3d;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+  }
+  .svp-osd[data-skin="night"] .svp-osd-top-left,
+  .svp-osd[data-skin="night"] .svp-osd-top-right,
+  .svp-osd[data-skin="night"] .svp-osd-bottom-left,
+  .svp-osd[data-skin="night"] .svp-osd-bottom-right,
+  .svp-osd[data-skin="night"] .svp-osd-top-center,
+  .svp-osd[data-skin="night"] .svp-osd-bottom-center {
+    background:rgba(0,0,0,.55);
+    border:1px solid rgba(61,220,61,.5);
+    border-radius:0;
+  }
+  .svp-osd[data-skin="night"] .svp-osd-demo-badge {
+    background:#000; color:#3ddc3d; border:1px solid #3ddc3d; border-radius:0;
+  }
+  .svp-osd[data-skin="night"] .svp-osd-armed { color:#ff5050; font-weight:700; }
+  .svp-osd[data-skin="night"] .svp-osd-armed.disarmed { color:#3ddc3d; }
+  .svp-osd[data-skin="night"] .svp-osd-horizon { gap:20px; }
+  .svp-osd[data-skin="night"] .svp-osd-horizon-bar { width:95px; }
 </style>
 
 {% if not video_player_compact %}
@@ -96,6 +206,31 @@
   <div class="svp-video-shell">
     <video id="svpVideo" class="svp-video" autoplay playsinline muted controls></video>
     <div id="svpOverlay" class="svp-overlay">Очікування WebRTC стріму...</div>
+    <div id="svpOsd" class="svp-osd" data-skin="none" hidden>
+      <div class="svp-osd-demo-badge" id="svpOsdDemoBadge" hidden>ДЕМО</div>
+      <div class="svp-osd-horizon" id="svpOsdHorizon">
+        <div class="svp-osd-horizon-bar svp-osd-horizon-bar-left"></div>
+        <div class="svp-osd-horizon-dot"></div>
+        <div class="svp-osd-horizon-bar svp-osd-horizon-bar-right"></div>
+      </div>
+      <div class="svp-osd-top-left">
+        <span id="svpOsdBatVolt">0.0V</span> <span id="svpOsdBatPct">--%</span>
+      </div>
+      <div class="svp-osd-top-right">
+        <div>GPS <span id="svpOsdSats">0</span> <span id="svpOsdFix">NO FIX</span></div>
+        <div id="svpOsdCoords">--.-----, --.-----</div>
+      </div>
+      <div class="svp-osd-top-center" id="svpOsdHeading">---°</div>
+      <div class="svp-osd-bottom-left">
+        <div class="svp-osd-armed" id="svpOsdArmed">DISARMED</div>
+        <div class="svp-osd-mode" id="svpOsdMode">-</div>
+      </div>
+      <div class="svp-osd-bottom-center"><span id="svpOsdSpeed">0.0</span><span class="svp-osd-unit">m/s</span></div>
+      <div class="svp-osd-bottom-right">
+        <div><span id="svpOsdAlt">0.0</span><span class="svp-osd-unit">m</span></div>
+        <div><span id="svpOsdClimb">0.0</span><span class="svp-osd-unit">m/s</span></div>
+      </div>
+    </div>
   </div>
   <div class="svp-settings-row">
     <span class="svp-camera-label">Якість:</span>
@@ -105,6 +240,14 @@
     <input id="svpHeight" type="number" min="1" class="form-control form-control-sm" style="width:85px" title="Висота" placeholder="H">
     <button id="svpApplySettings" class="btn btn-sm btn-outline-info" type="button">Застосувати</button>
     <span id="svpSettingsStatus" class="svp-camera-label"></span>
+    <span class="svp-divider"></span>
+    <span class="svp-camera-label">OSD:</span>
+    <select id="svpOsdSkin" class="form-select form-select-sm" style="width:130px">
+      <option value="none">Немає</option>
+      <option value="walksnail">Walksnail</option>
+      <option value="hellokitty">HelloKitty</option>
+      <option value="night">Нічний</option>
+    </select>
   </div>
   <div class="svp-stats-grid">
     <div class="svp-stat"><div class="svp-stat-label">З'єднання</div><div class="svp-stat-value" id="svpStatConn">-</div></div>
@@ -511,14 +654,143 @@
   //   dot.classList.toggle('on', recordActive);
   // }
 
+  // ─── OSD-оверлей (телеметрія з MAVLink, окремо від відео-пайплайна) ───────
+  // Не залежить від telemetry.html: власна підписка на той самий живий
+  // SSE-стрім (/api/devices/<id>/telemetry/live підтримує довільну
+  // кількість підписників на пристрій), тож OSD працює і на самостійній
+  // /video/<id>, і вбудований у /telemetry/<id>.
+  const OSD_SKIN_KEY = 'sirena_osd_skin';
+  const MAV_TYPE_GCS = 6;
+  const MAV_AUTOPILOT_INVALID = 8;
+  const MAV_MODE_FLAG_SAFETY_ARMED = 128;
+  const ARDUCOPTER_MODES = {
+    0: 'STABILIZE', 1: 'ACRO', 2: 'ALT_HOLD', 3: 'AUTO', 4: 'GUIDED', 5: 'LOITER',
+    6: 'RTL', 7: 'CIRCLE', 9: 'LAND', 11: 'DRIFT', 13: 'SPORT', 16: 'POSHOLD',
+    17: 'BRAKE', 20: 'GUIDED_NOGPS', 21: 'SMART_RTL',
+  };
+  const GPS_FIX_LABELS = { 0: 'NO GPS', 1: 'NO FIX', 2: '2D', 3: '3D', 4: 'DGPS', 5: 'RTK-F', 6: 'RTK' };
+
+  let osdState = { lastTs: 0 };
+  let osdSource = null;
+
+  function osdApplySkin(skin) {
+    const layer = el('svpOsd');
+    if (!layer) return;
+    layer.dataset.skin = skin;
+    layer.hidden = skin === 'none';
+    try { localStorage.setItem(OSD_SKIN_KEY, skin); } catch (e) { /* приватний режим — не критично */ }
+  }
+
+  function osdLoadSkinPreference() {
+    let skin = 'none';
+    try { skin = localStorage.getItem(OSD_SKIN_KEY) || 'none'; } catch (e) { /* приватний режим — не критично */ }
+    const select = el('svpOsdSkin');
+    if (select) select.value = skin;
+    osdApplySkin(skin);
+  }
+
+  function osdProcessMsg(msg) {
+    const type = msg.type;
+    const data = msg.d;
+    osdState.lastTs = msg.ts;
+    if (type === 'GLOBAL_POSITION_INT') {
+      osdState.lat = data.lat / 1e7;
+      osdState.lon = data.lon / 1e7;
+      osdState.alt = data.relative_alt / 1000;
+    } else if (type === 'GPS_RAW_INT') {
+      osdState.sats = data.satellites_visible;
+      osdState.fix = data.fix_type;
+    } else if (type === 'ATTITUDE') {
+      osdState.roll = data.roll * 180 / Math.PI;
+      osdState.pitch = data.pitch * 180 / Math.PI;
+    } else if (type === 'VFR_HUD') {
+      osdState.speed = data.groundspeed;
+      osdState.heading = data.heading;
+      osdState.climb = data.climb;
+    } else if (type === 'SYS_STATUS') {
+      osdState.battV = data.voltage_battery / 1000;
+      osdState.battPct = data.battery_remaining;
+    } else if (type === 'HEARTBEAT') {
+      const mavType = Number(data?.type);
+      const autopilot = Number(data?.autopilot);
+      if (mavType === MAV_TYPE_GCS || autopilot === MAV_AUTOPILOT_INVALID) return;
+      osdState.armed = (Number(data.base_mode || 0) & MAV_MODE_FLAG_SAFETY_ARMED) !== 0;
+      osdState.mode = data.custom_mode;
+    }
+  }
+
+  function osdStartLive() {
+    osdSource = new EventSource(`/api/devices/${deviceId}/telemetry/live`);
+    osdSource.onmessage = (e) => {
+      try { osdProcessMsg(JSON.parse(e.data)); } catch (err) { /* пропускаємо биту подію */ }
+    };
+  }
+
+  function osdDemoState(t) {
+    return {
+      lat: 50.4501 + Math.sin(t / 40) * 0.001,
+      lon: 30.5234 + Math.cos(t / 40) * 0.001,
+      alt: 40 + Math.sin(t / 6) * 5,
+      sats: 11, fix: 3,
+      roll: Math.sin(t / 2) * 12,
+      pitch: Math.sin(t / 3 + 1) * 6,
+      speed: 6 + Math.sin(t / 5) * 3,
+      heading: (t * 8) % 360,
+      climb: Math.sin(t / 4),
+      battV: 22.2 - (t % 300) / 300 * 3,
+      battPct: Math.max(10, 100 - (t % 300) / 3),
+      armed: Math.floor(t / 10) % 2 === 0,
+      mode: 5,
+    };
+  }
+
+  function osdRender() {
+    const layer = el('svpOsd');
+    if (!layer || layer.hidden) return;
+    const now = Date.now() / 1000;
+    const isLive = (now - (osdState.lastTs || 0)) < 3;
+    const s = isLive ? osdState : osdDemoState(now);
+    const demoBadge = el('svpOsdDemoBadge');
+    if (demoBadge) demoBadge.hidden = isLive;
+
+    setText('svpOsdBatVolt', (s.battV != null ? s.battV.toFixed(1) : '0.0') + 'V');
+    setText('svpOsdBatPct', (s.battPct != null ? s.battPct : '--') + '%');
+    setText('svpOsdSats', s.sats != null ? s.sats : 0);
+    setText('svpOsdFix', GPS_FIX_LABELS[s.fix] ?? 'NO FIX');
+    setText('svpOsdCoords', (s.lat != null && s.lon != null)
+      ? `${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}` : '--.-----, --.-----');
+    setText('svpOsdHeading', (s.heading != null ? Math.round(s.heading) : '---') + '°');
+    const armedEl = el('svpOsdArmed');
+    if (armedEl) {
+      armedEl.textContent = s.armed ? 'ARMED' : 'DISARMED';
+      armedEl.classList.toggle('disarmed', !s.armed);
+    }
+    setText('svpOsdMode', ARDUCOPTER_MODES[s.mode] ?? (s.mode != null ? `MODE ${s.mode}` : '-'));
+    setText('svpOsdSpeed', s.speed != null ? s.speed.toFixed(1) : '0.0');
+    setText('svpOsdAlt', s.alt != null ? s.alt.toFixed(1) : '0.0');
+    setText('svpOsdClimb', s.climb != null ? (s.climb >= 0 ? '+' : '') + s.climb.toFixed(1) : '0.0');
+
+    const horizon = el('svpOsdHorizon');
+    if (horizon) {
+      const roll = s.roll || 0;
+      const pitch = Math.max(-20, Math.min(20, (s.pitch || 0) * 1.5));
+      horizon.style.transform = `translate(-50%, calc(-50% + ${pitch}px)) rotate(${-roll}deg)`;
+    }
+  }
+
+  el('svpOsdSkin')?.addEventListener('change', (e) => osdApplySkin(e.target.value));
+
   el('svpReconnect')?.addEventListener('click', connectStream);
   el('svpRecord')?.addEventListener('click', toggleRecord);
   el('svpApplySettings')?.addEventListener('click', applyVideoSettings);
-  window.addEventListener('beforeunload', stopPeer);
+  window.addEventListener('beforeunload', () => { stopPeer(); osdSource?.close(); });
   syncRecordState();
   loadCameras();
   loadVideoSettings();
   connectStream();
+  osdLoadSkinPreference();
+  osdStartLive();
+  setInterval(osdRender, 250);
   if (!compact) setInterval(syncRecordState, 5000);
   if (!compact) setInterval(loadCameras, 10000);
 })();
