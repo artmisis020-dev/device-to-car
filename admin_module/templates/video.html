@@ -6,6 +6,25 @@
   .navbar { background:var(--sirena-header) !important; border-bottom:1px solid var(--sirena-border); }
   .page-wrap { padding:0 1rem 1rem; }
   .actions { display:flex; gap:.5rem; flex-wrap:wrap; }
+
+  /* Bootstrap-картки (панель керування нижче) інакше рендеряться зі
+     стандартним світлим фоном — на решті адмінки (telemetry.html і т.д.)
+     це перекрито тим самим правилом, тут його не було зовсім. */
+  .card {
+    background: var(--sirena-surface);
+    border: 1px solid var(--sirena-border);
+    border-radius: 8px;
+    color: var(--sirena-text);
+  }
+  .card-body { color: var(--sirena-text); }
+  .card-header {
+    background: var(--sirena-header) !important;
+    border-bottom: 1px solid var(--sirena-border);
+    color: var(--sirena-text) !important;
+    font-weight: 600;
+    padding: .6rem 1rem;
+    font-size: .85rem;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -22,6 +41,11 @@
 <div class="page-wrap">
   {% set video_player_compact = false %}
   {% include "_video_player.html" %}
+  <div class="row g-2 mt-1">
+    <div class="col-md-6">
+      {% include "_control_panel.html" %}
+    </div>
+  </div>
 </div>
 {% endblock %}
 {% block scripts %}

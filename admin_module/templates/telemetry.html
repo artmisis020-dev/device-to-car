@@ -146,45 +146,6 @@
     color: var(--sirena-text);
   }
 
-  .badge-gamepad-on {
-    background: var(--sirena-ok);
-    color: #0a1a12;
-  }
-
-  .badge-gamepad-off {
-    background: var(--sirena-inactive);
-    color: var(--sirena-text);
-  }
-
-  .stick-bar-track {
-    position: relative;
-    height: 10px;
-    border-radius: 5px;
-    background: var(--sirena-border);
-    overflow: hidden;
-  }
-
-  .stick-bar-fill {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 50%;
-    width: 0;
-    background: var(--sirena-accent);
-  }
-
-  .btn-calibrate {
-    font-size: 0.7rem;
-    line-height: 1;
-    padding: 2px 6px;
-  }
-
-  .axis-invert-check {
-    display: inline-flex; align-items: center; gap: 2px;
-    font-size: 0.7rem; margin: 0; cursor: pointer; user-select: none;
-  }
-  .axis-invert-check input { margin: 0; cursor: pointer; }
-
   .status-dot {
     width: 10px;
     height: 10px;
@@ -269,6 +230,14 @@
     background: var(--sirena-header) !important;
     border-bottom: 1px solid var(--sirena-border);
   }
+
+  /* Широкий екран: відео-картка переїжджає на сам верх сторінки (перед
+     статус-баром і картками пристрою) на всю ширину і стає помітно вищою;
+     все інше (статус-бар, картки, GPS/керування) лишається видимим, просто
+     опускається під неї в звичайному потоці документа. */
+  #telemetryContent.wide-screen-mode #videoStreamCard .svp-video-shell {
+    min-height: min(78vh, 900px);
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -288,7 +257,7 @@
   </div>
 </nav>
 
-<div class="container-fluid">
+<div class="container-fluid" id="telemetryContent">
   <!-- Status bar -->
   <div class="d-flex gap-3 mb-3 align-items-center flex-wrap">
     <span id="statusText" class="text-muted small">Очікування телеметрії…</span>
@@ -416,9 +385,9 @@
     </div>
   </div>
 
-  <div class="row g-2">
+  <div class="row g-2" id="telemetryMainRow">
     <!-- Map + Control -->
-    <div class="col-md-6 d-flex flex-column gap-2">
+    <div class="col-md-6 d-flex flex-column gap-2" id="telemetryControlColumn">
       <div class="card">
         <div class="card-header d-flex justify-content-between">
           🗺 GPS трек
@@ -428,93 +397,15 @@
           <div id="map"></div>
         </div>
       </div>
-      <div class="card">
-        <div class="card-header d-flex justify-content-between align-items-center py-1">
-          <span>🎮 Керування (MAVLink)</span>
-          <span id="gamepadBadge"><span class="badge badge-gamepad-off">Пульт: не підключено</span></span>
-        </div>
-        <div class="card-body p-2">
-          <div id="gamepadHint" class="small text-muted mb-1">Підключіть USB-пульт і натисніть будь-яку кнопку на ньому</div>
-          <div class="row g-2">
-            <div class="col-6">
-              <div class="d-flex justify-content-between align-items-center small text-muted">
-                <span class="d-flex align-items-center gap-1">Roll <button type="button" class="btn btn-outline-secondary btn-calibrate" onclick="calibrateAxis('roll', this)" title="Поворуши стік Roll ~1.5с, щоб прив'язати правильну вісь">Прив'язати</button><label class="axis-invert-check" title="Інвертувати напрямок цієї осі"><input type="checkbox" id="axInvertRoll" onchange="setAxisInvert('roll', this.checked)">інв.</label></span>
-                <span id="axRollVal">0.00</span>
-              </div>
-              <div class="stick-bar-track"><div class="stick-bar-fill" id="axRoll"></div></div>
-            </div>
-            <div class="col-6">
-              <div class="d-flex justify-content-between align-items-center small text-muted">
-                <span class="d-flex align-items-center gap-1">Pitch <button type="button" class="btn btn-outline-secondary btn-calibrate" onclick="calibrateAxis('pitch', this)" title="Поворуши стік Pitch ~1.5с, щоб прив'язати правильну вісь">Прив'язати</button><label class="axis-invert-check" title="Інвертувати напрямок цієї осі"><input type="checkbox" id="axInvertPitch" onchange="setAxisInvert('pitch', this.checked)">інв.</label></span>
-                <span id="axPitchVal">0.00</span>
-              </div>
-              <div class="stick-bar-track"><div class="stick-bar-fill" id="axPitch"></div></div>
-            </div>
-            <div class="col-6">
-              <div class="d-flex justify-content-between align-items-center small text-muted">
-                <span class="d-flex align-items-center gap-1">Throttle <button type="button" class="btn btn-outline-secondary btn-calibrate" onclick="calibrateAxis('throttle', this)" title="Поворуши стік Throttle від мінімуму до максимуму й назад ~1.5с, щоб прив'язати вісь і її діапазон">Прив'язати</button><label class="axis-invert-check" title="Інвертувати напрямок цієї осі"><input type="checkbox" id="axInvertThrottle" onchange="setAxisInvert('throttle', this.checked)">інв.</label></span>
-                <span id="axThrottleVal">0.00</span>
-              </div>
-              <div class="stick-bar-track"><div class="stick-bar-fill" id="axThrottle"></div></div>
-            </div>
-            <div class="col-6">
-              <div class="d-flex justify-content-between align-items-center small text-muted">
-                <span class="d-flex align-items-center gap-1">Yaw <button type="button" class="btn btn-outline-secondary btn-calibrate" onclick="calibrateAxis('yaw', this)" title="Поворуши стік Yaw ~1.5с, щоб прив'язати правильну вісь">Прив'язати</button><label class="axis-invert-check" title="Інвертувати напрямок цієї осі"><input type="checkbox" id="axInvertYaw" onchange="setAxisInvert('yaw', this.checked)">інв.</label></span>
-                <span id="axYawVal">0.00</span>
-              </div>
-              <div class="stick-bar-track"><div class="stick-bar-fill" id="axYaw"></div></div>
-            </div>
-          </div>
-          <div class="d-flex gap-2 mt-2 small text-muted align-items-center flex-wrap">
-            AUX:
-            <span class="d-flex align-items-center gap-1">1<span id="aux1" class="badge badge-gamepad-off">·</span><button type="button" class="btn btn-outline-secondary btn-calibrate" onclick="calibrateAux(0, this)" title="Активуй перемикач AUX1 на пульті, щоб прив'язати">Прив'язати</button></span>
-            <span class="d-flex align-items-center gap-1">2<span id="aux2" class="badge badge-gamepad-off">·</span><button type="button" class="btn btn-outline-secondary btn-calibrate" onclick="calibrateAux(1, this)" title="Активуй перемикач AUX2 на пульті, щоб прив'язати">Прив'язати</button></span>
-            <span class="d-flex align-items-center gap-1">3<span id="aux3" class="badge badge-gamepad-off">·</span><button type="button" class="btn btn-outline-secondary btn-calibrate" onclick="calibrateAux(2, this)" title="Активуй перемикач AUX3 на пульті, щоб прив'язати">Прив'язати</button></span>
-            <span class="d-flex align-items-center gap-1">4<span id="aux4" class="badge badge-gamepad-off">·</span><button type="button" class="btn btn-outline-secondary btn-calibrate" onclick="calibrateAux(3, this)" title="Активуй перемикач AUX4 на пульті, щоб прив'язати">Прив'язати</button></span>
-          </div>
-          <div id="rawGamepadInputs" class="mt-2 small" hidden></div>
-          <div class="d-flex flex-wrap gap-1 mt-2">
-            <button id="btnGamepadPrimary" class="btn btn-sm btn-outline-primary" onclick="onGamepadPrimaryClick()" title="Стіки напряму керують дроном по RC_CHANNELS_OVERRIDE, після підтвердження">🎮 Підключити пульт</button>
-            <button id="btnArm" class="btn btn-sm btn-outline-secondary" onclick="sendFcCommand('ARM', 'Озброїти дрон (ARM)?')">Arm</button>
-            <button id="btnDisarm" class="btn btn-sm btn-outline-secondary" onclick="sendFcCommand('DISARM', 'Роззброїти дрон (DISARM)?')">Disarm</button>
-            <button id="btnAcro" class="btn btn-sm btn-outline-secondary" onclick="sendFcCommand('ACRO', 'Перевести в ACRO?')">Acro</button>
-            <button id="btnStabilize" class="btn btn-sm btn-outline-secondary" onclick="sendFcCommand('STABILIZE', 'Перевести в STABILIZE?')">Stabilize</button>
-            <button id="btnAltHold" class="btn btn-sm btn-outline-secondary" onclick="sendFcCommand('ALT_HOLD', 'Перевести в ALT_HOLD?')">Alt Hold</button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <!-- Неблокуючий модал підтвердження для Arm/Disarm/RTL/Loiter/Takeoff.
-         Навмисно НЕ window.confirm()/alert(): нативний діалог синхронно
-         блокує JS-потік, через що зупиняється і setInterval(sendStick),
-         і requestAnimationFrame(gamepadLoop) — за секунду-дві очікування
-         кліку користувача на діалозі браузер встигає вирішити, що пульт
-         "відключився" (Gamepad API не оновлюється без активного опитування),
-         а сервер тим часом рве RC_CHANNELS_OVERRIDE сесію по watchdog
-         (STICK_TIMEOUT_SEC=0.5с без нового стіку) — керування "злітає". -->
-    <div class="modal fade" id="fcConfirmModal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered modal-sm">
-        <div class="modal-content">
-          <div class="modal-body" id="fcConfirmModalBody"></div>
-          <div class="modal-footer py-2">
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="fcConfirmCancelBtn">Скасувати</button>
-            <button type="button" class="btn btn-sm btn-danger" id="fcConfirmOkBtn">Підтвердити</button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index:1080">
-      <div id="fcToast" class="toast align-items-center text-bg-danger border-0" role="alert">
-        <div class="d-flex">
-          <div class="toast-body" id="fcToastBody"></div>
-          <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-        </div>
-      </div>
+      {% include "_control_panel.html" %}
     </div>
     <!-- Video stream -->
-    <div class="col-md-6">
-      <div class="card h-100">
-        <div class="card-header">Відео стрім</div>
+    <div class="col-md-6" id="telemetryVideoColumn">
+      <div class="card h-100" id="videoStreamCard">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>Відео стрім</span>
+          <button id="btnWideScreen" class="btn btn-sm btn-outline-secondary py-0" onclick="toggleWideScreen()" title="Підняти відео нагору на всю ширину сторінки, решту опустити під низ">🖥 Широкий екран</button>
+        </div>
         <div class="card-body p-2">
           {% set video_player_compact = true %}
           {% include "_video_player.html" %}
@@ -613,6 +504,56 @@
     gpsDotLayer.clearLayers();
     starlinkDotLayer.clearLayers();
   }
+
+  // ─── Широкий екран для відео ─────────────────────────────────────────────────
+  // Не просто розтягуємо колонку на місці — переносимо саму картку відео в
+  // самий початок #telemetryContent (DOM-вузол, а не CSS order/flex), тож
+  // вона стає першою на сторінці на всю ширину, а статус-бар/картки
+  // пристрою/GPS+керування лишаються видимими й просто йдуть під нею у
+  // звичайному потоці документа. Порожня колонка, що лишається на місці
+  // відео, ховається, а колонка GPS/керування розтягується на всю ширину.
+  // Прапорець per-браузер (localStorage), не на сервері — суто UI-преференс.
+  const WIDE_SCREEN_KEY = 'sirena_wide_screen';
+
+  function applyWideScreen(on) {
+    const content = document.getElementById('telemetryContent');
+    const videoCard = document.getElementById('videoStreamCard');
+    const videoCol = document.getElementById('telemetryVideoColumn');
+    const controlCol = document.getElementById('telemetryControlColumn');
+    const btn = document.getElementById('btnWideScreen');
+    if (!content || !videoCard || !videoCol || !controlCol) return;
+
+    if (on) {
+      if (videoCard.parentElement !== content) {
+        content.insertBefore(videoCard, content.firstChild);
+      }
+      videoCol.hidden = true;
+      controlCol.classList.remove('col-md-6');
+      controlCol.classList.add('col-12');
+    } else {
+      if (videoCard.parentElement !== videoCol) {
+        videoCol.appendChild(videoCard);
+      }
+      videoCol.hidden = false;
+      controlCol.classList.remove('col-12');
+      controlCol.classList.add('col-md-6');
+    }
+    content.classList.toggle('wide-screen-mode', on);
+    if (btn) btn.textContent = on ? '🖥 Звичайний вигляд' : '🖥 Широкий екран';
+  }
+
+  function toggleWideScreen() {
+    const isOn = document.getElementById('telemetryContent').classList.contains('wide-screen-mode');
+    const next = !isOn;
+    applyWideScreen(next);
+    try { localStorage.setItem(WIDE_SCREEN_KEY, next ? '1' : '0'); } catch (e) { /* приватний режим — не критично */ }
+  }
+
+  (function loadWideScreenPreference() {
+    let on = false;
+    try { on = localStorage.getItem(WIDE_SCREEN_KEY) === '1'; } catch (e) { /* приватний режим — не критично */ }
+    if (on) applyWideScreen(true);
+  })();
 
   // ─── Перемикач запису телеметрії на сервері ─────────────────────────────────
   // async function toggleTelemetry() {
@@ -978,516 +919,6 @@
       }
     } catch (e) {
       console.error(`Error loading initial telemetry state: ${e}`);
-    }
-  }
-
-  // ─── Джойстик / керування дроном по MAVLink ──────────────────────────────────
-  // Явний 3-станий флоу: disconnected -> connected (калібрування, команди на
-  // дрон НЕ йдуть) -> armed (після підтвердження, реально шле RC override).
-  let gamepadIndex = null;
-  let controlState = 'disconnected';
-  let controlStickInterval = null;
-
-  function updateGamepadBadge(connected) {
-    document.getElementById('gamepadBadge').innerHTML = connected
-      ? '<span class="badge badge-gamepad-on">Пульт: підключено</span>'
-      : '<span class="badge badge-gamepad-off">Пульт: не підключено</span>';
-  }
-
-  function setControlState(state) {
-    controlState = state;
-    updateGamepadBadge(state !== 'disconnected');
-    const hint = document.getElementById('gamepadHint');
-    const raw = document.getElementById('rawGamepadInputs');
-    const btn = document.getElementById('btnGamepadPrimary');
-    if (state === 'disconnected') {
-      hint.hidden = false;
-      raw.hidden = true;
-      btn.textContent = '🎮 Підключити пульт';
-      btn.className = 'btn btn-sm btn-outline-primary';
-    } else if (state === 'connected') {
-      hint.hidden = true;
-      raw.hidden = false;
-      btn.textContent = '✅ Підтвердити пульт і почати керування';
-      btn.className = 'btn btn-sm btn-success';
-    } else if (state === 'armed') {
-      hint.hidden = true;
-      raw.hidden = false;
-      btn.textContent = '⏹ Зупинити керування';
-      btn.className = 'btn btn-sm btn-danger';
-    }
-  }
-
-  window.addEventListener('gamepadconnected', (e) => {
-    gamepadIndex = e.gamepad.index;
-    loadAxisMap(e.gamepad);
-    loadAuxMap(e.gamepad);
-    if (controlState === 'disconnected') setControlState('connected');
-  });
-
-  window.addEventListener('gamepaddisconnected', (e) => {
-    if (gamepadIndex === e.gamepad.index) {
-      gamepadIndex = null;
-      if (controlState === 'armed') stopControl(true);
-      setControlState('disconnected');
-    }
-  });
-
-  // Канал -> реальний індекс осі на фізичному пульті. RC-передавачі через
-  // USB-HID часто віддають осі в іншому порядку, ніж стандартний ігровий
-  // геймпад (де прийнято axes[0..3] = leftX,leftY,rightX,rightY) — тому
-  // індекси не хардкодяться, а прив'язуються кнопкою "Прив'язати" нижче.
-  // Дефолт відповідає стандартному порядку геймпада (mode2: ліва ручка —
-  // throttle/yaw, права — roll/pitch), працює "з коробки" для звичайних
-  // ігрових джойстиків.
-  let axisMap = { yaw: 0, throttle: 1, roll: 2, pitch: 3 };
-
-  // Сирий діапазон осі на конкретному пульті не завжди -1..1 (як у
-  // звичайного геймпада) — RC-передавачі через USB-HID часто віддають
-  // важіль throttle як 0..1 (не біполярний). Замість того щоб хардкодити
-  // діапазон, калібрування саме заміряє min/max під час прогону стіка і
-  // потім лінійно розтягує його в канонічні -1..1.
-  let axisRange = {
-    yaw: { min: -1, max: 1 }, throttle: { min: -1, max: 1 },
-    roll: { min: -1, max: 1 }, pitch: { min: -1, max: 1 },
-  };
-  // Напрямок теж не можна вгадати наперед для нестандартного пульта —
-  // раніше сервер жорстко інвертував pitch/throttle під конвенцію
-  // звичайного геймпада, що виявилось невірним для цього RC-пульта
-  // (throttle йшов "too high" на холостому ходу). Тепер напрямок — явний
-  // перемикач "інв." в UI на кожен канал, дефолт false.
-  let axisInvert = { yaw: false, throttle: false, roll: false, pitch: false };
-
-  function axisMapStorageKey(gp) {
-    return 'sirena_axis_map:' + (gp && gp.id ? gp.id : 'default');
-  }
-
-  function axisRangeStorageKey(gp) {
-    return 'sirena_axis_range:' + (gp && gp.id ? gp.id : 'default');
-  }
-
-  function axisInvertStorageKey(gp) {
-    return 'sirena_axis_invert:' + (gp && gp.id ? gp.id : 'default');
-  }
-
-  function saveAxisMap() {
-    try {
-      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-      const gp = gamepadIndex !== null ? pads[gamepadIndex] : null;
-      localStorage.setItem(axisMapStorageKey(gp), JSON.stringify(axisMap));
-      localStorage.setItem(axisRangeStorageKey(gp), JSON.stringify(axisRange));
-    } catch (e) { /* приватний режим / заблоковане сховище — не критично */ }
-  }
-
-  function loadAxisMap(gp) {
-    try {
-      const raw = localStorage.getItem(axisMapStorageKey(gp));
-      if (raw) axisMap = Object.assign({ yaw: 0, throttle: 1, roll: 2, pitch: 3 }, JSON.parse(raw));
-      const rawRange = localStorage.getItem(axisRangeStorageKey(gp));
-      if (rawRange) {
-        axisRange = Object.assign(
-          { yaw: { min: -1, max: 1 }, throttle: { min: -1, max: 1 }, roll: { min: -1, max: 1 }, pitch: { min: -1, max: 1 } },
-          JSON.parse(rawRange)
-        );
-      }
-      const rawInvert = localStorage.getItem(axisInvertStorageKey(gp));
-      axisInvert = Object.assign(
-        { yaw: false, throttle: false, roll: false, pitch: false },
-        rawInvert ? JSON.parse(rawInvert) : {}
-      );
-      for (const ch of ['yaw', 'throttle', 'roll', 'pitch']) {
-        const el = document.getElementById('axInvert' + ch[0].toUpperCase() + ch.slice(1));
-        if (el) el.checked = !!axisInvert[ch];
-      }
-    } catch (e) { /* приватний режим / заблоковане сховище — не критично */ }
-  }
-
-  function setAxisInvert(channel, value) {
-    axisInvert[channel] = !!value;
-    try {
-      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-      const gp = gamepadIndex !== null ? pads[gamepadIndex] : null;
-      localStorage.setItem(axisInvertStorageKey(gp), JSON.stringify(axisInvert));
-    } catch (e) { /* приватний режим / заблоковане сховище — не критично */ }
-  }
-
-  function normalizeAxis(raw, range, invert) {
-    const span = range.max - range.min;
-    let norm = Math.abs(span) > 0.05 ? ((raw - range.min) / span) * 2 - 1 : 0;
-    norm = Math.max(-1, Math.min(1, norm));
-    return invert ? -norm : norm;
-  }
-
-  function calibrateAxis(channel, btnEl) {
-    if (gamepadIndex === null) return;
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    const gp = pads[gamepadIndex];
-    if (!gp) return;
-    const baseline = gp.axes.slice();
-    const original = btnEl.textContent;
-    btnEl.textContent = '…';
-    btnEl.disabled = true;
-    let best = { index: -1, delta: 0 };
-    const ranges = {}; // index -> {min, max} за весь час прогону, для будь-якої осі
-    const started = performance.now();
-    (function sample() {
-      const p = navigator.getGamepads ? navigator.getGamepads() : [];
-      const g = gamepadIndex !== null ? p[gamepadIndex] : null;
-      if (g) {
-        g.axes.forEach((v, i) => {
-          const delta = Math.abs(v - (baseline[i] || 0));
-          if (delta > best.delta) best = { index: i, delta };
-          const r = ranges[i] || (ranges[i] = { min: v, max: v });
-          if (v < r.min) r.min = v;
-          if (v > r.max) r.max = v;
-        });
-      }
-      if (performance.now() - started < 1500) {
-        requestAnimationFrame(sample);
-        return;
-      }
-      btnEl.disabled = false;
-      btnEl.textContent = original;
-      if (best.index >= 0 && best.delta > 0.2) {
-        axisMap[channel] = best.index;
-        const r = ranges[best.index];
-        // Замалий розмах під час прогону (майже не рухали) — лишаємо
-        // дефолтний -1..1, інакше нормалізація ділила б на майже нуль.
-        axisRange[channel] = (r && r.max - r.min > 0.2) ? { min: r.min, max: r.max } : { min: -1, max: 1 };
-        saveAxisMap();
-      } else {
-        alert('Рух не зафіксовано — поворуши стік сильніше (від мінімуму до максимуму) і спробуй ще раз');
-      }
-    })();
-  }
-
-  // AUX1-4 (RC5-8): канал -> джерело на пульті ({type:'axis'|'button', index}).
-  // Аукс-перемикачі можуть бути як кнопками, так і додатковими осями (частий
-  // випадок для USB-адаптерів RC-передавачів) — тому кнопка "Прив'язати"
-  // нижче слухає ОБИДВА типи одночасно і прив'язує те, що реально
-  // поворухнулось/натиснулось.
-  let auxMap = [
-    { type: 'button', index: 0 },
-    { type: 'button', index: 1 },
-    { type: 'button', index: 2 },
-    { type: 'button', index: 3 },
-  ];
-
-  function auxMapStorageKey(gp) {
-    return 'sirena_aux_map:' + (gp && gp.id ? gp.id : 'default');
-  }
-
-  function saveAuxMap() {
-    try {
-      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-      const gp = gamepadIndex !== null ? pads[gamepadIndex] : null;
-      localStorage.setItem(auxMapStorageKey(gp), JSON.stringify(auxMap));
-    } catch (e) { /* приватний режим / заблоковане сховище — не критично */ }
-  }
-
-  function loadAuxMap(gp) {
-    try {
-      const raw = localStorage.getItem(auxMapStorageKey(gp));
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length === 4) auxMap = parsed;
-      }
-    } catch (e) { /* приватний режим / заблоковане сховище — не критично */ }
-  }
-
-  function calibrateAux(auxIndex, btnEl) {
-    if (gamepadIndex === null) return;
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    const gp = pads[gamepadIndex];
-    if (!gp) return;
-    const axesBaseline = gp.axes.slice();
-    const buttonsBaseline = gp.buttons.map(b => (typeof b === 'object' ? b.value : b));
-    const original = btnEl.textContent;
-    btnEl.textContent = '…';
-    btnEl.disabled = true;
-    let best = { type: null, index: -1, delta: 0 };
-    const started = performance.now();
-    (function sample() {
-      const p = navigator.getGamepads ? navigator.getGamepads() : [];
-      const g = gamepadIndex !== null ? p[gamepadIndex] : null;
-      if (g) {
-        g.axes.forEach((v, i) => {
-          const delta = Math.abs(v - (axesBaseline[i] || 0));
-          if (delta > best.delta) best = { type: 'axis', index: i, delta };
-        });
-        g.buttons.forEach((b, i) => {
-          const v = typeof b === 'object' ? b.value : b;
-          const delta = Math.abs(v - (buttonsBaseline[i] || 0));
-          if (delta > best.delta) best = { type: 'button', index: i, delta };
-        });
-      }
-      if (performance.now() - started < 1500) {
-        requestAnimationFrame(sample);
-        return;
-      }
-      btnEl.disabled = false;
-      btnEl.textContent = original;
-      if (best.index >= 0 && best.delta > 0.2) {
-        auxMap[auxIndex] = { type: best.type, index: best.index };
-        saveAuxMap();
-      } else {
-        alert('Рух/натискання не зафіксовано — активуй перемикач сильніше і спробуй ще раз');
-      }
-    })();
-  }
-
-  function readGamepadAux() {
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    if (gamepadIndex === null) return [0, 0, 0, 0];
-    const gp = pads[gamepadIndex];
-    if (!gp) return [0, 0, 0, 0];
-    return auxMap.map((entry) => {
-      if (!entry) return 0;
-      if (entry.type === 'axis') {
-        const v = gp.axes[entry.index];
-        return (typeof v === 'number' && v > 0) ? 1 : 0;
-      }
-      const b = gp.buttons[entry.index];
-      const v = typeof b === 'object' ? (b ? b.value : 0) : b;
-      return (typeof v === 'number' && v > 0.5) ? 1 : 0;
-    });
-  }
-
-  function readGamepadAxes() {
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    if (gamepadIndex === null) return null;
-    const gp = pads[gamepadIndex];
-    if (!gp) return null;
-    const a = gp.axes;
-    return [
-      normalizeAxis(a[axisMap.yaw] || 0, axisRange.yaw, axisInvert.yaw),
-      normalizeAxis(a[axisMap.throttle] || 0, axisRange.throttle, axisInvert.throttle),
-      normalizeAxis(a[axisMap.roll] || 0, axisRange.roll, axisInvert.roll),
-      normalizeAxis(a[axisMap.pitch] || 0, axisRange.pitch, axisInvert.pitch),
-    ];
-  }
-
-  function readGamepadButtons() {
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    if (gamepadIndex === null) return null;
-    const gp = pads[gamepadIndex];
-    if (!gp) return null;
-    return gp.buttons.map(b => (typeof b === 'object' ? b.value : b));
-  }
-
-  function setStickBar(id, value) {
-    const fill = document.getElementById(id);
-    const pct = Math.max(-1, Math.min(1, value)) * 50;
-    if (pct >= 0) {
-      fill.style.left = '50%';
-      fill.style.width = pct + '%';
-    } else {
-      fill.style.left = (50 + pct) + '%';
-      fill.style.width = (-pct) + '%';
-    }
-    document.getElementById(id + 'Val').textContent = value.toFixed(2);
-  }
-
-  function renderRawGamepad(gp) {
-    const el = document.getElementById('rawGamepadInputs');
-    // 4 канали вище (Roll/Pitch/Throttle/Yaw, з axisMap) і AUX1-4 (з
-    // auxMap) — це те, що реально йде на дрон. Тут — лише залишок (осі й
-    // кнопки пульта, ще нікуди не прив'язані), суто для діагностики.
-    const stickAxisIndices = new Set(Object.values(axisMap));
-    const auxAxisIndices = new Set(auxMap.filter((e) => e.type === 'axis').map((e) => e.index));
-    const auxButtonIndices = new Set(auxMap.filter((e) => e.type === 'button').map((e) => e.index));
-    const extraAxesHtml = gp.axes
-      .map((v, i) => ({ i, v }))
-      .filter(({ i }) => !stickAxisIndices.has(i) && !auxAxisIndices.has(i))
-      .map(({ i, v }) => `<span class="me-2">Вісь ${i}: ${v.toFixed(2)}</span>`)
-      .join('') || '<span class="text-muted">—</span>';
-    const extraButtonsHtml = gp.buttons
-      .map((b, i) => ({ i, b }))
-      .filter(({ i }) => !auxButtonIndices.has(i))
-      .map(({ i, b }) => {
-        const val = typeof b === 'object' ? b.value : b;
-        const pressed = val > 0.5;
-        return `<span class="badge ${pressed ? 'badge-gamepad-on' : 'badge-gamepad-off'} me-1">${i}</span>`;
-      }).join('') || '<span class="text-muted">—</span>';
-    el.innerHTML = `<div class="text-muted">Інші осі пульта (не підключені до керування):<br>${extraAxesHtml}</div>`
-      + `<div class="text-muted mt-1">Інші кнопки пульта (не підключені до керування):<br>${extraButtonsHtml}</div>`;
-  }
-
-  function gamepadLoop() {
-    if (gamepadIndex === null) {
-      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-      for (const gp of pads) {
-        if (gp) {
-          gamepadIndex = gp.index;
-          loadAxisMap(gp);
-          loadAuxMap(gp);
-          if (controlState === 'disconnected') setControlState('connected');
-          break;
-        }
-      }
-    }
-    const axes = readGamepadAxes();
-    if (axes) {
-      // Показуємо саме те, що піде в stick_to_rc() без додаткового
-      // знаку — напрямок/нормалізація вже застосовані в readGamepadAxes()
-      // (калібрування + чекбокс "інв."), тож бар = реальне значення каналу.
-      setStickBar('axRoll', axes[2]);
-      setStickBar('axPitch', axes[3]);
-      setStickBar('axThrottle', axes[1]);
-      setStickBar('axYaw', axes[0]);
-    }
-    if (gamepadIndex !== null) {
-      readGamepadAux().forEach((v, i) => {
-        const el = document.getElementById('aux' + (i + 1));
-        el.className = 'badge ms-1 ' + (v > 0.5 ? 'badge-gamepad-on' : 'badge-gamepad-off');
-      });
-    }
-    if (gamepadIndex !== null && controlState !== 'disconnected') {
-      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-      const gp = pads[gamepadIndex];
-      if (gp) renderRawGamepad(gp);
-    }
-    requestAnimationFrame(gamepadLoop);
-  }
-  requestAnimationFrame(gamepadLoop);
-
-  function onGamepadPrimaryClick() {
-    if (controlState === 'disconnected') {
-      // Явна спроба знайти пульт одразу за кліком — деякі браузери
-      // віддають геймпад лише після user gesture / натискання кнопки на
-      // самому пульті, requestAnimationFrame-цикл підхопить його й сам,
-      // але клік дає негайний фідбек, якщо пульт уже готовий.
-      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-      for (const gp of pads) {
-        if (gp) { gamepadIndex = gp.index; loadAxisMap(gp); loadAuxMap(gp); setControlState('connected'); return; }
-      }
-    } else if (controlState === 'connected') {
-      confirmControl();
-    } else if (controlState === 'armed') {
-      stopControl();
-    }
-  }
-
-  async function confirmControl() {
-    const btn = document.getElementById('btnGamepadPrimary');
-    btn.disabled = true;
-    try {
-      const res = await fetch('/api/devices/' + DEVICE_ID + '/control/enable', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        alert('Помилка: ' + (data.error || `HTTP ${res.status}`));
-        return;
-      }
-      setControlState('armed');
-      controlStickInterval = setInterval(sendStick, 100);
-    } catch (e) {
-      alert('Помилка запиту: ' + e.message);
-    } finally {
-      btn.disabled = false;
-    }
-  }
-
-  async function stopControl(skipStateChange) {
-    if (controlStickInterval) {
-      clearInterval(controlStickInterval);
-      controlStickInterval = null;
-    }
-    if (!skipStateChange) setControlState(gamepadIndex !== null ? 'connected' : 'disconnected');
-    try {
-      await fetch('/api/devices/' + DEVICE_ID + '/control/disable', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
-      });
-    } catch (e) {
-      console.error('control disable failed', e);
-    }
-  }
-
-  async function sendStick() {
-    if (controlState !== 'armed') return;
-    const axes = readGamepadAxes();
-    if (!axes) {
-      await stopControl();
-      return;
-    }
-    const aux = readGamepadAux();
-    try {
-      const res = await fetch('/api/devices/' + DEVICE_ID + '/control/stick', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ axes, aux })
-      });
-      if (res.status === 409) {
-        // Сервер сам розірвав RC-сесію (watchdog: >0.5с без нового стіку —
-        // напр. вкладка на мить згубила фокус) — не продовжуємо мовчки
-        // слати стіки в порожнечу, синхронізуємо UI з реальним станом.
-        console.warn('control session expired server-side, resetting UI');
-        await stopControl(true);
-        setControlState(gamepadIndex !== null ? 'connected' : 'disconnected');
-        showFcToast('Сесію керування розірвано (тайм-аут) — підтверди пульт ще раз');
-      }
-    } catch (e) {
-      console.error('stick send failed', e);
-    }
-  }
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden && controlState === 'armed') stopControl();
-  });
-
-  const FC_COMMAND_BUTTONS = { ARM: 'btnArm', DISARM: 'btnDisarm', ACRO: 'btnAcro', STABILIZE: 'btnStabilize', ALT_HOLD: 'btnAltHold' };
-
-  // Модальне підтвердження без блокування JS-потоку (див. коментар біля
-  // розмітки #fcConfirmModal) — на відміну від window.confirm(), не зупиняє
-  // ні gamepad-цикл, ні інтервал відправки стіків, поки користувач вирішує.
-  function confirmAsync(message) {
-    return new Promise((resolve) => {
-      const modalEl = document.getElementById('fcConfirmModal');
-      document.getElementById('fcConfirmModalBody').textContent = message;
-      const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-      const okBtn = document.getElementById('fcConfirmOkBtn');
-      const cancelBtn = document.getElementById('fcConfirmCancelBtn');
-      let decided = false;
-      const onOk = () => { decided = true; modal.hide(); resolve(true); };
-      const onCancel = () => { decided = true; modal.hide(); resolve(false); };
-      const onHidden = () => {
-        okBtn.removeEventListener('click', onOk);
-        cancelBtn.removeEventListener('click', onCancel);
-        modalEl.removeEventListener('hidden.bs.modal', onHidden);
-        if (!decided) resolve(false);
-      };
-      okBtn.addEventListener('click', onOk, { once: true });
-      cancelBtn.addEventListener('click', onCancel, { once: true });
-      modalEl.addEventListener('hidden.bs.modal', onHidden, { once: true });
-      modal.show();
-    });
-  }
-
-  function showFcToast(message) {
-    document.getElementById('fcToastBody').textContent = message;
-    bootstrap.Toast.getOrCreateInstance(document.getElementById('fcToast'), { delay: 5000 }).show();
-  }
-
-  async function sendFcCommand(command, confirmMessage) {
-    if (!(await confirmAsync(confirmMessage))) return;
-    const btn = document.getElementById(FC_COMMAND_BUTTONS[command]);
-    const original = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = '⏳';
-    try {
-      const res = await fetch('/api/devices/' + DEVICE_ID + '/commands', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        showFcToast('Помилка: ' + (data.error || `HTTP ${res.status}`));
-      }
-    } catch (e) {
-      showFcToast('Помилка запиту: ' + e.message);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = original;
     }
   }
 
