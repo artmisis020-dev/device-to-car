@@ -39,6 +39,16 @@ def _cfg_int(cfg: dict, json_key: str, env_name: str, default: int) -> int:
     return env_int(env_name, default)
 
 
+def _cfg_bool(cfg: dict, json_key: str, env_name: str, default: bool) -> bool:
+    """Той самий пріоритет панель > env, що й _cfg_int, але для флагів."""
+    value = cfg.get(json_key)
+    if isinstance(value, bool):
+        return value
+    if value is not None:
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
+    return os.environ.get(env_name, "1" if default else "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
 _MANAGER_CFG = _load_manager_config()
 
 DEVICE = os.environ.get("VIDEO_DEVICE", "/dev/video0")
@@ -76,7 +86,12 @@ def bitrate_kbps() -> int:
 # через SRT-лінк (за статистикою srtsink), а не тримає фіксований бітрейт,
 # який лінк може не витягувати. Працює лише для софтового енкодера (x264enc) —
 # live bitrate control апаратного v4l2h264enc на RPi не перевірявся.
-ADAPTIVE_BITRATE_ENABLED = os.environ.get("ADAPTIVE_BITRATE", "1").strip().lower() in {"1", "true", "yes", "on"}
+# Прапорець тепер керується з адмін-панелі (sirena_video_config.json,
+# пріоритет над env — як і fps/bitrate/роздільність); якщо в панелі його не
+# виставляли, використовується env ADAPTIVE_BITRATE. Коли вимкнено — bitrate
+# з панелі застосовується як фіксований, без автопідстройки під втрати/
+# ретрансмісії лінку.
+ADAPTIVE_BITRATE_ENABLED = _cfg_bool(_MANAGER_CFG, "adaptive_bitrate", "ADAPTIVE_BITRATE", True)
 ADAPTIVE_BITRATE_INTERVAL_SEC = env_int("ADAPTIVE_BITRATE_INTERVAL_SEC", 2)
 # 0 = авто: max(150, 20% від цільового бітрейту).
 _ADAPTIVE_BITRATE_MIN_KBPS_OVERRIDE = env_int("ADAPTIVE_BITRATE_MIN_KBPS", 0)

@@ -48,7 +48,7 @@ class ServiceManager:
 
     def set_config(self, data: Dict) -> Dict:
         with self._lock:
-            for key in ("mode", "fps", "bitrate", "camera", "width", "height"):
+            for key in ("mode", "fps", "bitrate", "camera", "width", "height", "adaptive_bitrate"):
                 if key in data and data[key] is not None:
                     self.config[key] = data[key]
             self._save_config()

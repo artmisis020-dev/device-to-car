@@ -40,7 +40,7 @@ ADMIN_SERVER_URL  = os.environ.get("SIRENA_ADMIN_SERVER_URL", "http://127.0.0.1:
 REGISTRY_URL      = ADMIN_SERVER_URL
 SERVER_SRT_HOST   = os.environ.get("SIRENA_SRT_HOST", "10.0.0.1")
 SERVER_SRT_PORT   = int(os.environ.get("SIRENA_SRT_PORT", "8890"))
-SRT_LATENCY_MS    = int(os.environ.get("SRT_LATENCY_MS", "10"))
+SRT_LATENCY_MS    = int(os.environ.get("SRT_LATENCY_MS", "20"))
 POLL_INTERVAL     = float(os.environ.get("SIRENA_VIDEO_RELAY_POLL_INTERVAL", "5.0"))
 REPORT_EVERY      = 12
 

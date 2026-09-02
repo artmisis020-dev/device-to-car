@@ -26,4 +26,5 @@ DEFAULT_CONFIG = {
     "camera": None,
     "width": int(os.environ.get("SIRENA_VIDEO_WIDTH", "640")),
     "height": int(os.environ.get("SIRENA_VIDEO_HEIGHT", "512")),
+    "adaptive_bitrate": os.environ.get("ADAPTIVE_BITRATE", "1").strip().lower() in {"1", "true", "yes", "on"},
 }

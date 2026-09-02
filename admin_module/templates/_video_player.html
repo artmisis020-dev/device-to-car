@@ -57,6 +57,8 @@
   .svp-compact .svp-settings-row { padding:.4rem .6rem; gap:.35rem; }
   .svp-compact .svp-settings-row select,
   .svp-compact .svp-settings-row input { font-size:.8rem; padding:.15rem .35rem; }
+  .svp-adaptive-check { margin:0; white-space:nowrap; }
+  .svp-adaptive-check .form-check-label { font-size:.8rem; }
   .svp-stats-grid {
     display:grid; grid-template-columns:repeat(6, minmax(110px,1fr)); gap:1px;
     background:var(--sirena-border); border-top:1px solid var(--sirena-border);
@@ -238,6 +240,10 @@
     <input id="svpBitrate" type="number" min="100" class="form-control form-control-sm" style="width:95px" title="Бітрейт, kbps" placeholder="kbps">
     <input id="svpWidth" type="number" min="1" class="form-control form-control-sm" style="width:85px" title="Ширина" placeholder="W">
     <input id="svpHeight" type="number" min="1" class="form-control form-control-sm" style="width:85px" title="Висота" placeholder="H">
+    <div class="form-check form-check-inline svp-adaptive-check" title="Автоматично знижувати/підвищувати бітрейт під якість SRT-лінку. Якщо вимкнено — застосовується лише бітрейт, виставлений вище, без автопідстройки.">
+      <input class="form-check-input" type="checkbox" id="svpAdaptiveBitrate">
+      <label class="form-check-label" for="svpAdaptiveBitrate">Авто-бітрейт</label>
+    </div>
     <button id="svpApplySettings" class="btn btn-sm btn-outline-info" type="button">Застосувати</button>
     <span id="svpSettingsStatus" class="svp-camera-label"></span>
     <span class="svp-divider"></span>
@@ -536,6 +542,7 @@
       if (el('svpBitrate')) el('svpBitrate').value = data.bitrate ?? '';
       if (el('svpWidth')) el('svpWidth').value = data.width ?? '';
       if (el('svpHeight')) el('svpHeight').value = data.height ?? '';
+      if (el('svpAdaptiveBitrate')) el('svpAdaptiveBitrate').checked = data.adaptive_bitrate !== false;
     } catch (err) {
       setText('svpSettingsStatus', 'Налаштування недоступні');
     }
@@ -554,6 +561,7 @@
       bitrate: el('svpBitrate')?.value ? Number(el('svpBitrate').value) : null,
       width: el('svpWidth')?.value ? Number(el('svpWidth').value) : null,
       height: el('svpHeight')?.value ? Number(el('svpHeight').value) : null,
+      adaptive_bitrate: el('svpAdaptiveBitrate') ? el('svpAdaptiveBitrate').checked : null,
     };
 
     try {

@@ -260,7 +260,7 @@ def get_video_settings(device_id):
 
 
 def set_video_settings(device_id, payload):
-    allowed = {"mode", "fps", "bitrate", "width", "height"}
+    allowed = {"mode", "fps", "bitrate", "width", "height", "adaptive_bitrate"}
     body = {k: v for k, v in (payload or {}).items() if k in allowed and v is not None}
     if not body:
         return {"error": "no settings provided"}, 400
