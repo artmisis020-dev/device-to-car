@@ -23,6 +23,10 @@
     border-color:var(--sirena-accent); color:var(--sirena-text);
   }
   .svp-camera-chip:disabled { opacity:.65; cursor:wait; }
+  .svp-camera-num {
+    max-width:none; min-width:1.7rem; text-align:center; padding:.22rem .4rem;
+    font-weight:700;
+  }
   .svp-card {
     background:var(--sirena-surface); border:1px solid var(--sirena-border); border-radius:8px;
     overflow:hidden; color:var(--sirena-text);
@@ -32,6 +36,11 @@
     display:flex;
     flex-direction:column;
   }
+  .svp-compact .svp-head { flex-wrap:wrap; }
+  .svp-compact .svp-head .svp-cameras { min-width:0; gap:.3rem; }
+  .svp-compact .svp-head .svp-camera-label { font-size:.75rem; }
+  .svp-compact .svp-head .svp-camera-chip { font-size:.72rem; padding:.15rem .3rem; }
+  .svp-compact .svp-head .svp-camera-num { min-width:1.4rem; }
   .svp-head {
     display:flex; justify-content:space-between; align-items:center; gap:.75rem;
     padding:.75rem 1.1rem; background:var(--sirena-header); border-bottom:1px solid var(--sirena-border);
@@ -195,11 +204,6 @@
   <span class="svp-divider"></span>
   <span>Стрім: <strong id="svpStreamName">-</strong></span>
   <span>WebRTC: <strong id="svpWebrtcUrl">-</strong></span>
-  <span class="svp-divider"></span>
-  <span class="svp-cameras">
-    <span class="svp-camera-label">Камери:</span>
-    <span id="svpCameraList" class="svp-camera-label">Завантаження...</span>
-  </span>
 </div>
 {% endif %}
 
@@ -207,6 +211,10 @@
   <div class="svp-head">
     <span>Живий стрім</span>
     <div class="svp-actions">
+      <span class="svp-cameras">
+        <span class="svp-camera-label" id="svpCameraCountLabel">Камери:</span>
+        <span id="svpCameraList" class="svp-camera-label">Завантаження...</span>
+      </span>
       <button id="svpReconnect" class="btn btn-sm btn-outline-info" type="button">Перезавантажити</button>
     </div>
   </div>
@@ -314,13 +322,6 @@
     const name = camera.label || camera.name  || 'camera';
     const target = camera.target ? ` -> ${camera.target}` : '';
     return `${name}${target}`;
-  };
-  const shortCameraName = camera => {
-    const raw = camera.name || camera.path || 'camera';
-    return raw
-      .replace(/^usb-/, '')
-      .replace(/-video-index0$/, '')
-      .replaceAll('_', ' ');
   };
   const cameraIsActive = (camera, active) => camera.path === active || camera.target === active;
   const realtimeCommand = async (command, data = {}, timeoutSec = 30) => {
@@ -507,8 +508,8 @@
   }
 
   async function loadCameras() {
-    if (compact) return;
     const list = el('svpCameraList');
+    const countLabel = el('svpCameraCountLabel');
     if (!list) return;
 
     try {
@@ -517,32 +518,32 @@
 
       const active = data.active || '';
       const cameras = Array.isArray(data.cameras) ? data.cameras.slice() : [];
-      cameras.sort((a, b) => {
-        const aActive = cameraIsActive(a, active) ? 0 : 1;
-        const bActive = cameraIsActive(b, active) ? 0 : 1;
-        if (aActive !== bActive) return aActive - bActive;
-        return (a.name || a.path || '').localeCompare(b.name || b.path || '');
-      });
+      // Стабільний порядок за ідентифікатором камери, а НЕ "активна перша" —
+      // інакше номери 1/2/3 стрибали б місцями щоразу, як міняється активна
+      // камера, і кнопка "2" не завжди відповідала б тій самій фізичній камері.
+      cameras.sort((a, b) => (a.id || a.path || '').localeCompare(b.id || b.path || ''));
+
+      if (countLabel) countLabel.textContent = `Камери (${cameras.length}):`;
 
       list.innerHTML = '';
       if (!cameras.length) {
-        list.textContent = 'No cameras';
+        list.textContent = 'Камер не знайдено';
         return;
       }
 
-      for (const camera of cameras) {
+      cameras.forEach((camera, index) => {
         const isActive = cameraIsActive(camera, active);
         const node = document.createElement(isActive ? 'span' : 'button');
-        node.className = `svp-camera-chip${isActive ? ' active' : ''}`;
-        node.textContent = `${shortCameraName(camera)}${isActive ? ' активна' : ''}`;
-        node.title = cameraTitle(camera);
+        node.className = `svp-camera-chip svp-camera-num${isActive ? ' active' : ''}`;
+        node.textContent = String(index + 1);
+        node.title = `${cameraTitle(camera)}${isActive ? ' (активна)' : ''}`;
         if (!isActive) {
           node.type = 'button';
           node.disabled = switchingCamera;
           node.addEventListener('click', () => switchCamera(camera.id || camera.path));
         }
         list.appendChild(node);
-      }
+      });
     } catch (err) {
       list.textContent = 'Unavailable';
     }
@@ -847,6 +848,6 @@
   osdStartLive();
   setInterval(osdRender, 250);
   if (!compact) setInterval(syncRecordState, 5000);
-  if (!compact) setInterval(loadCameras, 10000);
+  setInterval(loadCameras, 10000);
 })();
 </script>

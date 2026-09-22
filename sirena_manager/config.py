@@ -29,6 +29,11 @@ VIDEO_RELAY_UNIT = "video-relay.service"
 SRT_RELAY_CAPTURE_UNIT = "srt-relay-capture.service"
 ROOT_ENV_PATH = os.environ.get("SIRENA_ROOT_ENV_PATH", "/opt/sirena/.env")
 TELEMETRY_SNAPSHOT_PATH = os.environ.get("SIRENA_TELEMETRY_SNAPSHOT_PATH", "/tmp/sirena_mavlink_snapshot.json")
+# Той самий файл, що читає/пише video_module/service_manager (video-service-manager,
+# порт 9000) — спільний JSON з fps/bitrate/роздільністю. set_camera() тут звіряє
+# й за потреби підправляє width/height під нову камеру, щоб перемикання не
+# зверніло пайплайн несумісною роздільністю.
+VIDEO_CONFIG_PATH = os.environ.get("SIRENA_VIDEO_CONFIG_PATH", "/opt/sirena-video/sirena_video_config.json")
 
 
 @dataclass(frozen=True)

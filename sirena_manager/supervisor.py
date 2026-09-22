@@ -18,7 +18,7 @@ from typing import Dict, List
 
 from sirena_manager.utils.env import read_env, write_env
 from sirena_manager.utils.network import wireguard_ip
-from .cameras_services import list_cameras, node_for_id
+from .cameras_services import _FOURCC_ALIASES, list_cameras
 from .config import (
     ADMIN_SERVER_URL,
     BOOT_SEQUENCE,
@@ -29,11 +29,13 @@ from .config import (
     SYSTEMCTL,
     TELEMETRY_SNAPSHOT_PATH,
     SRT_RELAY_CAPTURE_UNIT,
+    VIDEO_CONFIG_PATH,
     ServiceDefinition,
 )
 
 logger = logging.getLogger(__name__)
 ROOT_ENV_FILE = Path(ROOT_ENV_PATH)
+VIDEO_CONFIG_FILE = Path(VIDEO_CONFIG_PATH)
 
 
 class SirenaSupervisor:
@@ -246,7 +248,8 @@ class SirenaSupervisor:
             return {"success": False, "error": "Missing camera's ID"}
 
         cameras_list = list_cameras()
-        camera_path = node_for_id(id)
+        camera = next((c for c in cameras_list if c.id == id), None)
+        camera_path = camera.path if camera else None
         if not camera_path:
             return {
                 "success": False,
@@ -256,16 +259,74 @@ class SirenaSupervisor:
             }
 
         env_values = read_env()
+
+        # Різні камери мають різні нативні режими (живий приклад: тепловізор
+        # тільки 640x512, USB-грабер лише 25fps-максимум і YUYV лише на
+        # 480x320, MJPG окремо на 720x480/640x480) — сліпе перемикання
+        # пристрою без урахування цього валило пайплайн у crash-loop
+        # (VIDIOC_STREAMON EINVAL / caps negotiation failure). Дані про
+        # сумісні режими беремо саме з виявлення камер (Camera.modes), а не
+        # вгадуємо; фільтруємо саме на той INPUT_FORMAT, який реально
+        # налаштований у пайплайні (той самий env-файл, що читає
+        # capture_relay/config.py — дефолт YUY2 звідти ж).
+        wanted_format = _FOURCC_ALIASES.get(
+            env_values.get("INPUT_FORMAT", "YUY2").strip().upper()
+        )
+        candidate_modes = [m for m in (camera.modes or []) if m[0] == wanted_format]
+        if not candidate_modes:
+            return {
+                "success": False,
+                "error": (
+                    f"Camera {camera.label or camera.name!r} has no {wanted_format or 'compatible'} "
+                    "capture mode for this pipeline — refusing to switch to avoid "
+                    "crash-looping the video service"
+                ),
+                "requested": id,
+            }
+
+        video_config = self._read_video_config()
+        current_mode = [
+            wanted_format,
+            video_config.get("width"),
+            video_config.get("height"),
+            video_config.get("fps"),
+        ]
+        mode_adjusted = None
+        if current_mode not in candidate_modes:
+            # Точного збігу нема — беремо найбільший режим для нової камери
+            # (перший елемент, бо _usable_modes() вже сортує за спаданням
+            # площі, тоді fps).
+            mode_adjusted = candidate_modes[0]
+            _, video_config["width"], video_config["height"], video_config["fps"] = mode_adjusted
+            self._write_video_config(video_config)
+
         env_values["VIDEO_DEVICE"] = camera_path
         write_env(env_values)
 
         restart = self._run_systemctl("restart", SRT_RELAY_CAPTURE_UNIT, timeout=20)
-        return {
+        result = {
             "success": restart.returncode == 0,
             "active": camera_path,
             "restart_stdout": restart.stdout.strip(),
             "restart_stderr": restart.stderr.strip(),
         }
+        if mode_adjusted:
+            result["mode_adjusted"] = {
+                "format": mode_adjusted[0],
+                "width": mode_adjusted[1],
+                "height": mode_adjusted[2],
+                "fps": mode_adjusted[3],
+            }
+        return result
+
+    def _read_video_config(self) -> Dict:
+        try:
+            return json.loads(VIDEO_CONFIG_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def _write_video_config(self, values: Dict) -> None:
+        VIDEO_CONFIG_FILE.write_text(json.dumps(values, indent=2), encoding="utf-8")
 
     def _get_service(self, name: str) -> ServiceDefinition | None:
         return self.services.get(name)
