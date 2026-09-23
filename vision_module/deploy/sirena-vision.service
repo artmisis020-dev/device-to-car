@@ -1,0 +1,20 @@
+[Unit]
+Description=Sirena Vision Inference (Spark)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=spark
+WorkingDirectory=/opt/sirena-vision
+EnvironmentFile=/opt/sirena-vision/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/sirena-vision/.venv/bin/python3 -m vision_module.main
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sirena-vision
+
+[Install]
+WantedBy=multi-user.target

@@ -12,6 +12,7 @@ from .routes.telemetry_api import telemetry_api_bp
 from .routes.ui import ui_bp
 from .routes.user_api import user_api_bp
 from .routes.video_api import video_api_bp
+from .routes.vision_api import vision_api_bp
 from .services import user_service
 from .services.cleanup import CleanupScheduler
 
@@ -42,6 +43,11 @@ def create_app(settings=None):
         WEBRTC_PROXY_UPSTREAM=settings.webrtc_proxy_upstream,
         WEBRTC_PROXY_TIMEOUT_S=settings.webrtc_proxy_timeout_s,
         MEDIAMTX_WEBRTC_PUBLIC_URL=settings.mediamtx_webrtc_public_url,
+        VISION_CONTROL_BASE_URL=settings.vision_control_base_url,
+        VISION_INGEST_TOKEN=settings.vision_ingest_token,
+        VISION_DEFAULT_CAPABILITY=settings.vision_default_capability,
+        VISION_INFER_INTERVAL_S=settings.vision_infer_interval_s,
+        VISION_RTSP_HOST=settings.vision_rtsp_host,
     )
 
     app.extensions["cleanup_scheduler"] = CleanupScheduler(every_n_requests=50)
@@ -51,6 +57,7 @@ def create_app(settings=None):
     app.register_blueprint(device_api_bp)
     app.register_blueprint(telemetry_api_bp)
     app.register_blueprint(video_api_bp)
+    app.register_blueprint(vision_api_bp)
     app.register_blueprint(user_api_bp)
 
     _register_error_handlers(app)

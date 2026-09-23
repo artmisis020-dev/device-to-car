@@ -216,6 +216,9 @@
         <span id="svpCameraList" class="svp-camera-label">Завантаження...</span>
       </span>
       <button id="svpReconnect" class="btn btn-sm btn-outline-info" type="button">Перезавантажити</button>
+      {% if not video_player_compact %}
+      <button id="svpVisionToggle" class="btn btn-sm btn-outline-info" type="button">Додаткові функції</button>
+      {% endif %}
     </div>
   </div>
   <div class="svp-video-shell">
@@ -292,6 +295,26 @@
   <div class="svp-compact-link">Джерело плеєра: <a href="/video/{{ device_id }}" class="link-info">Відкрити повну сторінку відео</a></div>
   {% endif %}
 </div>
+
+{% if not video_player_compact %}
+<div id="svpVisionPanel" class="svp-card" hidden style="margin-top:1rem">
+  <div class="svp-head">
+    <span>Додаткові функції — розпізнавання (Spark)</span>
+    <div class="svp-actions">
+      <span class="svp-camera-label" id="svpVisionCapability">-</span>
+    </div>
+  </div>
+  <div class="svp-video-shell">
+    <video id="svpVisionVideo" class="svp-video" autoplay playsinline muted></video>
+    <div id="svpVisionOverlay" class="svp-overlay">Підключення...</div>
+    <canvas id="svpVisionCanvas" class="svp-osd"></canvas>
+  </div>
+  <div class="svp-settings-row">
+    <span class="svp-camera-label">Результати:</span>
+    <span id="svpVisionLabels" class="svp-camera-label">Очікування...</span>
+  </div>
+</div>
+{% endif %}
 
 <script>
 (() => {
@@ -834,12 +857,125 @@
     }
   }
 
+  // ─── "Додаткові функції" — друга картинка стріму з розпізнаванням зі Spark ───
+  // Окреме WHEP-з'єднання до того ж MediaMTX-шляху (не через Spark — Spark
+  // віддає лише JSON), + SSE того самого зразка, що OSD-телеметрія вище.
+  // Інференс на Spark стартує/стопиться разом із відкриттям/закриттям панелі.
+  const CAPABILITY_LABELS = { object_classifier: 'Класифікатор об’єктів' };
+  let visionOpen = false;
+  let visionPc = null;
+  let visionSource = null;
+
+  function visionCapabilityLabel(capability) {
+    return CAPABILITY_LABELS[capability] || capability || '-';
+  }
+
+  function visionRender(msg) {
+    setText('svpVisionCapability', visionCapabilityLabel(msg.capability));
+    const detections = Array.isArray(msg.detections) ? msg.detections : [];
+    const labels = detections
+      .map(d => `${d.label} (${Math.round((d.confidence || 0) * 100)}%)`)
+      .join(', ');
+    setText('svpVisionLabels', labels || 'Без результатів');
+
+    // Малювання bbox — місце вже готове під майбутню модель детекції; для
+    // класифікації (bbox завжди null) канвас лишається порожнім.
+    const canvas = el('svpVisionCanvas');
+    const video = el('svpVisionVideo');
+    if (!canvas || !video) return;
+    canvas.width = video.clientWidth;
+    canvas.height = video.clientHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#5e9a78';
+    ctx.lineWidth = 2;
+    ctx.font = '12px sans-serif';
+    ctx.fillStyle = '#5e9a78';
+    detections.forEach(d => {
+      if (!Array.isArray(d.bbox) || d.bbox.length !== 4) return;
+      // bbox приходить як частка [0,1] від кадру (не пікселі захоплення —
+      // ті майже завжди інші за розмір, ніж відображене відео в браузері),
+      // тож масштабуємо саме під поточний розмір canvas/відео.
+      const [fx, fy, fw, fh] = d.bbox;
+      const x = fx * canvas.width, y = fy * canvas.height;
+      const w = fw * canvas.width, h = fh * canvas.height;
+      ctx.strokeRect(x, y, w, h);
+      ctx.fillText(d.label, x + 2, Math.max(10, y - 4));
+    });
+  }
+
+  async function visionConnect() {
+    const overlay = el('svpVisionOverlay');
+    if (overlay) overlay.textContent = 'Підключення...';
+    setText('svpVisionCapability', '-');
+    setText('svpVisionLabels', 'Очікування...');
+
+    try {
+      await fetch(`/api/devices/${deviceId}/vision/start`, {method: 'POST'});
+
+      const streamInfo = await loadStreamInfo();
+      visionPc = new RTCPeerConnection();
+      const myPc = visionPc;
+      visionPc.addTransceiver('video', {direction: 'recvonly'});
+      visionPc.ontrack = event => {
+        const video = el('svpVisionVideo');
+        if (video) video.srcObject = event.streams[0];
+        if (overlay) overlay.classList.add('hidden');
+      };
+
+      const offer = await visionPc.createOffer();
+      await visionPc.setLocalDescription(offer);
+      await waitIceGatheringComplete(visionPc);
+
+      const answer = await fetchNoCsrf(streamInfo.whep_url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/sdp'},
+        body: visionPc.localDescription.sdp,
+      });
+      if (!answer.ok) throw new Error(`MediaMTX WHEP не відповів (${answer.status})`);
+      if (visionPc !== myPc) return; // панель встигли закрити, поки чекали відповідь
+      await visionPc.setRemoteDescription({type: 'answer', sdp: await answer.text()});
+    } catch (err) {
+      if (overlay) { overlay.textContent = err.message || 'Стрім недоступний'; overlay.classList.remove('hidden'); }
+    }
+
+    visionSource = new EventSource(`/api/devices/${deviceId}/vision/live`);
+    visionSource.onmessage = e => {
+      try { visionRender(JSON.parse(e.data)); } catch (err) { /* пропускаємо биту подію */ }
+    };
+  }
+
+  function visionDisconnect() {
+    if (visionSource) { visionSource.close(); visionSource = null; }
+    if (visionPc) {
+      visionPc.getReceivers().forEach(receiver => receiver.track && receiver.track.stop());
+      visionPc.close();
+      visionPc = null;
+    }
+    const video = el('svpVisionVideo');
+    if (video) video.srcObject = null;
+    fetch(`/api/devices/${deviceId}/vision/stop`, {method: 'POST'});
+  }
+
+  el('svpVisionToggle')?.addEventListener('click', () => {
+    visionOpen = !visionOpen;
+    const panel = el('svpVisionPanel');
+    const btn = el('svpVisionToggle');
+    if (panel) panel.hidden = !visionOpen;
+    if (btn) btn.textContent = visionOpen ? 'Сховати додаткові функції' : 'Додаткові функції';
+    if (visionOpen) visionConnect(); else visionDisconnect();
+  });
+
   el('svpOsdSkin')?.addEventListener('change', (e) => osdApplySkin(e.target.value));
 
   el('svpReconnect')?.addEventListener('click', connectStream);
   el('svpRecord')?.addEventListener('click', toggleRecord);
   el('svpApplySettings')?.addEventListener('click', applyVideoSettings);
-  window.addEventListener('beforeunload', () => { stopPeer(); osdSource?.close(); });
+  window.addEventListener('beforeunload', () => {
+    stopPeer();
+    osdSource?.close();
+    if (visionOpen) visionDisconnect();
+  });
   syncRecordState();
   loadCameras();
   loadVideoSettings();

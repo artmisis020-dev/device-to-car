@@ -22,6 +22,11 @@ class Settings:
     webrtc_proxy_upstream: str
     webrtc_proxy_timeout_s: int
     mediamtx_webrtc_public_url: str
+    vision_control_base_url: str
+    vision_ingest_token: str
+    vision_default_capability: str
+    vision_infer_interval_s: float
+    vision_rtsp_host: str
 
     @classmethod
     def from_env(cls):
@@ -55,6 +60,11 @@ class Settings:
             webrtc_proxy_upstream=os.environ.get("WEBRTC_PROXY_UPSTREAM", "http://127.0.0.1:8092").strip(),
             webrtc_proxy_timeout_s=_parse_int_env("WEBRTC_PROXY_TIMEOUT_S", 20, minimum=1, maximum=120),
             mediamtx_webrtc_public_url=os.environ.get("MEDIAMTX_WEBRTC_PUBLIC_URL", "").strip().rstrip("/"),
+            vision_control_base_url=os.environ.get("SIRENA_VISION_CONTROL_URL", "http://10.0.0.7:9080").strip().rstrip("/"),
+            vision_ingest_token=os.environ.get("SIRENA_VISION_INGEST_TOKEN", "").strip(),
+            vision_default_capability=os.environ.get("SIRENA_VISION_DEFAULT_CAPABILITY", "object_classifier").strip(),
+            vision_infer_interval_s=_parse_float_env("SIRENA_VISION_INFER_INTERVAL_S", 0.5),
+            vision_rtsp_host=os.environ.get("SIRENA_VISION_RTSP_HOST", "10.0.0.1").strip(),
         )
 
 
@@ -76,3 +86,10 @@ def _parse_bool_env(name, default=False):
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_float_env(name, default):
+    try:
+        return float(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
