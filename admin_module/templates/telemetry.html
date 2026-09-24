@@ -412,13 +412,17 @@
         <div class="card-header">📼 Записи та логи</div>
         <div class="card-body p-2">
           <div class="row g-2">
-            <div class="col-md-6">
+            <div class="col-md-4">
               <div class="small text-muted mb-1">Відео на РПі (record.service)</div>
               <ul id="rpiRecordingsList" class="list-unstyled small mb-0">Завантаження...</ul>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-4">
               <div class="small text-muted mb-1">Відео на сервері (REC-кнопка)</div>
               <ul id="serverRecordingsList" class="list-unstyled small mb-0">Завантаження...</ul>
+            </div>
+            <div class="col-md-4">
+              <div class="small text-muted mb-1">MAVLink-лог для vision_module/inertia</div>
+              <ul id="inertiaLogsList" class="list-unstyled small mb-0">Завантаження...</ul>
             </div>
           </div>
           <hr class="my-2">
@@ -742,6 +746,7 @@
   async function loadRecordingsLists() {
     const rpiList = document.getElementById('rpiRecordingsList');
     const serverList = document.getElementById('serverRecordingsList');
+    const inertiaList = document.getElementById('inertiaLogsList');
     try {
       const res = await fetch('/api/devices/' + DEVICE_ID + '/recordings/rpi');
       const data = await res.json();
@@ -757,6 +762,14 @@
       renderRecordingsList(serverList, data.recordings || [], '/api/devices/' + DEVICE_ID + '/recordings/local');
     } catch (err) {
       serverList.innerHTML = '<li class="text-danger">' + esc(err.message) + '</li>';
+    }
+    try {
+      const res = await fetch('/api/devices/' + DEVICE_ID + '/inertia-logs');
+      const data = await res.json();
+      if (data.success === false) throw new Error(data.error || 'помилка');
+      renderRecordingsList(inertiaList, data.recordings || [], '/api/devices/' + DEVICE_ID + '/inertia-logs');
+    } catch (err) {
+      inertiaList.innerHTML = '<li class="text-danger">' + esc(err.message) + '</li>';
     }
   }
 

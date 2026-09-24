@@ -4,6 +4,7 @@ import time
 
 from flask import current_app
 
+from . import inertia_log_service
 from . import repository
 from . import telemetry_stream
 from ..helpers import sanitize_payload
@@ -65,6 +66,10 @@ def ingest(payload, cleanup_scheduler, telemetry_ttl_h, max_batch):
 
     # Жива трансляція — окремо, напряму підписникам SSE, без БД-круга.
     telemetry_stream.publish(device_id, live_msgs)
+
+    # Окремий CSV для vision_module/inertia (EKF/gps_integrity тощо) — той
+    # самий потік, best-effort, не критичний для основного шляху.
+    inertia_log_service.log_messages(device_id, live_msgs)
 
     if cleanup_scheduler.should_run():
         # repository.get_db() reads current_app.config — capture the real

@@ -22,6 +22,14 @@ sudo mkdir -p "/home/$SERVICE_USER"
 sudo chown "$SERVICE_USER:$SERVICE_USER" "/home/$SERVICE_USER"
 sudo chmod 750 "/home/$SERVICE_USER"
 
+# recording_service.py/recordings_browse_service.py (записи) та
+# inertia_log_service.py (MAVLink CSV для vision_module/inertia) обидва
+# пишуть під /opt/sirena-video — сам /opt/sirena-video лишається root:root
+# (755, без w для sirena), тож підкаталоги треба створити й передати сюди
+# явно, інакше sirena впаде на mkdir(parents=True) з PermissionError.
+sudo mkdir -p /opt/sirena-video/recordings /opt/sirena-video/inertia_logs
+sudo chown "$SERVICE_USER:$SERVICE_USER" /opt/sirena-video/recordings /opt/sirena-video/inertia_logs
+
 sudo mkdir -p "$APP_DIR"
 sudo chown -R "$SERVICE_USER:$SERVICE_USER" "$APP_DIR"
 

@@ -1,9 +1,27 @@
 from flask import Blueprint, Response, jsonify, send_file
 
 from ..helpers import require_device_access
+from ..services import inertia_log_service
 from ..services import recordings_browse_service as svc
 
 recordings_browse_api_bp = Blueprint("recordings_browse_api", __name__)
+
+
+# ─── MAVLink-лог для vision_module/inertia ──────────────────────────────
+
+@recordings_browse_api_bp.route("/api/devices/<device_id>/inertia-logs", methods=["GET"])
+@require_device_access
+def api_list_inertia_logs(device_id):
+    return jsonify(inertia_log_service.list_logs(device_id))
+
+
+@recordings_browse_api_bp.route("/api/devices/<device_id>/inertia-logs/<path:filename>", methods=["GET"])
+@require_device_access
+def api_download_inertia_log(device_id, filename):
+    path = inertia_log_service.log_path(device_id, filename)
+    if path is None:
+        return jsonify({"success": False, "error": "file not found"}), 404
+    return send_file(path, as_attachment=True, download_name=path.name)
 
 
 # ─── Відео на сервері (recording_service.py) ────────────────────────────
