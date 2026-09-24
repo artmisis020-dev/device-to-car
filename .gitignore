@@ -38,6 +38,7 @@ logs/
 *.tlog
 *.bin
 *.param
+*.csv
 
 
 /local
