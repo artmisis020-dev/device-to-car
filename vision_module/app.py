@@ -79,4 +79,19 @@ def create_app() -> Flask:
     def infer_status(device_id: str):
         return jsonify(supervisor.status(device_id))
 
+    @app.post("/api/v1/infer/target")
+    def infer_target():
+        body = request.get_json(silent=True) or {}
+        device_id = str(body.get("device_id", "")).strip()
+        if not device_id:
+            return jsonify({"success": False, "error": "device_id is required"}), 400
+        try:
+            x = float(body.get("x"))
+            y = float(body.get("y"))
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "error": "x and y (0..1) are required"}), 400
+        if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
+            return jsonify({"success": False, "error": "x and y must be within [0, 1]"}), 400
+        return jsonify(supervisor.set_target(device_id, x, y))
+
     return app

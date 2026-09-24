@@ -217,13 +217,15 @@
       </span>
       <button id="svpReconnect" class="btn btn-sm btn-outline-info" type="button">Перезавантажити</button>
       {% if not video_player_compact %}
-      <button id="svpVisionToggle" class="btn btn-sm btn-outline-info" type="button">Додаткові функції</button>
+      <button id="svpAiToggle" class="btn btn-sm btn-outline-info" type="button">AI-визначення</button>
+      <button id="svpTrackToggle" class="btn btn-sm btn-outline-info" type="button">Піксель трекінг</button>
       {% endif %}
     </div>
   </div>
   <div class="svp-video-shell">
     <video id="svpVideo" class="svp-video" autoplay playsinline muted controls></video>
     <div id="svpOverlay" class="svp-overlay">Очікування WebRTC стріму...</div>
+    <canvas id="svpVisionCanvas" class="svp-osd" style="pointer-events:none"></canvas>
     <div id="svpOsd" class="svp-osd" data-skin="none" hidden>
       <div class="svp-osd-demo-badge" id="svpOsdDemoBadge" hidden>ДЕМО</div>
       <div class="svp-osd-horizon" id="svpOsdHorizon">
@@ -250,6 +252,12 @@
       </div>
     </div>
   </div>
+  {% if not video_player_compact %}
+  <div id="svpVisionStatusRow" class="svp-settings-row" hidden>
+    <span class="svp-camera-label" id="svpVisionCapabilityLabel">-</span>
+    <span class="svp-camera-label" id="svpVisionResultsLabel">-</span>
+  </div>
+  {% endif %}
   <div class="svp-settings-row">
     <span class="svp-camera-label">Якість:</span>
     <div class="input-group input-group-sm svp-quality-field" style="width:100px" title="Кадрів на секунду">
@@ -296,26 +304,6 @@
   {% endif %}
 </div>
 
-{% if not video_player_compact %}
-<div id="svpVisionPanel" class="svp-card" hidden style="margin-top:1rem">
-  <div class="svp-head">
-    <span>Додаткові функції — розпізнавання (Spark)</span>
-    <div class="svp-actions">
-      <span class="svp-camera-label" id="svpVisionCapability">-</span>
-    </div>
-  </div>
-  <div class="svp-video-shell">
-    <video id="svpVisionVideo" class="svp-video" autoplay playsinline muted></video>
-    <div id="svpVisionOverlay" class="svp-overlay">Підключення...</div>
-    <canvas id="svpVisionCanvas" class="svp-osd"></canvas>
-  </div>
-  <div class="svp-settings-row">
-    <span class="svp-camera-label">Результати:</span>
-    <span id="svpVisionLabels" class="svp-camera-label">Очікування...</span>
-  </div>
-</div>
-{% endif %}
-
 <script>
 (() => {
   const deviceId = "{{ device_id }}";
@@ -329,6 +317,7 @@
   let switchingCamera = false;
   let disconnectGraceTimer = null;
   let reconnectTimer = null;
+  let staleFrameTicks = 0;
 
   const el = id => document.getElementById(id);
   const setText = (id, value) => {
@@ -527,7 +516,7 @@
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
       connectStream();
-    }, 3000);
+    }, 1000);
   }
 
   async function loadCameras() {
@@ -659,6 +648,7 @@
     if (statsTimer) clearInterval(statsTimer);
     statsTimer = null;
     lastVideoStats = null;
+    staleFrameTicks = 0;
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     if (disconnectGraceTimer) { clearTimeout(disconnectGraceTimer); disconnectGraceTimer = null; }
     if (pc) {
@@ -692,6 +682,24 @@
         const fps = seconds > 0 ? ((frames - lastVideoStats.frames) / seconds) : 0;
         setText('svpStatBitrate', `${Math.max(0, bitrate).toFixed(0)} kbps`);
         setText('svpStatFps', fps > 0 ? fps.toFixed(1) : '-');
+
+        // "Тихий" стал: WebRTC-з'єднання лишається connected (ICE/DTLS до
+        // MediaMTX живий), але кадри перестали йти — трапляється, коли
+        // джерело (srt-relay-capture) перезапускається (напр. увімкнення/
+        // вимикання піксель трекінгу чи зміна камери) і MediaMTX на якийсь
+        // час лишається без publish-у. onconnectionstatechange цього НЕ
+        // ловить (транспорт браузер↔MediaMTX не рветься), тож без цієї
+        // перевірки відео зависає на кадрі назавжди, поки хтось не натисне
+        // "перезапустити" вручну.
+        if (frames === lastVideoStats.frames && pc && pc.connectionState === 'connected') {
+          staleFrameTicks += 1;
+          if (staleFrameTicks >= 3) {
+            staleFrameTicks = 0;
+            scheduleReconnect();
+          }
+        } else {
+          staleFrameTicks = 0;
+        }
       }
       lastVideoStats = {timestamp: now, bytes, frames};
       setText('svpStatJitter', inboundVideo.jitter ? `${(inboundVideo.jitter * 1000).toFixed(1)} ms` : '-');
@@ -857,31 +865,29 @@
     }
   }
 
-  // ─── "Додаткові функції" — друга картинка стріму з розпізнаванням зі Spark ───
-  // Окреме WHEP-з'єднання до того ж MediaMTX-шляху (не через Spark — Spark
-  // віддає лише JSON), + SSE того самого зразка, що OSD-телеметрія вище.
-  // Інференс на Spark стартує/стопиться разом із відкриттям/закриттям панелі.
-  const CAPABILITY_LABELS = { object_classifier: 'Класифікатор об’єктів' };
-  let visionOpen = false;
-  let visionPc = null;
-  let visionSource = null;
+  // ─── AI-визначення (Spark) / Піксель трекінг (РПі) — два різні бекенди ───
+  // AI-визначення: важка модель на Spark, окремий JSON-канал (SSE) малює
+  // bbox+лейбл на canvas поверх #svpVideo (окреме RTSP-читання на Spark —
+  // прийнятна для цього затримка).
+  // Піксель трекінг: переїхав на сам РПі (additional_modules/pixel_tracking) —
+  // сам кадр у відео йде БЕЗ ЗМІН (loopback-реле), а bbox летить окремим
+  // JSON тим самим ingest+SSE-каналом, що й AI-визначення (спільна
+  // /vision/live підписка) — тому рендер на canvas тут той самий код, що й
+  // для object_detector. Canvas додатково слугує прозорим шаром для
+  // перехоплення кліків (координати шлються на /track/target).
+  // Обидва режими взаємовиключні (по одному активному джерелу відео-обробки
+  // на пристрій) — вмикання одного автоматично гасить інший.
+  let activeMode = null; // null | 'object_detector' | 'pixel_tracker'
+  let visionSource = null; // SSE, спільний для object_detector (Spark) і pixel_tracker (РПі)
 
-  function visionCapabilityLabel(capability) {
-    return CAPABILITY_LABELS[capability] || capability || '-';
+  function visionClearCanvas() {
+    const canvas = el('svpVisionCanvas');
+    if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
   }
 
-  function visionRender(msg) {
-    setText('svpVisionCapability', visionCapabilityLabel(msg.capability));
-    const detections = Array.isArray(msg.detections) ? msg.detections : [];
-    const labels = detections
-      .map(d => `${d.label} (${Math.round((d.confidence || 0) * 100)}%)`)
-      .join(', ');
-    setText('svpVisionLabels', labels || 'Без результатів');
-
-    // Малювання bbox — місце вже готове під майбутню модель детекції; для
-    // класифікації (bbox завжди null) канвас лишається порожнім.
+  function visionRenderDetections(detections) {
     const canvas = el('svpVisionCanvas');
-    const video = el('svpVisionVideo');
+    const video = el('svpVideo');
     if (!canvas || !video) return;
     canvas.width = video.clientWidth;
     canvas.height = video.clientHeight;
@@ -904,66 +910,155 @@
     });
   }
 
-  async function visionConnect() {
-    const overlay = el('svpVisionOverlay');
-    if (overlay) overlay.textContent = 'Підключення...';
-    setText('svpVisionCapability', '-');
-    setText('svpVisionLabels', 'Очікування...');
+  function visionOnMessage(msg) {
+    const detections = Array.isArray(msg.detections) ? msg.detections : [];
+    const labels = detections
+      .map(d => `${d.label} (${Math.round((d.confidence || 0) * 100)}%)`)
+      .join(', ');
+    const empty = activeMode === 'pixel_tracker' ? 'Клікни по відео, щоб обрати ціль' : 'Без результатів';
+    setText('svpVisionResultsLabel', labels || empty);
+    visionRenderDetections(detections);
+  }
+
+  function visionShowStatusRow(label, text) {
+    const row = el('svpVisionStatusRow');
+    if (row) row.hidden = false;
+    setText('svpVisionCapabilityLabel', label);
+    setText('svpVisionResultsLabel', text);
+  }
+
+  function visionHideStatusRow() {
+    const row = el('svpVisionStatusRow');
+    if (row) row.hidden = true;
+    visionClearCanvas();
+  }
+
+  function visionUpdateButtons() {
+    const aiBtn = el('svpAiToggle');
+    const trackBtn = el('svpTrackToggle');
+    if (aiBtn) {
+      const on = activeMode === 'object_detector';
+      aiBtn.textContent = on ? 'Вимкнути AI-визначення' : 'AI-визначення';
+      aiBtn.classList.toggle('btn-info', on);
+      aiBtn.classList.toggle('btn-outline-info', !on);
+    }
+    if (trackBtn) {
+      const on = activeMode === 'pixel_tracker';
+      trackBtn.textContent = on ? 'Вимкнути піксель трекінг' : 'Піксель трекінг';
+      trackBtn.classList.toggle('btn-info', on);
+      trackBtn.classList.toggle('btn-outline-info', !on);
+    }
+    const canvas = el('svpVisionCanvas');
+    if (canvas) {
+      // pointer-events лише в режимі трекінгу — інакше канвас перекривав би
+      // клікабельність нативних controls відеоелемента під собою.
+      canvas.style.pointerEvents = activeMode === 'pixel_tracker' ? 'auto' : 'none';
+      canvas.style.cursor = activeMode === 'pixel_tracker' ? 'crosshair' : '';
+    }
+  }
+
+  async function startAi() {
+    if (activeMode === 'pixel_tracker') await stopTrack();
+    activeMode = 'object_detector';
+    visionUpdateButtons();
+    visionShowStatusRow('AI-визначення (Spark)', 'Підключення...');
 
     try {
-      await fetch(`/api/devices/${deviceId}/vision/start`, {method: 'POST'});
-
-      const streamInfo = await loadStreamInfo();
-      visionPc = new RTCPeerConnection();
-      const myPc = visionPc;
-      visionPc.addTransceiver('video', {direction: 'recvonly'});
-      visionPc.ontrack = event => {
-        const video = el('svpVisionVideo');
-        if (video) video.srcObject = event.streams[0];
-        if (overlay) overlay.classList.add('hidden');
-      };
-
-      const offer = await visionPc.createOffer();
-      await visionPc.setLocalDescription(offer);
-      await waitIceGatheringComplete(visionPc);
-
-      const answer = await fetchNoCsrf(streamInfo.whep_url, {
+      await fetch(`/api/devices/${deviceId}/vision/start`, {
         method: 'POST',
-        headers: {'Content-Type': 'application/sdp'},
-        body: visionPc.localDescription.sdp,
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({capability: 'object_detector'}),
       });
-      if (!answer.ok) throw new Error(`MediaMTX WHEP не відповів (${answer.status})`);
-      if (visionPc !== myPc) return; // панель встигли закрити, поки чекали відповідь
-      await visionPc.setRemoteDescription({type: 'answer', sdp: await answer.text()});
-    } catch (err) {
-      if (overlay) { overlay.textContent = err.message || 'Стрім недоступний'; overlay.classList.remove('hidden'); }
-    }
+    } catch (err) { /* SSE-підписка нижче все одно покаже реальний стан */ }
 
     visionSource = new EventSource(`/api/devices/${deviceId}/vision/live`);
     visionSource.onmessage = e => {
-      try { visionRender(JSON.parse(e.data)); } catch (err) { /* пропускаємо биту подію */ }
+      try { visionOnMessage(JSON.parse(e.data)); } catch (err) { /* пропускаємо биту подію */ }
     };
   }
 
-  function visionDisconnect() {
+  function stopAi() {
     if (visionSource) { visionSource.close(); visionSource = null; }
-    if (visionPc) {
-      visionPc.getReceivers().forEach(receiver => receiver.track && receiver.track.stop());
-      visionPc.close();
-      visionPc = null;
-    }
-    const video = el('svpVisionVideo');
-    if (video) video.srcObject = null;
-    fetch(`/api/devices/${deviceId}/vision/stop`, {method: 'POST'});
+    activeMode = null;
+    visionUpdateButtons();
+    visionHideStatusRow();
+    // keepalive — щоб запит встиг піти навіть коли викликано з beforeunload.
+    return fetch(`/api/devices/${deviceId}/vision/stop`, {method: 'POST', keepalive: true});
   }
 
-  el('svpVisionToggle')?.addEventListener('click', () => {
-    visionOpen = !visionOpen;
-    const panel = el('svpVisionPanel');
-    const btn = el('svpVisionToggle');
-    if (panel) panel.hidden = !visionOpen;
-    if (btn) btn.textContent = visionOpen ? 'Сховати додаткові функції' : 'Додаткові функції';
-    if (visionOpen) visionConnect(); else visionDisconnect();
+  // Увімк/вимк трекінгу на РПі — це systemctl restart srt-relay-capture
+  // (щоб застосувати новий пайплайн), той самий короткий видео-стрибок, що
+  // й switchCamera(). Control-API вже чекає (і повертає відповідь лише
+  // після) реального is-active — тож коли fetch resolved, джерело вже
+  // публікує знову; довге очікування тут не потрібне, досить невеликого
+  // буфера на те, щоб MediaMTX помітив нове SRT-з'єднання.
+  function reconnectAfterTrackRestart() {
+    stopPeer();
+    setOverlay('Повторне підключення відео...');
+    setTimeout(connectStream, 400);
+  }
+
+  async function startTrack() {
+    if (activeMode === 'object_detector') stopAi();
+    activeMode = 'pixel_tracker';
+    visionUpdateButtons();
+    visionShowStatusRow('Піксель трекінг (РПі)', 'Вмикання...');
+
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/track/start`, {method: 'POST'});
+      const data = await res.json();
+      if (!res.ok || data.success === false) throw new Error(data.error || `HTTP ${res.status}`);
+      setText('svpVisionResultsLabel', 'Клікни по відео, щоб обрати ціль');
+      visionSource = new EventSource(`/api/devices/${deviceId}/vision/live`);
+      visionSource.onmessage = e => {
+        try { visionOnMessage(JSON.parse(e.data)); } catch (err) {}
+      };
+      reconnectAfterTrackRestart();
+    } catch (err) {
+      setText('svpVisionResultsLabel', 'Помилка: ' + err.message);
+    }
+  }
+
+  async function stopTrack() {
+    if (visionSource) { visionSource.close(); visionSource = null; }
+    activeMode = null;
+    visionUpdateButtons();
+    visionHideStatusRow();
+    try {
+      await fetch(`/api/devices/${deviceId}/track/stop`, {method: 'POST', keepalive: true});
+    } finally {
+      reconnectAfterTrackRestart();
+    }
+  }
+
+  el('svpAiToggle')?.addEventListener('click', () => {
+    if (activeMode === 'object_detector') stopAi();
+    else startAi();
+  });
+
+  el('svpTrackToggle')?.addEventListener('click', () => {
+    if (activeMode === 'pixel_tracker') stopTrack();
+    else startTrack();
+  });
+
+  el('svpVisionCanvas')?.addEventListener('click', async (e) => {
+    if (activeMode !== 'pixel_tracker') return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    setText('svpVisionResultsLabel', 'Встановлення цілі...');
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/track/target`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({x, y}),
+      });
+      const data = await res.json();
+      if (!res.ok || data.success === false) throw new Error(data.error || `HTTP ${res.status}`);
+      setText('svpVisionResultsLabel', 'Ціль встановлено, відстеження...');
+    } catch (err) {
+      setText('svpVisionResultsLabel', 'Помилка: ' + err.message);
+    }
   });
 
   el('svpOsdSkin')?.addEventListener('change', (e) => osdApplySkin(e.target.value));
@@ -974,7 +1069,8 @@
   window.addEventListener('beforeunload', () => {
     stopPeer();
     osdSource?.close();
-    if (visionOpen) visionDisconnect();
+    if (activeMode === 'object_detector') stopAi();
+    else if (activeMode === 'pixel_tracker') stopTrack();
   });
   syncRecordState();
   loadCameras();

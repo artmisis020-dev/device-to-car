@@ -103,6 +103,21 @@ def adaptive_bitrate_min_kbps(target_kbps: int) -> int:
     return max(150, target_kbps // 5)
 
 
+# Піксель-трекінг (additional_modules/pixel_tracking, порт 9075) — тег
+# "вмикається" запускається через ЦІ env-змінні в /opt/sirena/.env
+# (той самий EnvironmentFile, що вже дає VIDEO_DEVICE), НЕ через окремий
+# сервіс/loopback: коли TRACK_TAP_ENABLED=false (дефолт), пайплайн-рядок і
+# поведінка srt_relay_capture.py — байт-в-байт ідентичні коду без трекінгу.
+TRACK_TAP_ENABLED = os.environ.get("SIRENA_TRACK_TAP", "0").strip().lower() in {"1", "true", "yes", "on"}
+TRACK_DEVICE_ID = os.environ.get("SIRENA_TRACK_DEVICE_ID", "").strip()
+TRACK_INGEST_URL = os.environ.get("SIRENA_TRACK_INGEST_URL", "").strip()
+TRACK_INGEST_TOKEN = os.environ.get("SIRENA_TRACK_INGEST_TOKEN", "").strip()
+TRACK_TARGET_FILE = os.environ.get("SIRENA_TRACK_TARGET_FILE", "/opt/sirena/track_target.json")
+TRACK_STATUS_FILE = os.environ.get("SIRENA_TRACK_STATUS_FILE", "/opt/sirena/track_status.json")
+TRACK_REPORT_INTERVAL_S = float(os.environ.get("SIRENA_TRACK_REPORT_INTERVAL_S", "0.15"))
+TRACK_INGEST_TIMEOUT_S = float(os.environ.get("SIRENA_TRACK_INGEST_TIMEOUT_S", "5"))
+TRACK_ROI_SIZE = int(os.environ.get("SIRENA_TRACK_ROI_SIZE", "60"))
+
 REGISTRY_URL = os.environ.get("SIRENA_ADMIN_SERVER_URL", "http://127.0.0.1:8080").rstrip("/")
 REGISTRY_ENABLED = os.environ.get("SIRENA_REGISTRY_ENABLED", "1").strip().lower() in {"1", "true", "yes", "on"}
 HANDSHAKE_TIMEOUT = env_int("SIRENA_HANDSHAKE_TIMEOUT", 300)
