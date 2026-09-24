@@ -413,8 +413,8 @@
         <div class="card-body p-2">
           <div class="row g-2">
             <div class="col-md-4">
-              <div class="small text-muted mb-1">Відео на РПі (record.service)</div>
-              <ul id="rpiRecordingsList" class="list-unstyled small mb-0">Завантаження...</ul>
+              <div class="small text-muted mb-1">Нижня камера (сервер) — <a href="/lowercam/{{ device_id }}">увімкнути</a></div>
+              <ul id="lowercamRecordingsList" class="list-unstyled small mb-0">Завантаження...</ul>
             </div>
             <div class="col-md-4">
               <div class="small text-muted mb-1">Відео на сервері (REC-кнопка)</div>
@@ -744,16 +744,16 @@
   }
 
   async function loadRecordingsLists() {
-    const rpiList = document.getElementById('rpiRecordingsList');
+    const lowercamList = document.getElementById('lowercamRecordingsList');
     const serverList = document.getElementById('serverRecordingsList');
     const inertiaList = document.getElementById('inertiaLogsList');
     try {
-      const res = await fetch('/api/devices/' + DEVICE_ID + '/recordings/rpi');
+      const res = await fetch('/api/devices/' + DEVICE_ID + '/recordings/lowercam');
       const data = await res.json();
       if (data.success === false) throw new Error(data.error || 'помилка');
-      renderRecordingsList(rpiList, data.recordings || [], '/api/devices/' + DEVICE_ID + '/recordings/rpi');
+      renderRecordingsList(lowercamList, data.recordings || [], '/api/devices/' + DEVICE_ID + '/recordings/lowercam');
     } catch (err) {
-      rpiList.innerHTML = '<li class="text-danger">' + esc(err.message) + '</li>';
+      lowercamList.innerHTML = '<li class="text-danger">' + esc(err.message) + '</li>';
     }
     try {
       const res = await fetch('/api/devices/' + DEVICE_ID + '/recordings/local');

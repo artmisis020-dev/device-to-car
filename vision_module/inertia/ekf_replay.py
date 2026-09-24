@@ -135,8 +135,13 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
     """
     rows = load_log(csv_path)
     gps_positions = _build_gps_reference(rows)
-    if gps_positions is None:
-        return None
+    # GPS/local_position — ЛИШЕ еталон для вимірювання дрейфу між
+    # періодичними скидами (reset_interval_s), НЕ вхід самого розрахунку
+    # інерції: EKF (IMU + баро + опційно оптичний потік) рахує позицію
+    # незалежно від GPS, це й є весь сенс інерціальної навігації. Без
+    # еталону просто не з'являються interval_pct/interval_max_err —
+    # сира траєкторія EKF рахується і повертається в обох випадках.
+    has_ground_truth = gps_positions is not None
 
     detected_type = airframe.classify(airframe.majority_mav_type(rows))
     auto_flags = airframe.default_flags(detected_type)
@@ -163,21 +168,23 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
 
     ekf = EKFEstimator(config or EKFConfig())
     baro_offset = float(rows[start_idx].get("baro_alt") or 0.0)
-    ekf.reset(position=np.zeros(3), velocity=_gps_velocity_at(gps_positions, t_all, start_idx))
+    initial_velocity = _gps_velocity_at(gps_positions, t_all, start_idx) if has_ground_truth else np.zeros(3)
+    ekf.reset(position=np.zeros(3), velocity=initial_velocity)
 
     prev_t = None
     last_reset_t = t_all[start_idx]
-    cur_start_gps = gps_positions[start_idx].copy()
-    reset_ref = gps_positions[start_idx].copy()
     cur_max_err = 0.0
     wind_enu = np.zeros(3)
-    if use_airspeed:
-        row0 = rows[start_idx]
-        wind_enu = _estimate_wind(
-            gps_positions, t_all, start_idx,
-            deg_to_rad(float(row0["roll"])), deg_to_rad(float(row0["pitch"])), deg_to_rad(float(row0["yaw"])),
-            float(row0.get("airspeed_ms") or 0.0),
-        )
+    if has_ground_truth:
+        cur_start_gps = gps_positions[start_idx].copy()
+        reset_ref = gps_positions[start_idx].copy()
+        if use_airspeed:
+            row0 = rows[start_idx]
+            wind_enu = _estimate_wind(
+                gps_positions, t_all, start_idx,
+                deg_to_rad(float(row0["roll"])), deg_to_rad(float(row0["pitch"])), deg_to_rad(float(row0["yaw"])),
+                float(row0.get("airspeed_ms") or 0.0),
+            )
 
     timestamps, positions, errors = [], [], []
     interval_pct, interval_max_err, interval_dist = [], [], []
@@ -212,6 +219,12 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
                 if update_ekf_with_flow(ekf, flow_result, roll, pitch, yaw):
                     flow_applied_count += 1
 
+        if not has_ground_truth:
+            # Немає еталону для звірки/скидів — просто веде сиру
+            # траєкторію EKF (IMU + баро + опційно потік), без interval_*.
+            timestamps.append(t); positions.append(ekf.position.copy())
+            continue
+
         gps_now = gps_positions[i]
         abs_pos = ekf.position + reset_ref
         err = np.linalg.norm(abs_pos - gps_now)
@@ -234,7 +247,26 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
     if flow_source is not None:
         flow_source.close()
 
+    if not has_ground_truth:
+        positions_arr = np.array(positions)
+        displacement = (
+            float(np.linalg.norm(positions_arr[-1] - positions_arr[0])) if len(positions_arr) > 1 else 0.0
+        )
+        path_length = (
+            float(np.sum(np.linalg.norm(np.diff(positions_arr, axis=0), axis=1))) if len(positions_arr) > 1 else 0.0
+        )
+        return {
+            "has_ground_truth": False,
+            "timestamps": np.array(timestamps),
+            "positions": positions_arr,
+            "final_position": positions_arr[-1] if len(positions_arr) else np.zeros(3),
+            "displacement_m": displacement,
+            "path_length_m": path_length,
+            "flow_applied_count": flow_applied_count,
+        }
+
     return {
+        "has_ground_truth": True,
         "timestamps": np.array(timestamps),
         "positions": np.array(positions),
         "gps_positions": gps_positions[start_idx:],
@@ -277,8 +309,11 @@ if __name__ == "__main__":
         use_zupt=_tristate(args.zupt), use_nhc=_tristate(args.nhc), use_airspeed=_tristate(args.airspeed),
         video_path=args.video, use_flow=_tristate(args.flow),
     )
-    if result is None:
-        print(f"{args.csv_path}: немає GPS-джерела для звірки.")
+    if not result["has_ground_truth"]:
+        print(f"{args.csv_path}: немає GPS/local_position — звірку дрейфу пропущено, лише сира траєкторія EKF.")
+        print(f"  зміщення старт->кінець: {result['displacement_m']:.1f}м, пройдений шлях: {result['path_length_m']:.1f}м")
+        if args.video:
+            print(f"  optical flow: застосовано {result['flow_applied_count']} корекцій")
     else:
         pct = result["interval_pct"]
         err = result["interval_max_err"]

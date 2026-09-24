@@ -6,10 +6,12 @@
 Дзеркалить форму vision_service.py: вільні функції, HTTP-виклик на
 control-API Spark, помилки — (payload, status). Сервер лише підбирає
 ВХІД для Spark:
-  - відео нижньої камери — залишається на РПі, Spark качає його сам за
-    посиланням (може бути кілька ГБ — рівно тому не проксуємо через
-    себе, як recordings_browse_service.py робить для завантаження в
-    браузер);
+  - відео нижньої камери — тепер записується САМИМ адмін-сервером
+    (lowercam_recording_service.py, папка {SIRENA_RECORDINGS}/../lowercam/,
+    РПі більше нічого локально не пише). Spark качає файл з адмінки за
+    внутрішнім (без сесійної авторизації, довірена WG-мережа) посиланням
+    internal_api.py, тим самим шляхом, що vision_service.py вже читає
+    RTSP напряму з VISION_RTSP_HOST — не проксуємо байти через себе;
   - inertia CSV — маленький (КБ), сервер сам його пише
     (inertia_log_service.py) і просто передає вміст текстом у тілі
     запиту, без окремого проміжного HTTP-виклику Spark -> адмінка.
@@ -20,29 +22,26 @@ import requests
 from flask import current_app
 
 from . import inertia_log_service
-from .recordings_browse_service import list_rpi_recordings
-from .video_service import _device_manager_base_urls
+from .recordings_browse_service import list_lowercam_recordings
 
 REQUEST_TIMEOUT_S = 10
 
 
-def _latest_rpi_video_url(device_id):
-    listing = list_rpi_recordings(device_id)
+def _latest_lowercam_video_url(device_id):
+    listing = list_lowercam_recordings(device_id)
     if not listing.get("success"):
-        return None, listing.get("error", "РПі недоступний")
+        return None, listing.get("error", "адмін-сервер: не вдалось прочитати список записів")
     if not listing.get("recordings"):
-        return None, "немає записів нижньої камери на РПі"
+        return None, "немає записів нижньої камери — увімкни її на /lowercam і зроби короткий проліт"
     filename = listing["recordings"][0]["name"]
 
-    base_urls, error, _status = _device_manager_base_urls(device_id)
-    if error:
-        return None, error.get("error", "пристрій недоступний")
-
-    # base_urls — це [ip, hostname.local] того самого РПі (video_service.py) —
-    # Spark має дістати той самий, тож віддаємо перший; сам Spark отримає
-    # чітку HTTP-помилку при завантаженні, якщо він раптом недоступний саме
-    # з мережі Spark (а не адмінки).
-    return f"{base_urls[0]}/api/v1/recordings/{filename}", None
+    cfg = current_app.config
+    # WG-IP адмінки (VISION_RTSP_HOST), не request.url_root — той самий
+    # принцип, що вже застосований у vision_service.py: Spark має пряму
+    # WireGuard-доступність саме до цієї адреси, а не до того, як браузер
+    # зайшов на адмінку (публічний домен/проксі Spark не бачить).
+    base = f"http://{cfg['VISION_RTSP_HOST']}:{cfg['SIRENA_PORT']}"
+    return f"{base}/internal/lowercam-recordings/{device_id}/{filename}", None
 
 
 def _latest_inertia_csv_text(device_id):
@@ -60,7 +59,7 @@ def _latest_inertia_csv_text(device_id):
 
 
 def start(device_id):
-    video_url, video_error = _latest_rpi_video_url(device_id)
+    video_url, video_error = _latest_lowercam_video_url(device_id)
     if video_error:
         return {"success": False, "error": f"відео нижньої камери: {video_error}"}, 404
 

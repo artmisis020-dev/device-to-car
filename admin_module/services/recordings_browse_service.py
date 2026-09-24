@@ -1,12 +1,17 @@
 """Перегляд/завантаження вже наявних записів і логів для блоку під панеллю
-керування на сторінці телеметрії. Два джерела відео (навмисно різні,
+керування на сторінці телеметрії. Три джерела відео (навмисно різні,
 жодного зв'язку між ними):
 
-- "РПі" — additional-lowercam.service, безперервний локальний .h264-запис на диску
-  самого пристрою (/home/manager/recordings), не пов'язаний ні зі SRT-
-  стрімом, ні з recording_service.py.
+- "РПі" — ІСТОРИЧНІ файли старого /home/manager/record.sh
+  (/home/manager/recordings на самому пристрої). Продюсер видалений
+  (additional-lowercam.service тепер лише стрімить), список лишається
+  для скачування вже наявних старих файлів.
 - "Сервер" — уже наявний admin_module/services/recording_service.py
-  (кнопка REC у відео-плеєрі), файли лежать у SIRENA_RECORDINGS/<stream>/.
+  (кнопка REC у відео-плеєрі, головна камера), файли лежать у
+  SIRENA_RECORDINGS/<stream>/.
+- "Нижня камера (сервер)" — lowercam_recording_service.py, записує стрім
+  нижньої (CSI) камери під час її роботи, файли лежать у
+  {SIRENA_RECORDINGS}/../lowercam/<stream>-lowercam/.
 
 Логи — той самий підхід для обох сторін: РПі проксі на sirena_manager (порт
 9070, whitelist назв через SERVICES-словник, той самий, що вже
@@ -73,6 +78,39 @@ def server_recording_path(device_id: str, filename: str) -> Path | None:
     if not stream:
         return None
     root = (Path(current_app.config["SIRENA_RECORDINGS"]) / stream).resolve()
+    candidate = (root / filename).resolve()
+    if not _is_relative_to(candidate, root) or not candidate.is_file():
+        return None
+    return candidate
+
+
+# ─── Нижня (CSI) камера — окрема папка, окремий продюсер файлів
+# (lowercam_recording_service.py) ─────────────────────────────────────────
+
+def list_lowercam_recordings(device_id: str) -> dict:
+    stream = video_service.lowercam_stream_name(device_id)
+    if not stream:
+        return {"success": False, "error": "пристрій не знайдено"}
+
+    root = Path(current_app.config["SIRENA_RECORDINGS"]).parent / "lowercam" / stream
+    if not root.is_dir():
+        return {"success": True, "recordings": []}
+
+    items = []
+    for entry in root.iterdir():
+        if not entry.is_file() or entry.suffix != ".mp4":
+            continue
+        stat = entry.stat()
+        items.append({"name": entry.name, "size": stat.st_size, "mtime": stat.st_mtime})
+    items.sort(key=lambda i: i["mtime"], reverse=True)
+    return {"success": True, "recordings": items}
+
+
+def lowercam_recording_path(device_id: str, filename: str) -> Path | None:
+    stream = video_service.lowercam_stream_name(device_id)
+    if not stream:
+        return None
+    root = (Path(current_app.config["SIRENA_RECORDINGS"]).parent / "lowercam" / stream).resolve()
     candidate = (root / filename).resolve()
     if not _is_relative_to(candidate, root) or not candidate.is_file():
         return None

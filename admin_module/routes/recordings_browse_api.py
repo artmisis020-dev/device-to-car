@@ -41,7 +41,7 @@ def api_download_server_recording(device_id, filename):
     return send_file(path, as_attachment=True, download_name=path.name)
 
 
-# ─── Відео на РПі (additional-lowercam.service, проксі) ──────────────────────────────
+# ─── Відео на РПі (історичні файли старого record.sh, проксі) ───────────
 
 @recordings_browse_api_bp.route("/api/devices/<device_id>/recordings/rpi", methods=["GET"])
 @require_device_access
@@ -56,6 +56,23 @@ def api_download_rpi_recording(device_id, filename):
     if chunks is None:
         return jsonify({"success": False, "error": headers.get("error", "unavailable")}), status
     return Response(chunks, headers=headers, status=status)
+
+
+# ─── Нижня (CSI) камера — запис на сервері (lowercam_recording_service.py) ─
+
+@recordings_browse_api_bp.route("/api/devices/<device_id>/recordings/lowercam", methods=["GET"])
+@require_device_access
+def api_list_lowercam_recordings(device_id):
+    return jsonify(svc.list_lowercam_recordings(device_id))
+
+
+@recordings_browse_api_bp.route("/api/devices/<device_id>/recordings/lowercam/<path:filename>", methods=["GET"])
+@require_device_access
+def api_download_lowercam_recording(device_id, filename):
+    path = svc.lowercam_recording_path(device_id, filename)
+    if path is None:
+        return jsonify({"success": False, "error": "file not found"}), 404
+    return send_file(path, as_attachment=True, download_name=path.name)
 
 
 # ─── Логи ────────────────────────────────────────────────────────────────

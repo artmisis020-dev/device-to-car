@@ -35,6 +35,11 @@
   .lc-result dt { color: var(--sirena-muted, #888); }
   .lc-result dd { margin:0; }
   .lc-error { color: var(--sirena-danger); font-size:.85rem; }
+  .lc-status-dot { width:10px; height:10px; border-radius:999px; background:#713E3D; display:inline-block; }
+  .lc-status-dot.on { background:var(--sirena-ok); }
+  .lc-rec-list { list-style:none; padding:0; margin:0; font-size:.85rem; }
+  .lc-rec-list li { display:flex; justify-content:space-between; gap:.5rem; padding:.25rem 0; border-bottom:1px solid var(--sirena-border); }
+  .lc-rec-list li:last-child { border-bottom:none; }
 </style>
 {% endblock %}
 {% block content %}
@@ -55,12 +60,27 @@
 <div class="page-wrap">
   <div class="lc-card">
     <div class="lc-head">
-      <span>Живий стрім — нижня (CSI) камера</span>
-      <button id="lcReconnect" class="btn btn-sm btn-outline-info" type="button">Перезавантажити</button>
+      <span>
+        <span id="lcStatusDot" class="lc-status-dot"></span>
+        Нижня камера — <span id="lcStatusText">перевірка стану...</span>
+      </span>
+      <span class="d-flex gap-2">
+        <button id="lcToggle" class="btn btn-sm btn-success" type="button" disabled>▶ Увімкнути</button>
+        <button id="lcReconnect" class="btn btn-sm btn-outline-info" type="button">Перезавантажити плеєр</button>
+      </span>
     </div>
     <div class="lc-video-shell">
       <video id="lcVideo" class="lc-video" autoplay playsinline muted controls></video>
-      <div id="lcOverlay" class="lc-overlay">Підключення...</div>
+      <div id="lcOverlay" class="lc-overlay">Камера вимкнена</div>
+    </div>
+  </div>
+
+  <div class="lc-card mt-2">
+    <div class="lc-head"><span>Записи нижньої камери (на сервері)</span>
+      <button id="lcRecListReload" class="btn btn-sm btn-outline-info" type="button">Оновити</button>
+    </div>
+    <div class="lc-body">
+      <ul id="lcRecList" class="lc-rec-list"><li>Завантаження...</li></ul>
     </div>
   </div>
 
@@ -70,7 +90,7 @@
     </div>
     <div class="lc-body">
       <p class="text-muted" style="font-size:.82rem">
-        Бере останній запис нижньої камери на РПі й останній inertia-лог цього пристрою,
+        Бере останній запис нижньої камери (на сервері) й останній inertia-лог цього пристрою,
         рахує на Spark (не тут — обробка кадр-за-кадром важка для 1 vCPU адмін-сервера).
       </p>
       <button id="lcInertiaRun" class="btn btn-sm btn-danger" type="button">🧮 Розрахувати інерцію</button>
@@ -90,6 +110,8 @@
 
   let pc = null;
   let reconnectTimer = null;
+  let statusPollTimer = null;
+  let lastRpiActive = false;
 
   function setOverlay(message, visible = true) {
     const overlay = el('lcOverlay');
@@ -110,7 +132,7 @@
   }
 
   function scheduleReconnect() {
-    if (reconnectTimer) return;
+    if (reconnectTimer || !lastRpiActive) return;
     setOverlay('Стрім відключено — перепідключення...');
     reconnectTimer = setTimeout(() => { reconnectTimer = null; connectStream(); }, 3000);
   }
@@ -180,7 +202,92 @@
   }
 
   el('lcReconnect')?.addEventListener('click', connectStream);
-  connectStream();
+
+  // ─── Увімкнути / Вимкнути (керує РПі-стрімом + записом на сервері) ─────
+  function renderStatus(data) {
+    const dot = el('lcStatusDot');
+    const text = el('lcStatusText');
+    const btn = el('lcToggle');
+    const rpiActive = !!data.rpi_active;
+    dot.classList.toggle('on', rpiActive);
+    text.textContent = rpiActive
+      ? `увімкнена${data.recording_active ? ' · запис іде' : ''}`
+      : 'вимкнена';
+    btn.textContent = rpiActive ? '⏹ Вимкнути' : '▶ Увімкнути';
+    btn.className = rpiActive ? 'btn btn-sm btn-outline-danger' : 'btn btn-sm btn-success';
+    btn.disabled = false;
+
+    if (rpiActive && !lastRpiActive) {
+      connectStream();
+    } else if (!rpiActive && lastRpiActive) {
+      stopPeer();
+      setOverlay('Камера вимкнена');
+    }
+    lastRpiActive = rpiActive;
+  }
+
+  async function pollLowercamStatus() {
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/lowercam/status`);
+      const data = await res.json();
+      renderStatus(data);
+    } catch (err) {
+      el('lcStatusText').textContent = 'помилка опитування статусу';
+    }
+  }
+
+  el('lcToggle')?.addEventListener('click', async () => {
+    const btn = el('lcToggle');
+    btn.disabled = true;
+    const turningOn = btn.textContent.includes('Увімкнути');
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/lowercam/${turningOn ? 'start' : 'stop'}`, {method: 'POST'});
+      const data = await res.json();
+      if (!res.ok || data.success === false) {
+        el('lcStatusText').textContent = `помилка: ${data.error || res.status}`;
+        btn.disabled = false;
+        return;
+      }
+      if (!turningOn) loadRecordings(); // "Вимкнути" фіналізує файл запису — оновлюємо список
+    } catch (err) {
+      el('lcStatusText').textContent = `помилка: ${err.message}`;
+    }
+    pollLowercamStatus();
+  });
+
+  pollLowercamStatus();
+  statusPollTimer = setInterval(pollLowercamStatus, 5000);
+
+  // ─── Записи на сервері ──────────────────────────────────────────────────
+  function formatBytes(n) {
+    if (n < 1024) return `${n} Б`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} КБ`;
+    return `${(n / (1024 * 1024)).toFixed(1)} МБ`;
+  }
+
+  async function loadRecordings() {
+    const list = el('lcRecList');
+    list.innerHTML = '<li>Завантаження...</li>';
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/recordings/lowercam`);
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'помилка');
+      if (!data.recordings.length) {
+        list.innerHTML = '<li>Записів ще немає</li>';
+        return;
+      }
+      list.innerHTML = data.recordings.map(r => `
+        <li>
+          <span>${r.name} (${formatBytes(r.size)})</span>
+          <a href="/api/devices/${deviceId}/recordings/lowercam/${encodeURIComponent(r.name)}" class="link-info">Скачати</a>
+        </li>
+      `).join('');
+    } catch (err) {
+      list.innerHTML = `<li class="lc-error">Помилка: ${err.message}</li>`;
+    }
+  }
+  el('lcRecListReload')?.addEventListener('click', loadRecordings);
+  loadRecordings();
 
   // ─── Розрахунок інерції ────────────────────────────────────────────────
   let pollTimer = null;
@@ -200,6 +307,20 @@
     }
     const r = data.result || {};
     statusEl.textContent = 'Готово';
+
+    // has_ground_truth=false — норма: немає GPS/local_position (бенч-тест/
+    // приміщення). GPS тут ЛИШЕ еталон для звірки дрейфу, не потрібен для
+    // самого розрахунку — EKF (IMU+баро+потік) рахує траєкторію і без нього.
+    if (r.has_ground_truth === false) {
+      resultEl.innerHTML = `<dl>
+        <dt>Корекцій потоку</dt><dd>${r.flow_applied_count ?? '-'}</dd>
+        <dt>Зміщення старт→кінець</dt><dd>${r.displacement_m != null ? r.displacement_m.toFixed(2) + ' м' : '-'}</dd>
+        <dt>Пройдений шлях</dt><dd>${r.path_length_m != null ? r.path_length_m.toFixed(2) + ' м' : '-'}</dd>
+      </dl>
+      <p class="text-muted mt-1" style="font-size:.78rem">Немає GPS/local_position у лозі — звірка дрейфу пропущена, це очікувано (інерція рахується саме без GPS).</p>`;
+      return;
+    }
+
     resultEl.innerHTML = `<dl>
       <dt>Інтервалів</dt><dd>${r.n_intervals ?? '-'}</dd>
       <dt>Корекцій потоку</dt><dd>${r.flow_applied_count ?? '-'}</dd>

@@ -24,8 +24,11 @@ LOWER_CAMERA_TIMEOUT_S = 20  # rpicam-vid саме по собі ~3с + запа
 # fire_device_status — окремий фізичний "пристрій вогню" на UART, якого на
 # цьому борті немає (юніт свідомо ніколи не вмикали); окремо від того, є ще
 # й неспівпадіння назви юніта між install.sh і sirena_manager/config.py.
-# Не рахуємо його в загальному health-вердикті цього тесту.
-_HEALTH_IGNORE_SERVICES = {"fire_device_status"}
+# lowercam — нижня (CSI) камера, свідомо НЕ автозапускається з РПі
+# (вмикається вручну кнопкою на /lowercam/<device_id>), тож "не активний"
+# тут — штатний стан, а не несправність.
+# Обидва не рахуємо в загальному health-вердикті цього тесту.
+_HEALTH_IGNORE_SERVICES = {"fire_device_status", "lowercam"}
 
 
 def _friendly_error(exc: Exception) -> str:
@@ -54,6 +57,7 @@ def run(device_id: str) -> dict:
     checks.append(_check_local_mediamtx())
     checks.append(_check_pixel_tracking(device_id))
     checks.append(_check_vision(device_id))
+    checks.append(_check_lowercam(device_id))
 
     return {"success": True, "checks": checks, "ok": all(c["ok"] for c in checks if not c.get("warning"))}
 
@@ -171,6 +175,31 @@ def _check_pixel_tracking(device_id: str) -> dict:
         except Exception as exc:
             errors.append(_friendly_error(exc))
     # Некритично для решти системи — трекінг не завжди потрібен пілоту.
+    return {"name": label, "ok": False, "detail": "; ".join(errors) or "недоступний", "warning": True}
+
+
+def _check_lowercam(device_id: str) -> dict:
+    # Інформаційно, не пасс/фейл: сервіс на РПі свідомо НЕ автозапускається
+    # (вмикається вручну кнопкою на /lowercam/<device_id>), тож "не активний"
+    # тут — норма, не несправність. warning=True навіть коли active=True —
+    # ok=True в такому разі просто показує зелену галку в списку, а не
+    # впливає на загальний вердикт (той самий фільтр у run(), що й для
+    # pixel_tracking/vision).
+    label = "Нижня камера (стрім, CSI)"
+    base_urls, error, _status = _device_manager_base_urls(device_id)
+    if error:
+        return {"name": label, "ok": False, "detail": error.get("error", "пристрій недоступний"), "warning": True}
+
+    errors = []
+    for base_url in base_urls:
+        try:
+            response = requests.get(f"{base_url}/api/v1/services/lowercam", timeout=DEVICE_TIMEOUT_S)
+            payload = response.json()
+            active = bool(payload.get("active"))
+            detail = "стрімить" if active else "вимкнена (норма — вмикається вручну)"
+            return {"name": label, "ok": True, "detail": detail, "warning": True}
+        except Exception as exc:
+            errors.append(_friendly_error(exc))
     return {"name": label, "ok": False, "detail": "; ".join(errors) or "недоступний", "warning": True}
 
 

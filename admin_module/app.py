@@ -12,6 +12,8 @@ from .routes.recording_api import recording_api_bp
 from .routes.recordings_browse_api import recordings_browse_api_bp
 from .routes.system_test_api import system_test_api_bp
 from .routes.inertia_replay_api import inertia_replay_api_bp
+from .routes.lowercam_api import lowercam_api_bp
+from .routes.internal_api import internal_api_bp
 from .routes.telemetry_api import telemetry_api_bp
 from .routes.track_api import track_api_bp
 from .routes.ui import ui_bp
@@ -64,6 +66,8 @@ def create_app(settings=None):
     app.register_blueprint(recordings_browse_api_bp)
     app.register_blueprint(system_test_api_bp)
     app.register_blueprint(inertia_replay_api_bp)
+    app.register_blueprint(lowercam_api_bp)
+    app.register_blueprint(internal_api_bp)
     app.register_blueprint(telemetry_api_bp)
     app.register_blueprint(video_api_bp)
     app.register_blueprint(vision_api_bp)

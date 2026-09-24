@@ -1,40 +1,40 @@
-"""Синхронізація .h264-запису additional-lowercam.service з epoch-часом CSV-логу
+"""Синхронізація запису нижньої камери з epoch-часом CSV-логу
 (vision_module/inertia/inertia_log_service.py на адмін-сервері) — ЗА
-ІМЕНЕМ ФАЙЛУ, а не по годиннику самого відео (у .h264 без контейнера
-немає надійних wall-clock міток).
+ІМЕНЕМ ФАЙЛУ, а не по годиннику самого відео (у сирому .h264/copy-mp4 без
+надійного демуксингу немає гарантованих wall-clock міток).
 
-lowercam_capture.py на РПі: `rec_$(date +%Y%m%d_%H%M%S).h264` — це ЛОКАЛЬНИЙ час
-РПі (Europe/Kyiv, перевірено `timedatectl` наживо), NTP-синхронізований.
-CSV "timestamp" — `time.time()`-епоха (UTC-байдужа секунда з 1970), тож
-для зіставлення ім'я файлу треба явно інтерпретувати як Europe/Kyiv і
-перевести в epoch — просте порівняння без tzinfo дало б систематичний
-зсув на розмір поточного офсету (+2/+3г, залежно від DST)."""
+Продюсер файлу — admin_module/services/lowercam_recording_service.py
+(на адмін-сервері, НЕ на РПі — lowercam_capture.py на РПі лише стрімить,
+локально нічого не пише): `rec_{datetime.now():%Y%m%d_%H%M%S}.mp4`.
+Адмін-сервер живе в UTC (перевірено `timedatectl` наживо: Etc/UTC) — на
+відміну від старого /home/manager/record.sh на РПі (Europe/Kyiv), тому
+ім'я файлу тепер інтерпретується як UTC напряму, без конвертації. CSV
+"timestamp" — `time.time()`-епоха (UTC-байдужа секунда з 1970), тож
+розбіжність у трактуванні тут дала б систематичний зсув на весь TZ-офсет."""
 
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import cv2
 import numpy as np
 
-RPI_TZ = ZoneInfo("Europe/Kyiv")
 _REC_FILENAME_RE = re.compile(r"rec_(\d{8})_(\d{6})")
 
 
 def video_start_epoch(video_path) -> float:
-    """rec_YYYYMMDD_HHMMSS(...).h264 -> epoch секунда старту запису."""
+    """rec_YYYYMMDD_HHMMSS(...).mp4 -> epoch секунда старту запису (UTC)."""
     name = Path(video_path).name
     m = _REC_FILENAME_RE.search(name)
     if not m:
         raise ValueError(
             f"не вдалось розпізнати timestamp у імені файлу запису: {name!r} "
-            "(очікується формат rec_YYYYMMDD_HHMMSS.h264, як пише lowercam_capture.py)"
+            "(очікується формат rec_YYYYMMDD_HHMMSS.mp4, як пише lowercam_recording_service.py)"
         )
-    dt_local = datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S").replace(tzinfo=RPI_TZ)
-    return dt_local.timestamp()
+    dt_utc = datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+    return dt_utc.timestamp()
 
 
 class RecordingFrameSource:

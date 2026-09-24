@@ -27,6 +27,7 @@ VIDEO_RELAY_UNIT = "video-relay.service"
 # (webrtc-camera.service) і RTSP-relay (video-streamer.service) видалені
 # повністю — конкурента за /dev/videoN більше нема.
 SRT_RELAY_CAPTURE_UNIT = "srt-relay-capture.service"
+LOWERCAM_UNIT = "additional-lowercam.service"
 ROOT_ENV_PATH = os.environ.get("SIRENA_ROOT_ENV_PATH", "/opt/sirena/.env")
 TELEMETRY_SNAPSHOT_PATH = os.environ.get("SIRENA_TELEMETRY_SNAPSHOT_PATH", "/tmp/sirena_mavlink_snapshot.json")
 # Той самий файл, що читає/пише video_module/service_manager (video-service-manager,
@@ -35,9 +36,11 @@ TELEMETRY_SNAPSHOT_PATH = os.environ.get("SIRENA_TELEMETRY_SNAPSHOT_PATH", "/tmp
 # зверніло пайплайн несумісною роздільністю.
 VIDEO_CONFIG_PATH = os.environ.get("SIRENA_VIDEO_CONFIG_PATH", "/opt/sirena-video/sirena_video_config.json")
 # additional-lowercam.service (additional_modules/lowercam, CSI-камера:
-# безперервний сегментований .h264-запис + окремий live SRT-стрім тим самим
-# процесом) пише сюди — не плутати з admin-стороною recording_service.py
-# (та записує ГОЛОВНИЙ стрім через ffmpeg -c copy з боку admін-сервера).
+# ІСТОРИЧНЕ: старий /home/manager/record.sh писав .h264-файли сюди. Тепер
+# additional-lowercam.service лише СТРІМИТЬ (жоден процес на РПі більше
+# нічого сюди не пише — запис нижньої камери переїхав на admin-сервер,
+# admin_module/services/lowercam_recording_service.py). Директорія й
+# /api/v1/recordings лишаються — дають скачати вже наявні старі файли.
 LOCAL_RECORDINGS_DIR = os.environ.get("SIRENA_LOCAL_RECORDINGS_DIR", "/home/manager/recordings")
 LOG_LINES_VIEW = int(os.environ.get("SIRENA_LOG_LINES_VIEW", "300"))
 LOG_LINES_DOWNLOAD = int(os.environ.get("SIRENA_LOG_LINES_DOWNLOAD", "5000"))
@@ -98,6 +101,16 @@ SERVICES = {
         units=(SRT_RELAY_CAPTURE_UNIT,),
         depends_on=("video_relay",),
         controllable=False,
+    ),
+    # Нижня (CSI) камера — additional_modules/lowercam/, окремий стрім
+    # (`<hostname>-lowercam`) від головної камери. НЕ в BOOT_SEQUENCE і
+    # юніт НЕ enabled — вмикається вручну кнопкою на /lowercam/<device_id>
+    # (admin_module/services/lowercam_control_service.py), не з
+    # завантаженням РПі.
+    "lowercam": ServiceDefinition(
+        name="lowercam",
+        label="Lowercam Stream (CSI)",
+        units=(LOWERCAM_UNIT,),
     ),
 }
 
