@@ -168,6 +168,17 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
 
     ekf = EKFEstimator(config or EKFConfig())
     baro_offset = float(rows[start_idx].get("baro_alt") or 0.0)
+    # Окремий, НІКОЛИ не оновлюваний нуль-референс (на відміну від
+    # baro_offset вище, який зсувається при кожному GPS-скиді) — потрібен
+    # оптичному потоку як оцінка висоти-НАД-ЗЕМЛЕЮ. Сирий baro_alt —
+    # барометрична висота відносно якогось тиску-референсу (може бути
+    # від'ємною/довільною, як живцем виявилось на стендовому тесті без
+    # зльоту) — flow_estimator.estimate() відкидає altitude_m<=0 одразу,
+    # тож без цього offset оптичний потік НІКОЛИ не спрацьовує на
+    # нелітаних/невзлетілих логах. baro_alt - baro_ground_ref ≈ висота
+    # відносно точки старту репlay — коректне наближення AGL, ПОКИ старт
+    # був на землі під камерою (справедливо для реального польоту).
+    baro_ground_ref = baro_offset
     initial_velocity = _gps_velocity_at(gps_positions, t_all, start_idx) if has_ground_truth else np.zeros(3)
     ekf.reset(position=np.zeros(3), velocity=initial_velocity)
 
@@ -214,7 +225,8 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
             if result is not None:
                 prev_gray, gray, flow_dt = result
                 flow_result = flow_estimator.estimate(
-                    prev_gray, gray, altitude_m=baro_alt, gyro_body_rads=gyro_body, dt=flow_dt
+                    prev_gray, gray, altitude_m=(baro_alt - baro_ground_ref),
+                    gyro_body_rads=gyro_body, dt=flow_dt,
                 )
                 if update_ekf_with_flow(ekf, flow_result, roll, pitch, yaw):
                     flow_applied_count += 1
