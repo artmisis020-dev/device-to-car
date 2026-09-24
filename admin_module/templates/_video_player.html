@@ -216,6 +216,10 @@
         <span id="svpCameraList" class="svp-camera-label">Завантаження...</span>
       </span>
       <button id="svpReconnect" class="btn btn-sm btn-outline-info" type="button">Перезавантажити</button>
+      <span class="svp-rec-state">
+        <span id="svpRecDot" class="svp-rec-dot"></span>
+        <button id="svpRecord" class="btn btn-sm btn-outline-danger" type="button">REC</button>
+      </span>
       {% if not video_player_compact %}
       <button id="svpAiToggle" class="btn btn-sm btn-outline-info" type="button">AI-визначення</button>
       <button id="svpTrackToggle" class="btn btn-sm btn-outline-info" type="button">Піксель трекінг</button>
@@ -715,31 +719,37 @@
 
   async function toggleRecord() {
     const endpoint = recordActive
-      ? `/api/devices/${deviceId}/video/stop`
-      : `/api/devices/${deviceId}/video/start`;
-    await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
-    recordActive = !recordActive;
-    updateRecordBtn();
+      ? `/api/devices/${deviceId}/recording/stop`
+      : `/api/devices/${deviceId}/recording/start`;
+    try {
+      const res = await fetch(endpoint, {method: 'POST'});
+      const data = await res.json();
+      if (!res.ok || data.success === false) throw new Error(data.error || `HTTP ${res.status}`);
+      recordActive = !recordActive;
+      updateRecordBtn();
+    } catch (err) {
+      updateRecordBtn(err.message);
+    }
   }
 
   async function syncRecordState() {
-    if (compact) return;
     try {
-      const res = await fetch(`/api/video/status/${deviceId}`);
+      const res = await fetch(`/api/devices/${deviceId}/recording/status`);
       const data = await res.json();
       recordActive = Boolean(data.active);
       updateRecordBtn();
     } catch (err) {}
   }
 
-  // function updateRecordBtn() {
-  //   const btn = el('svpRecord');
-  //   const dot = el('svpRecDot');
-  //   if (!btn || !dot) return;
-  //   btn.className = recordActive ? 'btn btn-sm btn-danger' : 'btn btn-sm btn-outline-danger';
-  //   btn.textContent = recordActive ? 'Stop REC' : 'REC';
-  //   dot.classList.toggle('on', recordActive);
-  // }
+  function updateRecordBtn(errorMessage) {
+    const btn = el('svpRecord');
+    const dot = el('svpRecDot');
+    if (!btn || !dot) return;
+    btn.className = recordActive ? 'btn btn-sm btn-danger' : 'btn btn-sm btn-outline-danger';
+    btn.textContent = recordActive ? 'Стоп REC' : 'REC';
+    btn.title = errorMessage || '';
+    dot.classList.toggle('on', recordActive);
+  }
 
   // ─── OSD-оверлей (телеметрія з MAVLink, окремо від відео-пайплайна) ───────
   // Не залежить від telemetry.html: власна підписка на той самий живий
@@ -1079,7 +1089,7 @@
   osdLoadSkinPreference();
   osdStartLive();
   setInterval(osdRender, 250);
-  if (!compact) setInterval(syncRecordState, 5000);
+  setInterval(syncRecordState, 5000);
   setInterval(loadCameras, 10000);
 })();
 </script>

@@ -8,6 +8,7 @@ from .config import Settings
 from .db import init_db
 from .routes.auth import auth_bp
 from .routes.device_api import device_api_bp
+from .routes.recording_api import recording_api_bp
 from .routes.telemetry_api import telemetry_api_bp
 from .routes.track_api import track_api_bp
 from .routes.ui import ui_bp
@@ -56,6 +57,7 @@ def create_app(settings=None):
     app.register_blueprint(auth_bp)
     app.register_blueprint(ui_bp)
     app.register_blueprint(device_api_bp)
+    app.register_blueprint(recording_api_bp)
     app.register_blueprint(telemetry_api_bp)
     app.register_blueprint(video_api_bp)
     app.register_blueprint(vision_api_bp)

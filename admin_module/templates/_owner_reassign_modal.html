@@ -1,0 +1,62 @@
+<!-- Спільний модал призначення/перепризначення власника пристрою.
+     Самодостатній: власний instance модалу, власний кеш користувачів,
+     власний esc() — не покладається на глобальні змінні/хелпери сторінки,
+     що його підключає (index.html і device_detail.html мають РІЗні
+     іменування схожих речей: esc() vs escapeHtml(), currentDeviceId вже
+     зайнятий під approve/revoke на index.html). Після успішного
+     призначення викликає window.onOwnerReassigned(), якщо сторінка-хост
+     його визначила (index.html -> loadDevices, device_detail.html ->
+     loadDetail). -->
+<div class="modal fade" id="ownerModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content bg-dark text-white">
+    <div class="modal-header border-secondary">
+      <h5 class="modal-title">Призначити власника</h5>
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+    </div>
+    <div class="modal-body">
+      <label class="form-label">Користувач</label>
+      <select id="ownerSelect" class="form-select bg-secondary text-white"></select>
+    </div>
+    <div class="modal-footer border-secondary">
+      <button class="btn btn-primary" onclick="confirmOwnerReassign()">Призначити</button>
+    </div>
+  </div></div>
+</div>
+<script>
+(function () {
+  let targetDeviceId = null;
+  let usersCache = null;
+  // Лінивий доступ до bootstrap.Modal, не на момент парсингу цього
+  // <script> — цей партіал підключається всередині блоку контенту сторінки,
+  // а bootstrap.bundle.min.js вантажиться пізніше, у блоці scripts;
+  // на момент виконання цього IIFE глобал bootstrap ще не існує.
+  const getModal = () => bootstrap.Modal.getOrCreateInstance(document.getElementById('ownerModal'));
+  const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+
+  window.openOwnerReassign = async function (deviceId) {
+    targetDeviceId = deviceId;
+    if (!usersCache) {
+      try {
+        const res = await fetch('/api/users');
+        usersCache = res.ok ? await res.json() : [];
+      } catch (e) { usersCache = []; }
+    }
+    const select = document.getElementById('ownerSelect');
+    select.innerHTML = '<option value="">— зняти власника —</option>' +
+      usersCache.filter(u => u.role !== 'admin').map(u => `<option value="${u.id}">${esc(u.username)}</option>`).join('');
+    getModal().show();
+  };
+
+  window.confirmOwnerReassign = async function () {
+    const value = document.getElementById('ownerSelect').value;
+    await fetch(`/api/devices/${targetDeviceId}/owner`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({user_id: value ? Number(value) : null}),
+    });
+    getModal().hide();
+    if (typeof window.onOwnerReassigned === 'function') window.onOwnerReassigned();
+  };
+})();
+</script>

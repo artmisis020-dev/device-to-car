@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}Sirena — Моя кімната{% endblock %}
+{% block head %}
+<style>
+body { background:var(--sirena-bg); color:var(--sirena-text); }
+.card { background:var(--sirena-surface); border:1px solid var(--sirena-border); color:var(--sirena-text); }
+.card-header { background:var(--sirena-header) !important; color:var(--sirena-text) !important; border-bottom:1px solid var(--sirena-border); font-weight:600; font-size:.9rem; }
+.table { --bs-table-bg:var(--sirena-surface); --bs-table-color:var(--sirena-text); --bs-table-border-color:var(--sirena-border); color:var(--sirena-text); }
+.table thead { background:var(--sirena-header); }
+.table thead th { color:var(--sirena-text); font-size:.78rem; text-transform:uppercase; letter-spacing:.05em; border-bottom:1px solid var(--sirena-border) !important; }
+.table tbody td { border-color:var(--sirena-border) !important; vertical-align:middle; font-size:.85rem; }
+.badge-valid { background:var(--sirena-ok); color:#07110d; }
+.badge-pending { background:var(--sirena-warning); color:#171006; }
+.badge-rejected { background:var(--sirena-danger); color:#170807; }
+.online-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:.35rem; background:var(--sirena-inactive); }
+.online-dot.on { background:var(--sirena-online); box-shadow:0 0 0 3px rgba(84,176,138,.18); }
+.form-control, .form-select { background:#172435 !important; border-color:var(--sirena-border) !important; color:var(--sirena-text) !important; }
+.action-btn {
+  border:1px solid var(--sirena-accent) !important;
+  background:#172435 !important;
+  color:var(--sirena-text) !important;
+  font-weight:700;
+  box-shadow:none !important;
+}
+.action-btn:hover, .action-btn:focus { background:var(--sirena-accent) !important; border-color:var(--sirena-accent) !important; color:#07111a !important; }
+</style>
+{% endblock %}
+{% block content %}
+<nav class="navbar navbar-dark" style="background:var(--sirena-header);border-bottom:1px solid var(--sirena-border)">
+  <div class="container-fluid">
+    <span class="navbar-brand fw-bold">🛰 Моя кімната</span>
+    <div class="d-flex gap-2 align-items-center">
+      <span class="text-light small">{{ current_user.username }}</span>
+      <a href="/logout" class="btn btn-sm btn-outline-light">Вийти</a>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid py-3">
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-bold">Мої пристрої</span>
+          <button class="btn btn-sm btn-outline-info" onclick="loadMyDevices()">⟳ Оновити</button>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0" id="devTable">
+              <thead><tr><th>Статус</th><th>Hostname</th><th>Дійсний до</th><th>Дії</th></tr></thead>
+              <tbody id="devBody"><tr><td colspan="4" class="text-center text-muted py-4">Завантаження…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="card mb-3">
+        <div class="card-header fw-bold">Додати пристрій</div>
+        <div class="card-body">
+          <p class="text-muted small">Введи код прив'язки, який отримав разом з пристроєм. Заявку розгляне адміністратор.</p>
+          <div class="input-group">
+            <input type="text" id="claimCodeInput" class="form-control" placeholder="Код прив'язки" autocapitalize="off" autocorrect="off">
+            <button class="btn btn-primary" onclick="submitClaim()">Додати</button>
+          </div>
+          <div id="claimStatus" class="small mt-2"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header fw-bold">Мої заявки</div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0" id="claimsTable">
+              <thead><tr><th>Пристрій</th><th>Статус</th><th>Подано</th></tr></thead>
+              <tbody id="claimsBody"><tr><td colspan="3" class="text-center text-muted py-3">Завантаження…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+{{ super() }}
+<script>
+function parseUtcDate(value) {
+  return new Date(String(value).replace('T', ' ') + ' UTC');
+}
+
+function utcToLocalText(value) {
+  if (!value) return '-';
+  const date = parseUtcDate(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+}
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
+function statusBadge(d) {
+  if (!d.approved) return '<span class="badge badge-pending">Очікує</span>';
+  if (!d.valid_until) return '<span class="badge badge-valid">Активний</span>';
+  const vu = new Date(d.valid_until + ' UTC');
+  if (vu < new Date()) return '<span class="badge badge-pending">Прострочено</span>';
+  return '<span class="badge badge-valid">Активний</span>';
+}
+
+function claimStatusBadge(status) {
+  if (status === 'approved') return '<span class="badge badge-valid">Схвалено</span>';
+  if (status === 'rejected') return '<span class="badge badge-rejected">Відхилено</span>';
+  return '<span class="badge badge-pending">Очікує</span>';
+}
+
+async function loadMyDevices() {
+  let devs;
+  try {
+    const res = await fetch('/api/my/devices');
+    if (res.redirected || res.status === 403) { window.location.href = '/login'; return; }
+    devs = await res.json();
+  } catch (e) { return; }
+
+  const body = devs.map(d => `<tr>
+    <td><span class="online-dot ${d.online ? 'on' : ''}"></span>${statusBadge(d)}</td>
+    <td class="fw-bold">${esc(d.hostname || '-')}</td>
+    <td class="small" title="UTC: ${esc(d.valid_until || '-')}">${esc(utcToLocalText(d.valid_until))}</td>
+    <td>
+      <a href="/devices/${d.device_id}" class="btn btn-sm action-btn py-0 px-2 me-1">Дашборд</a>
+      <a href="/telemetry/${d.device_id}" class="btn btn-sm action-btn py-0 px-2 me-1">Телеметрія</a>
+      <a href="/video/${d.device_id}" class="btn btn-sm action-btn py-0 px-2">Відео</a>
+    </td>
+  </tr>`).join('');
+  document.getElementById('devBody').innerHTML = body ||
+    '<tr><td colspan="4" class="text-center text-muted py-4">Пристроїв ще немає — додай за кодом</td></tr>';
+}
+
+async function loadMyClaims() {
+  let claims;
+  try {
+    const res = await fetch('/api/my/claims');
+    claims = res.ok ? await res.json() : [];
+  } catch (e) { claims = []; }
+
+  const body = claims.map(c => `<tr>
+    <td>${esc(c.device_hostname || c.device_id)}</td>
+    <td>${claimStatusBadge(c.status)}</td>
+    <td class="small" title="UTC: ${esc(c.requested_at)}">${esc(utcToLocalText(c.requested_at))}</td>
+  </tr>`).join('');
+  document.getElementById('claimsBody').innerHTML = body ||
+    '<tr><td colspan="3" class="text-center text-muted py-3">Заявок ще немає</td></tr>';
+}
+
+async function submitClaim() {
+  const input = document.getElementById('claimCodeInput');
+  const code = input.value.trim();
+  const statusEl = document.getElementById('claimStatus');
+  if (!code) return;
+
+  statusEl.textContent = 'Надсилання...';
+  statusEl.className = 'small mt-2 text-muted';
+  try {
+    const res = await fetch('/api/claims', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({code}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      statusEl.textContent = data.error || 'Не вдалось подати заявку';
+      statusEl.className = 'small mt-2 text-danger';
+      return;
+    }
+    statusEl.textContent = 'Заявку подано, очікуй підтвердження адміністратора';
+    statusEl.className = 'small mt-2 text-success';
+    input.value = '';
+    loadMyClaims();
+  } catch (e) {
+    statusEl.textContent = 'Помилка запиту';
+    statusEl.className = 'small mt-2 text-danger';
+  }
+}
+
+loadMyDevices();
+loadMyClaims();
+setInterval(loadMyDevices, 15000);
+setInterval(loadMyClaims, 15000);
+</script>
+{% endblock %}

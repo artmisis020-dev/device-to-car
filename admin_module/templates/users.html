@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+{% block title %}Sirena — Користувачі{% endblock %}
+{% block head %}
+<style>
+body { background:var(--sirena-bg); color:var(--sirena-text); }
+.card { background:var(--sirena-surface); border:1px solid var(--sirena-border); color:var(--sirena-text); }
+.card-header { background:var(--sirena-header) !important; color:var(--sirena-text) !important; border-bottom:1px solid var(--sirena-border); font-weight:600; font-size:.9rem; }
+.table { --bs-table-bg:var(--sirena-surface); --bs-table-color:var(--sirena-text); --bs-table-border-color:var(--sirena-border); color:var(--sirena-text); }
+.table thead { background:var(--sirena-header); }
+.table thead th { color:var(--sirena-text); font-size:.78rem; text-transform:uppercase; letter-spacing:.05em; border-bottom:1px solid var(--sirena-border) !important; }
+.table tbody td { border-color:var(--sirena-border) !important; vertical-align:middle; font-size:.85rem; }
+.badge-role-admin { background:var(--sirena-warning); color:#171006; }
+.badge-role-user { background:var(--sirena-accent); color:#07111a; }
+.badge-valid { background:var(--sirena-ok); color:#07110d; }
+.badge-pending { background:var(--sirena-warning); color:#171006; }
+.badge-rejected { background:var(--sirena-danger); color:#170807; }
+.form-control, .form-select { background:#172435 !important; border-color:var(--sirena-border) !important; color:var(--sirena-text) !important; }
+.action-btn {
+  border:1px solid var(--sirena-accent) !important;
+  background:#172435 !important;
+  color:var(--sirena-text) !important;
+  font-weight:700;
+  box-shadow:none !important;
+}
+.action-btn:hover, .action-btn:focus { background:var(--sirena-accent) !important; border-color:var(--sirena-accent) !important; color:#07111a !important; }
+.modal-content { background:var(--sirena-surface) !important; color:var(--sirena-text) !important; border:1px solid var(--sirena-border); }
+.modal-header, .modal-footer { border-color:var(--sirena-border) !important; }
+code.pw { font-size:1.1rem; user-select:all; }
+</style>
+{% endblock %}
+{% block content %}
+<nav class="navbar navbar-dark" style="background:var(--sirena-header);border-bottom:1px solid var(--sirena-border)">
+  <div class="container-fluid">
+    <span class="navbar-brand fw-bold">🛰 Користувачі</span>
+    <div class="d-flex gap-2 align-items-center">
+      <span class="text-light small">{{ current_user.username }}</span>
+      <a href="/" class="btn btn-sm btn-outline-light">Список пристроїв</a>
+      <a href="/logout" class="btn btn-sm btn-outline-light">Вийти</a>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid py-3">
+  <div class="row g-3 mb-3">
+    <div class="col-lg-5">
+      <div class="card">
+        <div class="card-header fw-bold">Створити користувача</div>
+        <div class="card-body">
+          <div class="input-group">
+            <input type="text" id="newUsername" class="form-control" placeholder="Ім'я користувача" autocapitalize="off" autocorrect="off">
+            <button class="btn btn-primary" onclick="createUser()">Створити</button>
+          </div>
+          <div id="createStatus" class="small mt-2"></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-7">
+      <div class="card h-100">
+        <div class="card-header fw-bold">Заявки на прив'язку</div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0" id="claimsTable">
+              <thead><tr><th>Пристрій</th><th>Поточний власник</th><th>Заявник</th><th>Подано</th><th>Дії</th></tr></thead>
+              <tbody id="claimsBody"><tr><td colspan="5" class="text-center text-muted py-3">Завантаження…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span class="fw-bold">Користувачі</span>
+      <button class="btn btn-sm btn-outline-info" onclick="loadUsers()">⟳ Оновити</button>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0" id="usersTable">
+          <thead><tr><th>Ім'я</th><th>Роль</th><th>Створено</th><th>Дії</th></tr></thead>
+          <tbody id="usersBody"><tr><td colspan="4" class="text-center text-muted py-3">Завантаження…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header fw-bold">Лог авторизації</div>
+    <div class="card-body p-0">
+      <div class="table-responsive" style="max-height:360px; overflow-y:auto;">
+        <table class="table table-hover mb-0" id="authLogTable">
+          <thead><tr><th>Час</th><th>Користувач</th><th>IP</th><th>Результат</th><th>Причина</th></tr></thead>
+          <tbody id="authLogBody"><tr><td colspan="5" class="text-center text-muted py-3">Завантаження…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Password Modal -->
+<div class="modal fade" id="passwordModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header">
+      <h5 class="modal-title" id="passwordModalTitle">Пароль</h5>
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+    </div>
+    <div class="modal-body text-center">
+      <code class="pw" id="passwordValue"></code>
+    </div>
+  </div></div>
+</div>
+{% endblock %}
+{% block scripts %}
+{{ super() }}
+<script>
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
+function parseUtcDate(value) {
+  return new Date(String(value).replace('T', ' ') + ' UTC');
+}
+
+function utcToLocalText(value) {
+  if (!value) return '-';
+  const date = parseUtcDate(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+}
+
+function showPasswordModal(title, password) {
+  document.getElementById('passwordModalTitle').textContent = title;
+  document.getElementById('passwordValue').textContent = password;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('passwordModal')).show();
+}
+
+async function createUser() {
+  const input = document.getElementById('newUsername');
+  const username = input.value.trim();
+  const statusEl = document.getElementById('createStatus');
+  if (!username) return;
+
+  try {
+    const res = await fetch('/api/users', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      statusEl.textContent = data.error || 'Не вдалось створити користувача';
+      statusEl.className = 'small mt-2 text-danger';
+      return;
+    }
+    statusEl.textContent = '';
+    input.value = '';
+    showPasswordModal(`Новий користувач "${data.username}"`, data.password);
+    loadUsers();
+  } catch (e) {
+    statusEl.textContent = 'Помилка запиту';
+    statusEl.className = 'small mt-2 text-danger';
+  }
+}
+
+async function loadUsers() {
+  let users;
+  try {
+    const res = await fetch('/api/users');
+    users = res.ok ? await res.json() : [];
+  } catch (e) { users = []; }
+
+  const body = users.map(u => {
+    const roleBadge = u.role === 'admin'
+      ? '<span class="badge badge-role-admin">admin</span>'
+      : '<span class="badge badge-role-user">user</span>';
+    const actions = u.role === 'admin' ? '<span class="text-muted small">—</span>' : `
+      <button class="btn btn-sm action-btn py-0 px-2 me-1" onclick="showPassword(${u.id})">Показати пароль</button>
+      <button class="btn btn-sm action-btn py-0 px-2" onclick="resetPassword(${u.id})">Скинути пароль</button>
+    `;
+    return `<tr>
+      <td class="fw-bold">${esc(u.username)}</td>
+      <td>${roleBadge}</td>
+      <td class="small" title="UTC: ${esc(u.created_at)}">${esc(utcToLocalText(u.created_at))}</td>
+      <td>${actions}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('usersBody').innerHTML = body ||
+    '<tr><td colspan="4" class="text-center text-muted py-3">Користувачів ще немає</td></tr>';
+}
+
+async function showPassword(userId) {
+  const res = await fetch(`/api/users/${userId}/password`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { alert(data.error || 'Не вдалось отримати пароль'); return; }
+  showPasswordModal(`Пароль користувача "${data.username}"`, data.password);
+}
+
+async function resetPassword(userId) {
+  if (!confirm('Скинути пароль цього користувача? Старий пароль перестане працювати.')) return;
+  const res = await fetch(`/api/users/${userId}/reset_password`, {method: 'POST'});
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { alert(data.error || 'Не вдалось скинути пароль'); return; }
+  showPasswordModal(`Новий пароль для "${data.username}"`, data.password);
+}
+
+async function loadClaims() {
+  let claims;
+  try {
+    const res = await fetch('/api/claims');
+    claims = res.ok ? await res.json() : [];
+  } catch (e) { claims = []; }
+
+  const body = claims.map(c => `<tr>
+    <td class="fw-bold">${esc(c.device_hostname || c.device_id)}</td>
+    <td>${c.current_owner_username ? esc(c.current_owner_username) : '<span class="text-muted">—</span>'}</td>
+    <td>${esc(c.requester_username)}</td>
+    <td class="small" title="UTC: ${esc(c.requested_at)}">${esc(utcToLocalText(c.requested_at))}</td>
+    <td>
+      <button class="btn btn-sm btn-success py-0 px-2 me-1" onclick="approveClaim(${c.id})">Схвалити</button>
+      <button class="btn btn-sm btn-danger py-0 px-2" onclick="rejectClaim(${c.id})">Відхилити</button>
+    </td>
+  </tr>`).join('');
+  document.getElementById('claimsBody').innerHTML = body ||
+    '<tr><td colspan="5" class="text-center text-muted py-3">Заявок немає</td></tr>';
+}
+
+async function approveClaim(claimId) {
+  const hours = parseInt(prompt('Дійсний (годин)?', '24')) || 24;
+  const res = await fetch(`/api/claims/${claimId}/approve`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({valid_hours: hours}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { alert(data.error || 'Не вдалось схвалити заявку'); return; }
+  loadClaims();
+}
+
+async function rejectClaim(claimId) {
+  if (!confirm('Відхилити цю заявку?')) return;
+  await fetch(`/api/claims/${claimId}/reject`, {method: 'POST'});
+  loadClaims();
+}
+
+function authResultBadge(success) {
+  return success
+    ? '<span class="badge badge-valid">Успіх</span>'
+    : '<span class="badge badge-rejected">Провал</span>';
+}
+
+async function loadAuthLog() {
+  let rows;
+  try {
+    const res = await fetch('/api/auth_log');
+    rows = res.ok ? await res.json() : [];
+  } catch (e) { rows = []; }
+
+  const body = rows.map(r => `<tr>
+    <td class="small" title="UTC: ${esc(r.ts)}">${esc(utcToLocalText(r.ts))}</td>
+    <td>${esc(r.username)}</td>
+    <td class="small">${esc(r.ip || '-')}</td>
+    <td>${authResultBadge(r.success)}</td>
+    <td class="small text-muted">${esc(r.reason || '')}</td>
+  </tr>`).join('');
+  document.getElementById('authLogBody').innerHTML = body ||
+    '<tr><td colspan="5" class="text-center text-muted py-3">Подій ще немає</td></tr>';
+}
+
+loadUsers();
+loadClaims();
+loadAuthLog();
+setInterval(loadUsers, 20000);
+setInterval(loadClaims, 15000);
+setInterval(loadAuthLog, 20000);
+</script>
+{% endblock %}
