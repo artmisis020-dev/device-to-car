@@ -1,5 +1,5 @@
 from __future__ import annotations
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request, send_file
 from .config import MANAGER_HOST, MANAGER_PORT
 from .supervisor import SirenaSupervisor
 
@@ -74,5 +74,31 @@ def create_app() -> Flask:
     @app.post("/api/v1/system-test/lower-camera")
     def test_lower_camera():
         return jsonify(supervisor.test_lower_camera())
+
+    @app.get("/api/v1/recordings")
+    def list_local_recordings():
+        return jsonify(supervisor.list_local_recordings())
+
+    @app.get("/api/v1/recordings/<path:filename>")
+    def download_local_recording(filename: str):
+        path = supervisor.resolve_local_recording(filename)
+        if path is None:
+            return jsonify({"success": False, "error": "file not found"}), 404
+        return send_file(path, as_attachment=True, download_name=path.name)
+
+    @app.get("/api/v1/logs/<name>")
+    def view_service_logs(name: str):
+        return jsonify(supervisor.get_service_logs(name, for_download=False))
+
+    @app.get("/api/v1/logs/<name>/download")
+    def download_service_logs(name: str):
+        result = supervisor.get_service_logs(name, for_download=True)
+        if not result.get("success"):
+            return jsonify(result), 404
+        return Response(
+            result["text"],
+            mimetype="text/plain",
+            headers={"Content-Disposition": f'attachment; filename="{result["unit"]}.log"'},
+        )
 
     return app

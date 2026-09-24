@@ -407,6 +407,44 @@
         </div>
       </div>
       {% include "_control_panel.html" %}
+
+      <div class="card">
+        <div class="card-header">📼 Записи та логи</div>
+        <div class="card-body p-2">
+          <div class="row g-2">
+            <div class="col-md-6">
+              <div class="small text-muted mb-1">Відео на РПі (record.service)</div>
+              <ul id="rpiRecordingsList" class="list-unstyled small mb-0">Завантаження...</ul>
+            </div>
+            <div class="col-md-6">
+              <div class="small text-muted mb-1">Відео на сервері (REC-кнопка)</div>
+              <ul id="serverRecordingsList" class="list-unstyled small mb-0">Завантаження...</ul>
+            </div>
+          </div>
+          <hr class="my-2">
+          <div class="d-flex gap-2 align-items-center flex-wrap">
+            <select id="logServiceSelect" class="form-select form-select-sm" style="width:auto">
+              <optgroup label="РПі">
+                <option value="rpi:mavlink_router">MAVLink Router</option>
+                <option value="rpi:telemetry_sender">Telemetry Sender</option>
+                <option value="rpi:crsf_bridge">CRSF Bridge</option>
+                <option value="rpi:navigation">GPS Hub</option>
+                <option value="rpi:video_manager">Video Service Manager</option>
+                <option value="rpi:video_relay">Video Relay</option>
+                <option value="rpi:srt_relay_capture">SRT Relay Capture</option>
+                <option value="rpi:fire_device_status">Fire Device Status</option>
+              </optgroup>
+              <optgroup label="Сервер">
+                <option value="local:sirena-admin">Sirena Admin</option>
+                <option value="local:mediamtx-admin">MediaMTX</option>
+              </optgroup>
+            </select>
+            <button class="btn btn-sm btn-outline-secondary" onclick="viewServiceLogs()">👁 Переглянути</button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="downloadServiceLogs()">⬇ Завантажити</button>
+          </div>
+          <pre id="logViewOutput" class="small mt-2 mb-0" style="max-height:240px; overflow-y:auto; display:none; background:#111; color:#0f0; padding:.5rem; border-radius:.25rem;"></pre>
+        </div>
+      </div>
     </div>
     <!-- Video stream -->
     <div class="col-md-6" id="telemetryVideoColumn">
@@ -674,6 +712,76 @@
       btn.disabled = false;
       btn.textContent = originalLabel;
     }
+  }
+
+  function formatBytes(bytes) {
+    if (bytes >= 1024 * 1024 * 1024) return (bytes / 1024 / 1024 / 1024).toFixed(1) + 'ГБ';
+    if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + 'МБ';
+    return (bytes / 1024).toFixed(0) + 'КБ';
+  }
+
+  function formatMtime(ts) {
+    return new Date(ts * 1000).toLocaleString('uk-UA');
+  }
+
+  function renderRecordingsList(listEl, recordings, downloadBase) {
+    if (!recordings.length) {
+      listEl.innerHTML = '<li class="text-muted">Немає записів</li>';
+      return;
+    }
+    listEl.innerHTML = recordings.map(r => `
+      <li class="mb-1 d-flex justify-content-between gap-2">
+        <span class="text-truncate" title="${esc(r.name)}">${esc(r.name)}</span>
+        <span class="text-nowrap">
+          <span class="text-muted">${formatBytes(r.size)}, ${esc(formatMtime(r.mtime))}</span>
+          <a href="${downloadBase}/${encodeURIComponent(r.name)}" class="ms-1">⬇</a>
+        </span>
+      </li>`).join('');
+  }
+
+  async function loadRecordingsLists() {
+    const rpiList = document.getElementById('rpiRecordingsList');
+    const serverList = document.getElementById('serverRecordingsList');
+    try {
+      const res = await fetch('/api/devices/' + DEVICE_ID + '/recordings/rpi');
+      const data = await res.json();
+      if (data.success === false) throw new Error(data.error || 'помилка');
+      renderRecordingsList(rpiList, data.recordings || [], '/api/devices/' + DEVICE_ID + '/recordings/rpi');
+    } catch (err) {
+      rpiList.innerHTML = '<li class="text-danger">' + esc(err.message) + '</li>';
+    }
+    try {
+      const res = await fetch('/api/devices/' + DEVICE_ID + '/recordings/local');
+      const data = await res.json();
+      if (data.success === false) throw new Error(data.error || 'помилка');
+      renderRecordingsList(serverList, data.recordings || [], '/api/devices/' + DEVICE_ID + '/recordings/local');
+    } catch (err) {
+      serverList.innerHTML = '<li class="text-danger">' + esc(err.message) + '</li>';
+    }
+  }
+
+  function selectedLogEndpoint() {
+    const [source, name] = document.getElementById('logServiceSelect').value.split(':');
+    return '/api/devices/' + DEVICE_ID + '/logs/' + source + '/' + name;
+  }
+
+  async function viewServiceLogs() {
+    const out = document.getElementById('logViewOutput');
+    out.style.display = 'block';
+    out.textContent = 'Завантаження...';
+    try {
+      const res = await fetch(selectedLogEndpoint());
+      const data = await res.json();
+      if (data.success === false) throw new Error(data.error || 'помилка');
+      out.textContent = data.text || '(порожньо)';
+      out.scrollTop = out.scrollHeight;
+    } catch (err) {
+      out.textContent = 'Помилка: ' + err.message;
+    }
+  }
+
+  function downloadServiceLogs() {
+    window.location = selectedLogEndpoint() + '/download';
   }
 
   // function updateToggleBtn() {
@@ -991,5 +1099,6 @@
     startLiveTelemetry();
     setInterval(refreshStatusBadge, 1000);
   });
+  loadRecordingsLists();
 </script>
 {% endblock %}

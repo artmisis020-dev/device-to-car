@@ -34,6 +34,11 @@ TELEMETRY_SNAPSHOT_PATH = os.environ.get("SIRENA_TELEMETRY_SNAPSHOT_PATH", "/tmp
 # й за потреби підправляє width/height під нову камеру, щоб перемикання не
 # зверніло пайплайн несумісною роздільністю.
 VIDEO_CONFIG_PATH = os.environ.get("SIRENA_VIDEO_CONFIG_PATH", "/opt/sirena-video/sirena_video_config.json")
+# record.service (безперервний локальний запис камери, .h264 без контейнера)
+# пише сюди — окремо від SRT-стріму й від admin-сторони recording_service.py.
+LOCAL_RECORDINGS_DIR = os.environ.get("SIRENA_LOCAL_RECORDINGS_DIR", "/home/manager/recordings")
+LOG_LINES_VIEW = int(os.environ.get("SIRENA_LOG_LINES_VIEW", "300"))
+LOG_LINES_DOWNLOAD = int(os.environ.get("SIRENA_LOG_LINES_DOWNLOAD", "5000"))
 
 
 @dataclass(frozen=True)

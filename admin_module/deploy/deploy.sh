@@ -13,6 +13,11 @@ if ! id "$SERVICE_USER" &>/dev/null; then
     sudo useradd --system --create-home --shell /usr/sbin/nologin "$SERVICE_USER"
 fi
 
+# Потрібно для перегляду логів (sirena-admin/mediamtx-admin) через
+# admin_module/services/system_test_service.py та recordings_browse_service.py
+# — без цього journalctl від імені sirena повертає "insufficient permissions".
+sudo usermod -aG systemd-journal "$SERVICE_USER"
+
 sudo mkdir -p "/home/$SERVICE_USER"
 sudo chown "$SERVICE_USER:$SERVICE_USER" "/home/$SERVICE_USER"
 sudo chmod 750 "/home/$SERVICE_USER"

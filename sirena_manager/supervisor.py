@@ -23,6 +23,9 @@ from .config import (
     ADMIN_SERVER_URL,
     BOOT_SEQUENCE,
     WG_INTERFACES,
+    LOCAL_RECORDINGS_DIR,
+    LOG_LINES_DOWNLOAD,
+    LOG_LINES_VIEW,
     ROOT_ENV_PATH,
     SERVICES,
     SIRENA_VERSION,
@@ -36,6 +39,7 @@ from .config import (
 logger = logging.getLogger(__name__)
 ROOT_ENV_FILE = Path(ROOT_ENV_PATH)
 VIDEO_CONFIG_FILE = Path(VIDEO_CONFIG_PATH)
+LOCAL_RECORDINGS_PATH = Path(LOCAL_RECORDINGS_DIR)
 
 
 class SirenaSupervisor:
@@ -350,6 +354,69 @@ class SirenaSupervisor:
             return {"success": False, "error": detail, "size_bytes": size_bytes}
 
         return {"success": True, "size_bytes": size_bytes}
+
+    # ─── Локальні записи record.service (безперервний .h264 на диску РПі,
+    # окремо від SRT-стріму й адмінського recording_service.py) ─────────────
+
+    def list_local_recordings(self) -> Dict:
+        # На новому пристрої record.service (безперервний .h264-запис)
+        # часто взагалі не налаштований — директорії може не бути, або
+        # права можуть не збігатись (той самий клас проблем, що вже
+        # ловився наживо: /home/<manager-user> буває 700, перекриваючи
+        # traversal для sirena). Порожній список — штатний, не помилка.
+        try:
+            if not LOCAL_RECORDINGS_PATH.is_dir():
+                return {"success": True, "recordings": []}
+            items = []
+            for entry in LOCAL_RECORDINGS_PATH.iterdir():
+                if not entry.is_file():
+                    continue
+                stat = entry.stat()
+                items.append({"name": entry.name, "size": stat.st_size, "mtime": stat.st_mtime})
+        except PermissionError:
+            return {"success": True, "recordings": [], "warning": "немає прав доступу до директорії записів"}
+        items.sort(key=lambda i: i["mtime"], reverse=True)
+        return {"success": True, "recordings": items}
+
+    def resolve_local_recording(self, filename: str) -> Path | None:
+        """Безпечне резолвення імені файлу під LOCAL_RECORDINGS_PATH — той
+        самий захист від path traversal, що вже є в admin_module/services/
+        device_service.py::_delete_recording_dirs (resolve + перевірка, що
+        результат і далі всередині кореня)."""
+        candidate = (LOCAL_RECORDINGS_PATH / filename).resolve()
+        try:
+            candidate.relative_to(LOCAL_RECORDINGS_PATH.resolve())
+        except ValueError:
+            return None
+        return candidate if candidate.is_file() else None
+
+    # ─── Логи systemd-юнітів (перегляд/завантаження) ───────────────────────
+    # Той самий whitelist назв, що вже є в SERVICES (перевикористовуємо
+    # _get_service, а не заводимо окремий список — уникаємо injection через
+    # довільну назву юніта і збігу назв "для людей" між фічами).
+
+    def get_service_logs(self, name: str, for_download: bool = False) -> Dict:
+        definition = self._get_service(name)
+        if definition is None:
+            return {"success": False, "error": "unknown service", "name": name}
+
+        unit = definition.units[0]
+        lines = LOG_LINES_DOWNLOAD if for_download else LOG_LINES_VIEW
+        try:
+            result = subprocess.run(
+                ["journalctl", "-u", unit, "-n", str(lines), "--no-pager"],
+                capture_output=True, text=True, timeout=15,
+            )
+        except Exception as exc:
+            return {"success": False, "error": str(exc)}
+
+        return {
+            "success": True,
+            "name": definition.name,
+            "label": definition.label,
+            "unit": unit,
+            "text": result.stdout or result.stderr,
+        }
 
     def _read_video_config(self) -> Dict:
         try:

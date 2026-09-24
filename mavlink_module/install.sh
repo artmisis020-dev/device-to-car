@@ -87,6 +87,13 @@ fi
 # Додаємо у dialout для доступу до /dev/ttyAMA0 та інших UART
 usermod -aG dialout "$SERVICE_USER"
 
+# Потрібно для sirena_manager's /api/v1/logs/<service> (перегляд/завантаження
+# логів через панель адмінки) — без цього journalctl від імені sirena
+# повертає "insufficient permissions". log_module/install.sh теж додає цю
+# групу, але sirena_manager (root manager) не має власного install.sh, тож
+# явно ставимо тут, щоб не залежати від порядку встановлення модулів.
+usermod -aG systemd-journal "$SERVICE_USER"
+
 # Даємо стабільні права на UART FC. На деяких образах Raspberry Pi
 # /dev/ttyAMA0 створюється як root:tty 0600, і сервіс sirena не може його відкрити.
 UDEV_RULE_FILE="/etc/udev/rules.d/99-sirena-uart.rules"
