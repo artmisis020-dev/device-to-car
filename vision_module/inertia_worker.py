@@ -11,6 +11,8 @@ vision_module/inertia/ — не Python-пакет (плоскі імпорти �
 
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import os
 import shutil
@@ -21,6 +23,7 @@ import time
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+import cv2
 import numpy as np
 import requests
 
@@ -28,11 +31,52 @@ _INERTIA_DIR = Path(__file__).resolve().parent / "inertia"
 if str(_INERTIA_DIR) not in sys.path:
     sys.path.append(str(_INERTIA_DIR))
 import ekf_replay  # noqa: E402
+import video_sync  # noqa: E402  (optical_flow/ вже в sys.path — додав ekf_replay при імпорті вище)
 
 logger = logging.getLogger(__name__)
 
 VIDEO_DOWNLOAD_TIMEOUT_S = 30
 VIDEO_DOWNLOAD_CHUNK = 1024 * 1024
+
+# inertia_log_service.py пише ОДИН файл на добу (день-довгий CSV) — без
+# обрізки ekf_replay.run() інтегрував би дрейф ГОДИНАМИ нерелевантної
+# телеметрії до самого тесту замість лише кількох секунд відео (живцем
+# зловлено: 2-годинний лог дав "55м зміщення" за 6-секундний тестовий
+# запис, і baro-референс для AGL оптичного потоку брався з рядка на
+# початку доби замість моменту перед самим тестом).
+CSV_LEAD_IN_S = 5.0
+CSV_TRAIL_S = 5.0
+
+
+def _trim_csv_to_video_window(csv_text: str, video_path: str) -> str:
+    try:
+        video_epoch = video_sync.video_start_epoch(video_path)
+    except ValueError:
+        return csv_text  # незвичне ім'я файлу — нехай ekf_replay сам розбереться з тим самим повідомленням
+
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0
+    cap.release()
+    duration_s = frame_count / fps if fps > 0 else 0.0
+
+    window_start = video_epoch - CSV_LEAD_IN_S
+    window_end = video_epoch + duration_s + CSV_TRAIL_S
+
+    reader = csv.reader(io.StringIO(csv_text))
+    header = next(reader)
+    ts_idx = header.index("timestamp")
+    kept = [row for row in reader if row and window_start <= float(row[ts_idx]) <= window_end]
+
+    if not kept:
+        logger.warning("Вікно відео [%.1f, %.1f] не перетинає жодного рядка CSV — лишаю повний лог", window_start, window_end)
+        return csv_text
+
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(header)
+    writer.writerows(kept)
+    return out.getvalue()
 
 
 def _summarize(raw: dict) -> dict:
@@ -93,9 +137,6 @@ class InertiaReplayWorker(threading.Thread):
     def run(self) -> None:
         tmp_dir = tempfile.mkdtemp(prefix="sirena-inertia-")
         try:
-            csv_path = os.path.join(tmp_dir, "log.csv")
-            Path(csv_path).write_text(self.csv_text)
-
             # Оригінальна назва файлу з URL, НЕ фіксована — video_sync.py
             # парсить rec_YYYYMMDD_HHMMSS саме з імені для синхронізації з
             # CSV; фіксована назва (напр. "lowercam.h264") ламала цей парсинг
@@ -108,6 +149,12 @@ class InertiaReplayWorker(threading.Thread):
                     for chunk in resp.iter_content(chunk_size=VIDEO_DOWNLOAD_CHUNK):
                         if chunk:
                             f.write(chunk)
+
+            # Обрізаємо день-довгий CSV до вікна навколо самого відео
+            # (див. коментар біля CSV_LEAD_IN_S) — відео вже завантажене,
+            # тож знаємо його реальну тривалість/час старту.
+            csv_path = os.path.join(tmp_dir, "log.csv")
+            Path(csv_path).write_text(_trim_csv_to_video_window(self.csv_text, video_path))
 
             # GPS/local_position у лозі — лише опційний еталон для звірки
             # дрейфу, не вхід розрахунку: EKF (IMU+баро+потік) рахує

@@ -42,7 +42,7 @@ def flow_velocity_to_enu(vx_forward: float, vy_right: float,
 
 
 def update_ekf_with_flow(ekf, flow_result, roll_rad: float, pitch_rad: float, yaw_rad: float,
-                          min_quality: float = 0.15) -> bool:
+                          min_quality: float = 0.08) -> bool:
     """Подає вимірювання з flow_result в ekf.update_velocity(), якщо
     якість достатня. Повертає True, якщо корекція застосована.
 

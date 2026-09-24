@@ -85,6 +85,15 @@
   </div>
 
   <div class="lc-card mt-2">
+    <div class="lc-head"><span>MAVLink-лог для розрахунку інерції (у парі з відео вище)</span>
+      <button id="lcInertiaLogReload" class="btn btn-sm btn-outline-info" type="button">Оновити</button>
+    </div>
+    <div class="lc-body">
+      <ul id="lcInertiaLogList" class="lc-rec-list"><li>Завантаження...</li></ul>
+    </div>
+  </div>
+
+  <div class="lc-card mt-2">
     <div class="lc-head">
       <span>Розрахунок інерції (offline EKF + оптичний потік)</span>
     </div>
@@ -288,6 +297,30 @@
   }
   el('lcRecListReload')?.addEventListener('click', loadRecordings);
   loadRecordings();
+
+  async function loadInertiaLogs() {
+    const list = el('lcInertiaLogList');
+    list.innerHTML = '<li>Завантаження...</li>';
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/inertia-logs`);
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'помилка');
+      if (!data.recordings.length) {
+        list.innerHTML = '<li>Логів ще немає</li>';
+        return;
+      }
+      list.innerHTML = data.recordings.map(r => `
+        <li>
+          <span>${r.name} (${formatBytes(r.size)})</span>
+          <a href="/api/devices/${deviceId}/inertia-logs/${encodeURIComponent(r.name)}" class="link-info">Скачати</a>
+        </li>
+      `).join('');
+    } catch (err) {
+      list.innerHTML = `<li class="lc-error">Помилка: ${err.message}</li>`;
+    }
+  }
+  el('lcInertiaLogReload')?.addEventListener('click', loadInertiaLogs);
+  loadInertiaLogs();
 
   // ─── Розрахунок інерції ────────────────────────────────────────────────
   let pollTimer = null;

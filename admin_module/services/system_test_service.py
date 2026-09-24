@@ -52,6 +52,7 @@ def run(device_id: str) -> dict:
     checks.append(_check_device_service(device_id, "mavlink_router", "MAVLink — сервіс mavlink_router"))
     checks.append(_check_device_service(device_id, "srt_relay_capture", "Відео — SRT-реле"))
     checks.append(_check_mediamtx_stream(device_id))
+    checks.append(_check_usb_cameras(device_id))
     checks.append(_check_lower_camera(device_id))
     checks.append(_check_rpi_health(device_id))
     checks.append(_check_local_mediamtx())
@@ -97,6 +98,22 @@ def _check_mediamtx_stream(device_id: str) -> dict:
         return {"name": "Відео — стрім у MediaMTX", "ok": False, "detail": "пристрій не знайдено"}
     ready = video_service.is_stream_published(stream)
     return {"name": "Відео — стрім у MediaMTX", "ok": ready, "detail": "ready" if ready else "стрім не публікується"}
+
+
+def _check_usb_cameras(device_id: str) -> dict:
+    # Інформаційно (warning=True): кількість — не показник несправності
+    # сама по собі (нижня CSI-камера свідомо НЕ показується тут,
+    # cameras_services.py::list_cameras() її ховає), тож 0 не обов'язково
+    # помилка, якщо на борту взагалі немає USB-камер.
+    label = "USB-камери на РПі"
+    payload, status = video_service.cameras(device_id)
+    if status != 200 or not isinstance(payload, dict):
+        detail = payload.get("error") if isinstance(payload, dict) else f"HTTP {status}"
+        return {"name": label, "ok": False, "detail": detail or "недоступно", "warning": True}
+    cams = payload.get("cameras") or []
+    names = ", ".join(c.get("label") or c.get("name") or "?" for c in cams)
+    detail = f"{len(cams)} ({names})" if cams else "0"
+    return {"name": label, "ok": True, "detail": detail, "warning": True}
 
 
 def _check_lower_camera(device_id: str) -> dict:
