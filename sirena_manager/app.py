@@ -71,4 +71,8 @@ def create_app() -> Flask:
         result = supervisor.set_camera(payload.get("camera", ""))
         return jsonify(result)
 
+    @app.post("/api/v1/system-test/lower-camera")
+    def test_lower_camera():
+        return jsonify(supervisor.test_lower_camera())
+
     return app

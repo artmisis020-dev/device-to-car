@@ -238,6 +238,10 @@
   #telemetryContent.wide-screen-mode #videoStreamCard .svp-video-shell {
     min-height: min(78vh, 900px);
   }
+
+  #systemTestList li {
+    color: #000;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -251,6 +255,7 @@
       <!-- <button id="btnToggle" class="btn btn-sm btn-success" onclick="toggleTelemetry()">▶ Старт</button> -->
       <button id="btnRestartMavlink" class="btn btn-sm btn-outline-info" onclick="restartMavlink()">🔄 MAVLink</button>
       <button id="btnRestartVideo" class="btn btn-sm btn-outline-info" onclick="restartVideo()">🔄 Відео</button>
+      <button id="btnSystemTest" class="btn btn-sm btn-danger" onclick="runSystemTest()">🧪 Тестування усіх систем</button>
       <button class="btn btn-sm btn-outline-warning" onclick="clearTelemetry()">🗑 Очистити</button>
       {% if current_user and current_user.role == 'admin' %}
       <a href="/" class="btn btn-sm btn-outline-secondary">← Назад</a>
@@ -417,6 +422,19 @@
       </div>
     </div>
   </div>
+</div>
+
+<div class="modal fade" id="systemTestModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header">
+      <h5 class="modal-title">🧪 Тестування усіх систем</h5>
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+    </div>
+    <div class="modal-body">
+      <div id="systemTestSummary" class="mb-2 fw-bold"></div>
+      <ul id="systemTestList" class="list-unstyled mb-0"></ul>
+    </div>
+  </div></div>
 </div>
 {% endblock %}
 {% block scripts %}
@@ -613,6 +631,49 @@
       'Перезапустити весь відео-ланцюг на пристрої?',
       '⏳ Відео…'
     );
+  }
+
+  function esc(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+  }
+
+  async function runSystemTest() {
+    const btn = document.getElementById('btnSystemTest');
+    const summary = document.getElementById('systemTestSummary');
+    const list = document.getElementById('systemTestList');
+    btn.disabled = true;
+    const originalLabel = btn.textContent;
+    btn.textContent = '⏳ Виконується...';
+    summary.textContent = 'Виконується перевірка (може тривати ~15с)...';
+    list.innerHTML = '';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('systemTestModal')).show();
+
+    try {
+      const res = await fetch('/api/devices/' + DEVICE_ID + '/system-test/run', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}',
+      });
+      const data = await res.json();
+      if (!res.ok || data.success === false) throw new Error(data.error || `HTTP ${res.status}`);
+
+      const checks = data.checks || [];
+      const failedHard = checks.filter(c => !c.ok && !c.warning);
+      summary.textContent = failedHard.length === 0
+        ? '✅ Усі критичні перевірки пройдено'
+        : `❌ Провалено перевірок: ${failedHard.length}`;
+      summary.className = 'mb-2 fw-bold ' + (failedHard.length === 0 ? 'text-success' : 'text-danger');
+      list.innerHTML = checks.map(c => {
+        const icon = c.ok ? '✅' : (c.warning ? '⚠️' : '❌');
+        return `<li class="mb-1">${icon} <strong>${esc(c.name)}</strong> — ${esc(c.detail || '')}</li>`;
+      }).join('');
+    } catch (err) {
+      summary.textContent = 'Помилка виконання тесту: ' + err.message;
+      summary.className = 'mb-2 fw-bold text-danger';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
   }
 
   // function updateToggleBtn() {

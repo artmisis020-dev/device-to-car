@@ -17,7 +17,7 @@ _PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"
 
 
 def hash_password(plaintext):
-    return generate_password_hash(plaintext, method="pbkdf2:sha256")
+    return generate_password_hash(plaintext, method="pbkdf2:sha256")\
 
 
 def verify_password(plaintext, password_hash):

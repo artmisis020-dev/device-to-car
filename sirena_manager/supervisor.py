@@ -319,6 +319,38 @@ class SirenaSupervisor:
             }
         return result
 
+    def test_lower_camera(self) -> Dict:
+        """Тестове захоплення з CSI-камери (шлейф) — навмисно НЕ через
+        v4l2/list_cameras()/set_camera(): цей сенсор (ov5647, сирий
+        SGBRG10-Bayer) структурно виключений з основного відео-пайплайна
+        (несумісний формат для srt_relay_capture.py) і з
+        cameras_services.py::list_cameras() — фізично "нижня" камера
+        пілота. Читаємо напряму через rpicam-vid/libcamera, окрема
+        апаратна підсистема (CSI/ISP) від USB v4l2-камер, які й так
+        транслюються — жодного перетину з живим стрімом і жодної перерви
+        в ньому."""
+        tmp_path = Path("/tmp/sirena-lowercam-test.h264")
+        try:
+            result = subprocess.run(
+                ["rpicam-vid", "-t", "3000", "--nopreview", "-o", str(tmp_path), "--codec", "h264"],
+                capture_output=True, text=True, timeout=15,
+            )
+        except FileNotFoundError:
+            return {"success": False, "error": "rpicam-vid не встановлено на пристрої"}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "error": "rpicam-vid не завершився за 15с (завис/камера не відповідає)"}
+
+        size_bytes = tmp_path.stat().st_size if tmp_path.exists() else 0
+        tmp_path.unlink(missing_ok=True)  # тестовий артефакт, не для збереження
+
+        # Мінімальний поріг (10КБ за 3с) — явна ознака, що сенсор реально
+        # віддав кадри, а не просто мовчки створив порожній контейнер.
+        if result.returncode != 0 or size_bytes < 10_000:
+            detail = result.stderr.strip()[-500:] or f"файл лише {size_bytes} байт"
+            return {"success": False, "error": detail, "size_bytes": size_bytes}
+
+        return {"success": True, "size_bytes": size_bytes}
+
     def _read_video_config(self) -> Dict:
         try:
             return json.loads(VIDEO_CONFIG_FILE.read_text(encoding="utf-8"))
