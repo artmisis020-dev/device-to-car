@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block title %}Нижня камера - {{ hostname }}{% endblock %}
+{% block head %}
+<style>
+  body { background:var(--sirena-bg); color:var(--sirena-text); }
+  .navbar { background:var(--sirena-header) !important; border-bottom:1px solid var(--sirena-border); }
+  .page-wrap { padding:0 1rem 1rem; }
+  .actions { display:flex; gap:.5rem; flex-wrap:wrap; }
+
+  .lc-card {
+    background: var(--sirena-surface);
+    border: 1px solid var(--sirena-border);
+    border-radius: 8px;
+    color: var(--sirena-text);
+    overflow: hidden;
+  }
+  .lc-head {
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.5rem;
+    background: var(--sirena-header);
+    border-bottom: 1px solid var(--sirena-border);
+    padding: .6rem 1rem;
+    font-weight: 600;
+    font-size: .85rem;
+  }
+  .lc-video-shell { position:relative; width:100%; aspect-ratio:16/9; background:#000; }
+  .lc-video { width:100%; height:100%; object-fit:contain; background:#000; }
+  .lc-overlay {
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:#ddd; background:rgba(0,0,0,.55); font-size:.9rem; text-align:center; padding:1rem;
+  }
+  .lc-overlay.hidden { display:none; }
+  .lc-body { padding: 1rem; }
+  .lc-result { font-size:.85rem; }
+  .lc-result dl { display:grid; grid-template-columns:auto 1fr; gap:.15rem .75rem; margin:0; }
+  .lc-result dt { color: var(--sirena-muted, #888); }
+  .lc-result dd { margin:0; }
+  .lc-error { color: var(--sirena-danger); font-size:.85rem; }
+</style>
+{% endblock %}
+{% block content %}
+<nav class="navbar navbar-dark">
+  <div class="container-fluid">
+    <span class="navbar-brand">{{ hostname }} - Нижня камера (CSI)</span>
+    <div class="actions">
+      <a href="/telemetry/{{ device_id }}" class="btn btn-sm btn-outline-info">Телеметрія</a>
+      {% if current_user and current_user.role == 'admin' %}
+      <a href="/" class="btn btn-sm btn-outline-secondary">Назад</a>
+      {% else %}
+      <a href="/room" class="btn btn-sm btn-outline-secondary">Назад</a>
+      {% endif %}
+    </div>
+  </div>
+</nav>
+
+<div class="page-wrap">
+  <div class="lc-card">
+    <div class="lc-head">
+      <span>Живий стрім — нижня (CSI) камера</span>
+      <button id="lcReconnect" class="btn btn-sm btn-outline-info" type="button">Перезавантажити</button>
+    </div>
+    <div class="lc-video-shell">
+      <video id="lcVideo" class="lc-video" autoplay playsinline muted controls></video>
+      <div id="lcOverlay" class="lc-overlay">Підключення...</div>
+    </div>
+  </div>
+
+  <div class="lc-card mt-2">
+    <div class="lc-head">
+      <span>Розрахунок інерції (offline EKF + оптичний потік)</span>
+    </div>
+    <div class="lc-body">
+      <p class="text-muted" style="font-size:.82rem">
+        Бере останній запис нижньої камери на РПі й останній inertia-лог цього пристрою,
+        рахує на Spark (не тут — обробка кадр-за-кадром важка для 1 vCPU адмін-сервера).
+      </p>
+      <button id="lcInertiaRun" class="btn btn-sm btn-danger" type="button">🧮 Розрахувати інерцію</button>
+      <div id="lcInertiaStatus" class="mt-2" style="font-size:.85rem"></div>
+      <div id="lcInertiaResult" class="lc-result mt-2"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+{{ super() }}
+<script>
+(() => {
+  const deviceId = "{{ device_id }}";
+  const fetchNoCsrf = window.sirenaFetchNoCsrf || window.fetch.bind(window);
+  const el = id => document.getElementById(id);
+
+  let pc = null;
+  let reconnectTimer = null;
+
+  function setOverlay(message, visible = true) {
+    const overlay = el('lcOverlay');
+    if (!overlay) return;
+    overlay.textContent = message;
+    overlay.classList.toggle('hidden', !visible);
+  }
+
+  function stopPeer() {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    if (pc) {
+      pc.getReceivers().forEach(r => r.track && r.track.stop());
+      pc.close();
+    }
+    pc = null;
+    const video = el('lcVideo');
+    if (video) video.srcObject = null;
+  }
+
+  function scheduleReconnect() {
+    if (reconnectTimer) return;
+    setOverlay('Стрім відключено — перепідключення...');
+    reconnectTimer = setTimeout(() => { reconnectTimer = null; connectStream(); }, 3000);
+  }
+
+  function waitIceGatheringComplete(peer) {
+    if (peer.iceGatheringState === 'complete') return Promise.resolve();
+    return new Promise(resolve => {
+      const done = () => {
+        if (peer.iceGatheringState === 'complete') {
+          peer.removeEventListener('icegatheringstatechange', done);
+          resolve();
+        }
+      };
+      peer.addEventListener('icegatheringstatechange', done);
+    });
+  }
+
+  async function loadStreamInfo() {
+    const res = await fetch(`/api/video/${deviceId}/lowercam/stream`);
+    if (!res.ok) {
+      let errorText = 'Метадані стріму недоступні';
+      try {
+        const payload = await res.json();
+        if (payload && payload.error) errorText = payload.error;
+      } catch (e) {}
+      throw new Error(errorText);
+    }
+    return res.json();
+  }
+
+  async function connectStream() {
+    stopPeer();
+    setOverlay('Підключення стріму нижньої камери...');
+    try {
+      const streamInfo = await loadStreamInfo();
+      pc = new RTCPeerConnection();
+      const myPc = pc;
+      pc.addTransceiver('video', {direction: 'recvonly'});
+
+      pc.ontrack = event => {
+        el('lcVideo').srcObject = event.streams[0];
+        setOverlay('', false);
+      };
+      pc.onconnectionstatechange = () => {
+        if (pc !== myPc) return;
+        if (['failed', 'closed', 'disconnected'].includes(myPc.connectionState)) {
+          scheduleReconnect();
+        }
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      await waitIceGatheringComplete(pc);
+
+      const answer = await fetchNoCsrf(streamInfo.whep_url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/sdp'},
+        body: pc.localDescription.sdp,
+      });
+      if (!answer.ok) throw new Error(`MediaMTX WHEP не відповів (${answer.status})`);
+      await pc.setRemoteDescription({type: 'answer', sdp: await answer.text()});
+    } catch (err) {
+      stopPeer();
+      setOverlay(err.message || 'Стрім недоступний');
+      scheduleReconnect();
+    }
+  }
+
+  el('lcReconnect')?.addEventListener('click', connectStream);
+  connectStream();
+
+  // ─── Розрахунок інерції ────────────────────────────────────────────────
+  let pollTimer = null;
+
+  function renderResult(data) {
+    const statusEl = el('lcInertiaStatus');
+    const resultEl = el('lcInertiaResult');
+    if (data.error) {
+      statusEl.innerHTML = `<span class="lc-error">Помилка: ${data.error}</span>`;
+      resultEl.innerHTML = '';
+      return;
+    }
+    if (!data.done) {
+      statusEl.textContent = 'Виконується на Spark...';
+      resultEl.innerHTML = '';
+      return;
+    }
+    const r = data.result || {};
+    statusEl.textContent = 'Готово';
+    resultEl.innerHTML = `<dl>
+      <dt>Інтервалів</dt><dd>${r.n_intervals ?? '-'}</dd>
+      <dt>Корекцій потоку</dt><dd>${r.flow_applied_count ?? '-'}</dd>
+      <dt>Медіана похибки</dt><dd>${r.median_err_m != null ? r.median_err_m.toFixed(1) + ' м' : '-'}</dd>
+      <dt>Макс. похибки</dt><dd>${r.max_err_m != null ? r.max_err_m.toFixed(1) + ' м' : '-'}</dd>
+      <dt>Медіана % шляху</dt><dd>${r.median_pct != null ? r.median_pct.toFixed(1) + '%' : '-'}</dd>
+      <dt>95-й перцентиль</dt><dd>${r.p95_pct != null ? r.p95_pct.toFixed(1) + '%' : '-'}</dd>
+    </dl>`;
+  }
+
+  async function pollStatus() {
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/inertia-replay/status`);
+      const data = await res.json();
+      renderResult(data);
+      if (!data.done && data.active !== false) {
+        pollTimer = setTimeout(pollStatus, 2000);
+      } else {
+        el('lcInertiaRun').disabled = false;
+      }
+    } catch (err) {
+      el('lcInertiaStatus').innerHTML = `<span class="lc-error">Помилка опитування статусу: ${err.message}</span>`;
+      el('lcInertiaRun').disabled = false;
+    }
+  }
+
+  el('lcInertiaRun')?.addEventListener('click', async () => {
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+    const btn = el('lcInertiaRun');
+    btn.disabled = true;
+    el('lcInertiaStatus').textContent = 'Запуск на Spark...';
+    el('lcInertiaResult').innerHTML = '';
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/inertia-replay/start`, {method: 'POST'});
+      const data = await res.json();
+      if (!res.ok || data.success === false) {
+        renderResult({error: data.error || `HTTP ${res.status}`});
+        btn.disabled = false;
+        return;
+      }
+      renderResult(data);
+      pollStatus();
+    } catch (err) {
+      renderResult({error: err.message});
+      btn.disabled = false;
+    }
+  });
+})();
+</script>
+{% endblock %}

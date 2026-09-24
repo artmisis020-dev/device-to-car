@@ -8,19 +8,22 @@ from flask import Flask, jsonify, request
 from . import config
 from .models import available_capabilities
 from .supervisor import VisionSupervisor
+from .inertia_supervisor import InertiaReplaySupervisor
 
 
 def create_app() -> Flask:
     app = Flask(__name__)
     supervisor = VisionSupervisor()
     app.extensions["vision_supervisor"] = supervisor
+    inertia_supervisor = InertiaReplaySupervisor()
+    app.extensions["inertia_replay_supervisor"] = inertia_supervisor
     app.config.update(MANAGER_HOST=config.MANAGER_HOST, MANAGER_PORT=config.MANAGER_PORT)
 
     @app.before_request
     def check_control_token():
         if not config.CONTROL_TOKEN:
             return None
-        if not request.path.startswith("/api/v1/infer/"):
+        if not (request.path.startswith("/api/v1/infer/") or request.path.startswith("/api/v1/inertia/")):
             return None
         auth = request.headers.get("Authorization", "")
         if auth != f"Bearer {config.CONTROL_TOKEN}":
@@ -93,5 +96,19 @@ def create_app() -> Flask:
         if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
             return jsonify({"success": False, "error": "x and y must be within [0, 1]"}), 400
         return jsonify(supervisor.set_target(device_id, x, y))
+
+    @app.post("/api/v1/inertia/start")
+    def inertia_start():
+        body = request.get_json(silent=True) or {}
+        device_id = str(body.get("device_id", "")).strip()
+        video_url = str(body.get("video_url", "")).strip()
+        csv_text = body.get("csv_text")
+        if not device_id or not video_url or not csv_text:
+            return jsonify({"success": False, "error": "device_id, video_url and csv_text are required"}), 400
+        return jsonify(inertia_supervisor.start(device_id, video_url, csv_text))
+
+    @app.get("/api/v1/inertia/status/<device_id>")
+    def inertia_status(device_id: str):
+        return jsonify(inertia_supervisor.status(device_id))
 
     return app

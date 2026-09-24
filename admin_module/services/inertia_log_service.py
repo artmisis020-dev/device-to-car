@@ -9,7 +9,7 @@ main.py::apply_mavlink_message, портовано на словники (там
 повідомлень, що вже пишеться в telemetry-БД і йде в SSE — жодної
 додаткової підписки/читання. Ротація: один CSV на пристрій на календарний
 день (той самий принцип "нова сесія — новий файл", що вже є в
-record.service на РПі, тільки тут — по днях, а не по перезапуску)."""
+additional-lowercam.service на РПі, тільки тут — по днях, а не по перезапуску)."""
 
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ def _safe_name(device_id: str) -> str:
 
 def _root_dir() -> Path:
     # Поруч із SIRENA_RECORDINGS, окремою піддиректорією — не змішуємо з
-    # відео-записами (recording_service.py) чи record.service на РПі.
+    # відео-записами (recording_service.py) чи additional-lowercam.service на РПі.
     return Path(current_app.config["SIRENA_RECORDINGS"]).parent / "inertia_logs"
 
 

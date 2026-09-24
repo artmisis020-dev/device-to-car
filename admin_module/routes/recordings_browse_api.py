@@ -41,7 +41,7 @@ def api_download_server_recording(device_id, filename):
     return send_file(path, as_attachment=True, download_name=path.name)
 
 
-# ─── Відео на РПі (record.service, проксі) ──────────────────────────────
+# ─── Відео на РПі (additional-lowercam.service, проксі) ──────────────────────────────
 
 @recordings_browse_api_bp.route("/api/devices/<device_id>/recordings/rpi", methods=["GET"])
 @require_device_access

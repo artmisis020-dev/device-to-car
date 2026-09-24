@@ -69,6 +69,15 @@ def video_page(device_id):
     )
 
 
+@ui_bp.route("/lowercam/<device_id>")
+@require_device_access
+def lowercam_page(device_id):
+    dev = device_service.get_device(device_id)
+    if not dev:
+        return "Device not found", 404
+    return render_template("lowercam.html", device_id=device_id, hostname=dev["hostname"] or device_id[:12])
+
+
 @ui_bp.route("/webrtc", defaults={"path": ""}, methods=_PROXY_METHODS)
 @ui_bp.route("/webrtc/", defaults={"path": ""}, methods=_PROXY_METHODS)
 @ui_bp.route("/webrtc/<path:path>", methods=_PROXY_METHODS)

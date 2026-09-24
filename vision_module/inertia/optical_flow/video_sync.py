@@ -1,9 +1,9 @@
-"""Синхронізація .h264-запису record.service з epoch-часом CSV-логу
+"""Синхронізація .h264-запису additional-lowercam.service з epoch-часом CSV-логу
 (vision_module/inertia/inertia_log_service.py на адмін-сервері) — ЗА
 ІМЕНЕМ ФАЙЛУ, а не по годиннику самого відео (у .h264 без контейнера
 немає надійних wall-clock міток).
 
-record.sh на РПі: `rec_$(date +%Y%m%d_%H%M%S).h264` — це ЛОКАЛЬНИЙ час
+lowercam_capture.py на РПі: `rec_$(date +%Y%m%d_%H%M%S).h264` — це ЛОКАЛЬНИЙ час
 РПі (Europe/Kyiv, перевірено `timedatectl` наживо), NTP-синхронізований.
 CSV "timestamp" — `time.time()`-епоха (UTC-байдужа секунда з 1970), тож
 для зіставлення ім'я файлу треба явно інтерпретувати як Europe/Kyiv і
@@ -31,14 +31,14 @@ def video_start_epoch(video_path) -> float:
     if not m:
         raise ValueError(
             f"не вдалось розпізнати timestamp у імені файлу запису: {name!r} "
-            "(очікується формат rec_YYYYMMDD_HHMMSS.h264, як пише record.sh)"
+            "(очікується формат rec_YYYYMMDD_HHMMSS.h264, як пише lowercam_capture.py)"
         )
     dt_local = datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S").replace(tzinfo=RPI_TZ)
     return dt_local.timestamp()
 
 
 class RecordingFrameSource:
-    """Послідовний (лише вперед, без seek назад) читач кадрів record.service
+    """Послідовний (лише вперед, без seek назад) читач кадрів additional-lowercam.service
     .h264, вирівняний з epoch-часом CSV-рядків через timestamp у імені
     файлу. Призначений для одного проходу replay-циклу в порядку зростання
     часу — той самий порядок, що вже й так у ekf_replay.py::run()."""

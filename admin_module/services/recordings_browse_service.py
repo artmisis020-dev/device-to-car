@@ -2,7 +2,7 @@
 керування на сторінці телеметрії. Два джерела відео (навмисно різні,
 жодного зв'язку між ними):
 
-- "РПі" — record.service, безперервний локальний .h264-запис на диску
+- "РПі" — additional-lowercam.service, безперервний локальний .h264-запис на диску
   самого пристрою (/home/manager/recordings), не пов'язаний ні зі SRT-
   стрімом, ні з recording_service.py.
 - "Сервер" — уже наявний admin_module/services/recording_service.py
@@ -79,7 +79,7 @@ def server_recording_path(device_id: str, filename: str) -> Path | None:
     return candidate
 
 
-# ─── РПі (record.service, проксі на sirena_manager:9070) ────────────────
+# ─── РПі (additional-lowercam.service, проксі на sirena_manager:9070) ────────────────
 
 def list_rpi_recordings(device_id: str) -> dict:
     base_urls, error, _status = _device_manager_base_urls(device_id)

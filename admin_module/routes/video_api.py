@@ -50,6 +50,27 @@ def api_video_get_stream(device_id):
     }), 200
 
 
+@video_api_bp.route("/api/video/<device_id>/lowercam/stream", methods=["GET"])
+@require_device_access
+def api_video_get_lowercam_stream(device_id):
+    stream_url = video_service.lowercam_stream_url(device_id)
+    whep_url = video_service.lowercam_whep_url(device_id)
+    stream_name = video_service.lowercam_stream_name(device_id)
+
+    if not stream_url or not whep_url:
+        return jsonify({"error": "Stream URL not found"}), 404
+
+    if stream_name and not video_service.is_stream_published(stream_name):
+        return jsonify({"error": f"Стрім відсутній з '{stream_name}'"}), 409
+
+    return jsonify({
+        "stream_id": device_id,
+        "stream_name": stream_name,
+        "stream_url": stream_url,
+        "whep_url": whep_url,
+    }), 200
+
+
 @video_api_bp.route("/api/devices/<device_id>/video/restart", methods=["POST"])
 @require_device_access
 def api_video_restart(device_id):

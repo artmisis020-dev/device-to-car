@@ -1,0 +1,27 @@
+[Unit]
+Description=Sirena Additional — CSI (нижня) камера: безперервний запис + live SRT-стрім
+Documentation=file:///opt/sirena-additional/lowercam/lowercam_capture.py
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Той самий root, що й попередній record.sh (rpicam-vid потребує доступу
+# до /dev/media*, /dev/dma_heap і т.д.; /home/manager/recordings і далі
+# root:root — зміна на іншого користувача тут означала б новий permission-
+# баг того самого класу, що вже тричі ловився цієї сесії деінде). Це
+# єдиний additional-модуль, що працює від root, а не від sirena — інші
+# (напр. pixel_tracking) лише читають кадри, а не займають /dev/media*.
+EnvironmentFile=-/opt/sirena/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /opt/sirena-additional/lowercam/lowercam_capture.py
+Restart=always
+RestartSec=3s
+KillSignal=SIGTERM
+TimeoutStopSec=15
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lowercam-capture
+
+[Install]
+WantedBy=multi-user.target

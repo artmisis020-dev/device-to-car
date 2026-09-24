@@ -355,11 +355,11 @@ class SirenaSupervisor:
 
         return {"success": True, "size_bytes": size_bytes}
 
-    # ─── Локальні записи record.service (безперервний .h264 на диску РПі,
+    # ─── Локальні записи additional-lowercam.service (безперервний .h264 на диску РПі,
     # окремо від SRT-стріму й адмінського recording_service.py) ─────────────
 
     def list_local_recordings(self) -> Dict:
-        # На новому пристрої record.service (безперервний .h264-запис)
+        # На новому пристрої additional-lowercam.service (безперервний .h264-запис)
         # часто взагалі не налаштований — директорії може не бути, або
         # права можуть не збігатись (той самий клас проблем, що вже
         # ловився наживо: /home/<manager-user> буває 700, перекриваючи

@@ -155,6 +155,34 @@ def whep_url(device_id):
     return f"{stream.rstrip('/')}/whep"
 
 
+# ─── Нижня (CSI) камера — окремий MediaMTX-шлях від additional-lowercam.service
+# на РПі, publish:<hostname>-lowercam. Головний стрім і ця камера ніяк не
+# пов'язані (різні апаратні шляхи, різні MediaMTX paths), тож без спроб
+# узгодити назву з _published_paths() (це саме тримання головного стріму
+# в узгодженому стані з дублікатами/lower-case розбіжностями — тут просто
+# конкретне, наперед відоме ім'я).
+def lowercam_stream_name(device_id):
+    row = repository.get_device(device_id)
+    if not row:
+        return None
+    return f"{_stream_name_from_row(row, device_id)}-lowercam"
+
+
+def lowercam_stream_url(device_id):
+    row = repository.get_device(device_id)
+    if not row or not row["approved"]:
+        return None
+    stream = quote(f"{_stream_name_from_row(row, device_id)}-lowercam", safe="")
+    return f"{_webrtc_public_base_url()}/{stream}"
+
+
+def lowercam_whep_url(device_id):
+    stream = lowercam_stream_url(device_id)
+    if not stream:
+        return None
+    return f"{stream.rstrip('/')}/whep"
+
+
 def _device_manager_base_urls(device_id, port=9070):
     row = repository.get_device(device_id)
     if not row:

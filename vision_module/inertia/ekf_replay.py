@@ -126,7 +126,7 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
     фіксами (де дрейф встигає накопичитись) — на дуже коротких (~5с) може
     трохи гіршити порівняно з чистим position+velocity reset.
 
-    video_path: опційний .h264 з record.service (нижня/CSI-камера) для
+    video_path: опційний .h264 з additional-lowercam.service (нижня/CSI-камера) для
     корекції по оптичному потоку (optical_flow/, README.md там). На
     відміну від NHC/airspeed (лише fixed-wing), потік корисний для
     БУДЬ-ЯКОГО апарата — вимірює швидкість відносно землі напряму, без
@@ -264,8 +264,8 @@ if __name__ == "__main__":
     parser.add_argument("--airspeed", choices=["auto", "on", "off"], default="auto",
                          help="Використати airspeed_ms (піто-трубка, лише літаки) з оцінкою вітру на кожному фіксі")
     parser.add_argument("--video", default=None,
-                         help="Опційний .h264 з record.service (нижня/CSI-камера) для корекції по оптичному потоку. "
-                              "Ім'я файлу має бути rec_YYYYMMDD_HHMMSS.h264 (як пише record.sh) — час старту "
+                         help="Опційний .h264 з additional-lowercam.service (нижня/CSI-камера) для корекції по оптичному потоку. "
+                              "Ім'я файлу має бути rec_YYYYMMDD_HHMMSS.h264 (як пише lowercam_capture.py) — час старту "
                               "розпізнається з нього для синхронізації з CSV.")
     parser.add_argument("--flow", choices=["auto", "on", "off"], default="auto",
                          help="auto (за замовчуванням) = увімкнено, якщо задано --video")
