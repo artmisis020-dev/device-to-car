@@ -20,9 +20,15 @@ class VisionSupervisor:
         with self._lock:
             existing = self._workers.get(device_id)
             if existing is not None and existing.is_alive():
-                # Ідемпотентно: повторний клік на вже активну панель — не
-                # помилка, просто повертаємо поточний стан.
-                return {"success": True, "already_active": True, **existing.status()}
+                if existing.capability == capability:
+                    # Ідемпотентно: повторний клік на вже активну панель —
+                    # не помилка, просто повертаємо поточний стан.
+                    return {"success": True, "already_active": True, **existing.status()}
+                # Перемикання можливості для того самого пристрою (напр.
+                # AI-визначення -> піксель-трекінг) — стара модель геть,
+                # інакше два воркери одночасно тягли б один і той самий
+                # RTSP-пристрій і перезаписували один і той самий ingest.
+                existing.stop()
 
             worker = InferenceWorker(
                 device_id=device_id,
@@ -43,6 +49,13 @@ class VisionSupervisor:
             return {"success": True, "was_active": False}
         worker.stop()
         return {"success": True, "was_active": True}
+
+    def set_target(self, device_id: str, x_frac: float, y_frac: float) -> dict:
+        with self._lock:
+            worker = self._workers.get(device_id)
+        if worker is None or not worker.is_alive():
+            return {"success": False, "error": "немає активного воркера для цього пристрою"}
+        return worker.set_target(x_frac, y_frac)
 
     def status(self, device_id: str) -> dict:
         with self._lock:

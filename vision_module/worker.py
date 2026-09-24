@@ -10,6 +10,7 @@ CPU-декод при 1-2 кадрах/с для класифікації — н
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 
@@ -20,6 +21,20 @@ from . import config
 from .models import get_model
 
 logger = logging.getLogger(__name__)
+
+# Низьколатентні прапорці FFmpeg для RTSP-захоплення — OpenCV сама читає цю
+# змінну середовища при створенні cv2.VideoCapture(..., cv2.CAP_FFMPEG).
+# Без цього FFmpeg тримає власний jitter/reorder-буфer (розрахований на
+# публічний інтернет, типово сотні мс — секунди), що на нашому стабільному й
+# швидкому WireGuard-тунелі — чиста зайва затримка, а не захист від
+# реального джиттеру: max_delay=0 забороняє чекати на переупорядкування
+# пакетів, nobuffer/low_delay — не накопичувати кадри "про запас".
+# setdefault — оператор може перекрити своїм значенням через справжню
+# змінну середовища сервісу, якщо колись знадобиться.
+os.environ.setdefault(
+    "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+    "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|max_delay;0",
+)
 
 
 class InferenceWorker:
@@ -35,9 +50,18 @@ class InferenceWorker:
         self.frames_processed = 0
         self.last_error: str | None = None
         self.last_ts: float | None = None
+        self.model = None  # виставляється в _run() одразу після завантаження
 
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._run, name=f"vision-{device_id}", daemon=True)
+        self._frame_lock = threading.Lock()
+        self._last_frame = None  # для set_target() — ціль ставиться по кліку, не по кадру з окремого запиту
+        # Клік (set_target, з Flask-потоку) і цикл захоплення (свій потік)
+        # обидва торкаються self.model — без цього блокування set_target()
+        # міг втрутитись у _tracker.init()/reset() посеред predict(), даючи
+        # непередбачувану/биту поведінку трекера (гонка станів, не крах —
+        # тому в логах Spark нічого й не було видно).
+        self._model_lock = threading.Lock()
 
     def start(self) -> None:
         self._thread.start()
@@ -59,6 +83,22 @@ class InferenceWorker:
             "last_ts": self.last_ts,
         }
 
+    def set_target(self, x_frac: float, y_frac: float) -> dict:
+        """Клік по відео в браузері (координати — частка [0,1] кадру) —
+        передається трекінговій моделі, якщо вона це підтримує (лише
+        stateful capability, напр. pixel_tracker; для класифікатора/
+        детектора — немає сенсу, вони й так дивляться на весь кадр)."""
+        model = self.model
+        if model is None or not hasattr(model, "set_target"):
+            return {"success": False, "error": "ця можливість не підтримує вибір цілі по кліку"}
+        with self._frame_lock:
+            frame = self._last_frame
+        if frame is None:
+            return {"success": False, "error": "ще немає жодного захопленого кадру"}
+        with self._model_lock:
+            model.set_target(frame, x_frac, y_frac)
+        return {"success": True}
+
     def _run(self) -> None:
         try:
             model = get_model(self.capability)
@@ -66,6 +106,7 @@ class InferenceWorker:
             self.last_error = f"model load failed: {exc}"
             logger.exception("[%s] Не вдалось завантажити модель %s", self.device_id, self.capability)
             return
+        self.model = model
 
         cap = None
         last_sample_ts = 0.0
@@ -102,8 +143,12 @@ class InferenceWorker:
             if not ok or frame is None:
                 continue
 
+            with self._frame_lock:
+                self._last_frame = frame
+
             try:
-                detections = model.predict(frame)
+                with self._model_lock:
+                    detections = model.predict(frame)
             except Exception as exc:
                 self.last_error = f"predict failed: {exc}"
                 logger.exception("[%s] Помилка інференсу", self.device_id)

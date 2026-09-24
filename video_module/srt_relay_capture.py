@@ -99,29 +99,49 @@ def get_encoder_chain(bitrate_kbps: int) -> "tuple[str, bool]":
 
 
 def create_pipeline_string() -> "tuple[str, bool]":
-    if config.INPUT_FORMAT in ("MJPG", "JPEG"):
-        input_chain = (
-            f"v4l2src device={config.DEVICE} ! "
-            f"image/jpeg,width={config.WIDTH},height={config.HEIGHT},framerate={config.FPS}/1 ! "
-            "jpegdec ! videoconvert ! "
-        )
-    else:
-        input_chain = (
-            f"v4l2src device={config.DEVICE} io-mode=mmap ! "
-            f"video/x-raw,format=YUY2,width={config.WIDTH},height={config.HEIGHT},framerate={config.FPS}/1 ! "
-            "queue max-size-buffers=1 leaky=downstream ! "
-            "videoconvert ! "
-        )
-
     encoder_chain, is_software_encoder = get_encoder_chain(config.bitrate_kbps())
-
-    pipeline_str = (
-        f"{input_chain}"
+    encode_and_send = (
         f"video/x-raw,format=I420,width={config.WIDTH},height={config.HEIGHT} ! "
         f"{encoder_chain} ! "
         "h264parse config-interval=1 ! "
         "mpegtsmux alignment=7 ! "
         f"srtsink name=srt_sink uri=\"{config.SIRENA_RELAY_TARGET}\" sync=false"
+    )
+
+    if config.INPUT_FORMAT in ("MJPG", "JPEG"):
+        raw_chain = (
+            f"v4l2src device={config.DEVICE} ! "
+            f"image/jpeg,width={config.WIDTH},height={config.HEIGHT},framerate={config.FPS}/1 ! "
+            "jpegdec ! "
+        )
+    else:
+        raw_chain = (
+            f"v4l2src device={config.DEVICE} io-mode=mmap ! "
+            f"video/x-raw,format=YUY2,width={config.WIDTH},height={config.HEIGHT},framerate={config.FPS}/1 ! "
+            "queue max-size-buffers=1 leaky=downstream ! "
+        )
+
+    if not config.TRACK_TAP_ENABLED:
+        # Дефолтний шлях — байт-в-байт той самий рядок, що й до появи
+        # піксель-трекінгу: жодного tee, жодного track_sink, нуль ризику.
+        pipeline_str = f"{raw_chain}videoconvert ! {encode_and_send}"
+        return pipeline_str, is_software_encoder
+
+    # SIRENA_TRACK_TAP=1 (пише additional_modules/pixel_tracking/control.py
+    # перед перезапуском цього сервісу) — той самий сирий кадр іде у ДВІ
+    # гілки через tee: (1) кодування+SRT без змін, (2) BGR-appsink для
+    # track_tap.py (лінивий імпорт cv2/трекера — див. той модуль). Один
+    # v4l2src, один процес, без v4l2loopback — усуває race, знайдений живим
+    # тестуванням у попередній (loopback) ітерації цієї фічі.
+    # raw_chain для YUY2 вже закінчується власним queue (decoupling від
+    # v4l2src) — другого перед tee не треба; для MJPG його не було й раніше.
+    pipeline_str = (
+        f"{raw_chain}"
+        "tee name=track_tee "
+        f"track_tee. ! queue max-size-buffers=1 leaky=downstream ! videoconvert ! {encode_and_send} "
+        "track_tee. ! queue max-size-buffers=1 leaky=downstream ! videoconvert ! "
+        "video/x-raw,format=BGR ! "
+        "appsink name=track_sink emit-signals=true max-buffers=1 drop=true sync=false"
     )
     return pipeline_str, is_software_encoder
 
@@ -270,6 +290,10 @@ try:
     pipeline = Gst.parse_launch(pipeline_str)
     if pipeline is None:
         raise RuntimeError("Не вдалося створити GStreamer пайплайн")
+
+    if config.TRACK_TAP_ENABLED:
+        import capture_relay.track_tap as track_tap
+        track_tap.start(pipeline, config)
 
     bus = pipeline.get_bus()
     if bus is None:

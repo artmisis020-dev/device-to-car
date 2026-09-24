@@ -1,3 +1,8 @@
 aiohttp
 PyYAML
 pyudev
+# opencv-python-headless/numpy/requests — лише для піксель-трекінгу
+# (capture_relay/track_tap.py, лінивий імпорт, активний лише за
+# SIRENA_TRACK_TAP=1). numpy/requests зазвичай уже системні
+# (--system-site-packages), opencv-python-headless — ні, тому явно тут.
+opencv-python-headless
