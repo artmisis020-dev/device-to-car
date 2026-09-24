@@ -13,12 +13,20 @@ Kalman-фільтра замість порогового InertialEstimator.
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import numpy as np
 
 import airframe
 from ekf_estimator import EKFConfig, EKFEstimator
 from imu_math import deg_to_rad, mg_to_ms2, rotation_matrix
 from replay import _gps_source, _latlon_to_north_east, GPS_MAX_JUMP_DISTANCE_M, load_log
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "optical_flow"))
+from ekf_bridge import update_ekf_with_flow  # noqa: E402
+from flow_estimator import OpticalFlowEstimator  # noqa: E402
+from video_sync import RecordingFrameSource  # noqa: E402
 
 
 def _build_gps_reference(rows):
@@ -87,6 +95,7 @@ def _estimate_wind(gps_positions, t_all, i, roll, pitch, yaw, airspeed_ms, win_s
 
 def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
         use_baro=True, use_zupt=None, use_nhc=None, use_airspeed=None,
+        video_path=None, use_flow=None,
         config: EKFConfig | None = None, start_idx=0, max_dt=0.5, verbose=True):
     """Прогонити лог через EKFEstimator з періодичними псевдо-GPS/visual
     корекціями (reset_interval_s) — щоб виміряти, наскільки далеко "уносить"
@@ -116,6 +125,13 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
     якщо use_airspeed=True. Найбільше допомагає на довших інтервалах між
     фіксами (де дрейф встигає накопичитись) — на дуже коротких (~5с) може
     трохи гіршити порівняно з чистим position+velocity reset.
+
+    video_path: опційний .h264 з record.service (нижня/CSI-камера) для
+    корекції по оптичному потоку (optical_flow/, README.md там). На
+    відміну від NHC/airspeed (лише fixed-wing), потік корисний для
+    БУДЬ-ЯКОГО апарата — вимірює швидкість відносно землі напряму, без
+    залежності від вітру. use_flow=None (авто) — увімкнено, щойно заданий
+    video_path; явний False вимикає навіть при наявному відео.
     """
     rows = load_log(csv_path)
     gps_positions = _build_gps_reference(rows)
@@ -130,10 +146,16 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
         use_nhc = auto_flags["use_nhc"]
     if use_airspeed is None:
         use_airspeed = auto_flags["use_airspeed"]
+    if use_flow is None:
+        use_flow = video_path is not None
+    flow_source = RecordingFrameSource(video_path) if (use_flow and video_path) else None
+    flow_estimator = OpticalFlowEstimator() if flow_source is not None else None
+    flow_applied_count = 0
+
     if verbose:
         print(
             f"[ekf_replay] Тип апарата: {detected_type} "
-            f"-> zupt={use_zupt} nhc={use_nhc} airspeed={use_airspeed}"
+            f"-> zupt={use_zupt} nhc={use_nhc} airspeed={use_airspeed} flow={use_flow}"
         )
 
     t_all = np.array([float(r["timestamp"]) for r in rows])
@@ -180,6 +202,15 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
             ekf.update_nhc(roll, pitch, yaw)
         if use_airspeed and airspeed_ms > 0.5:
             ekf.update_airspeed(airspeed_ms, roll, pitch, yaw, wind_enu=wind_enu)
+        if flow_source is not None:
+            result = flow_source.frame_pair_at(t)
+            if result is not None:
+                prev_gray, gray, flow_dt = result
+                flow_result = flow_estimator.estimate(
+                    prev_gray, gray, altitude_m=baro_alt, gyro_body_rads=gyro_body, dt=flow_dt
+                )
+                if update_ekf_with_flow(ekf, flow_result, roll, pitch, yaw):
+                    flow_applied_count += 1
 
         gps_now = gps_positions[i]
         abs_pos = ekf.position + reset_ref
@@ -200,6 +231,9 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
             baro_offset = baro_alt
             reset_ref = gps_now.copy(); cur_start_gps = gps_now.copy(); last_reset_t = t; cur_max_err = 0.0
 
+    if flow_source is not None:
+        flow_source.close()
+
     return {
         "timestamps": np.array(timestamps),
         "positions": np.array(positions),
@@ -208,6 +242,7 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
         "interval_pct": np.array(interval_pct),
         "interval_max_err": np.array(interval_max_err),
         "interval_dist": np.array(interval_dist),
+        "flow_applied_count": flow_applied_count,
     }
 
 
@@ -228,12 +263,19 @@ if __name__ == "__main__":
     parser.add_argument("--nhc", choices=["auto", "on", "off"], default="auto")
     parser.add_argument("--airspeed", choices=["auto", "on", "off"], default="auto",
                          help="Використати airspeed_ms (піто-трубка, лише літаки) з оцінкою вітру на кожному фіксі")
+    parser.add_argument("--video", default=None,
+                         help="Опційний .h264 з record.service (нижня/CSI-камера) для корекції по оптичному потоку. "
+                              "Ім'я файлу має бути rec_YYYYMMDD_HHMMSS.h264 (як пише record.sh) — час старту "
+                              "розпізнається з нього для синхронізації з CSV.")
+    parser.add_argument("--flow", choices=["auto", "on", "off"], default="auto",
+                         help="auto (за замовчуванням) = увімкнено, якщо задано --video")
     args = parser.parse_args()
 
     result = run(
         args.csv_path, reset_interval_s=args.interval,
         pos_std=args.pos_std, vel_std=args.vel_std,
         use_zupt=_tristate(args.zupt), use_nhc=_tristate(args.nhc), use_airspeed=_tristate(args.airspeed),
+        video_path=args.video, use_flow=_tristate(args.flow),
     )
     if result is None:
         print(f"{args.csv_path}: немає GPS-джерела для звірки.")
@@ -246,3 +288,5 @@ if __name__ == "__main__":
             print(f"  95-й перцентиль: {np.percentile(pct, 95):.1f}%")
             print(f"  максимум: {pct.max():.1f}%")
             print(f"  медіана похибки: {np.median(err):.1f}м, макс похибки: {err.max():.1f}м")
+        if args.video:
+            print(f"  optical flow: застосовано {result['flow_applied_count']} корекцій")
