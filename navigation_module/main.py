@@ -62,6 +62,14 @@ GPS_QUEUE_SIZE         = 30      # розмір sliding window
 GPS_SPOOF_METERS_THRE  = 7000.0  # стрибок > 7 км → підозра на спуфінг
 GPS_SPOOF_BLOCK_SEC    = 60.0    # блок Starlink після спуф-стрибка (кожен новий стрибок перезаряджає)
 STARLINK_FAIL_THRESHOLD = 3      # к-ть фейлів gRPC поспіль до перемикання на fallback
+# 2026-09-26: send_starlink_to_server() слав _stargps._data[-1] в адмінку
+# КОЖНІ 0.5с БЕЗУМОВНО, не дивлячись, чи цей запис взагалі свіжий. Якщо
+# Starlink-дишка тимчасово не відповідає (gRPC-збій), _stargps просто
+# перестає поповнюватись — а сюди й далі летів той самий останній запис,
+# роблячи вигляд живих даних. Звідси "координати весь час одні й ті ж".
+# Поріг узятий з запасом над STARLINK_POLL_SEC (1с) — кілька пропущених
+# опитувань це вже не джиттер.
+STARLINK_STALE_SEC = 4.0
 GPS_AZ_DIFF_THRE       = 20.0    # max відхилення азимуту від середнього (°)
 GPS_STDEV_AZ_THRE      = 8.0     # max кружне σ азимуту (°)
 GPS_STDEV_SPEED_THRE   = 15.0    # max σ швидкості (м/с)
@@ -112,6 +120,7 @@ class MavLinkGPSHub:
         self._spoof_block_until: float = 0.0
         self._algo_warned: bool = False
         self._starlink_fail_count: int = 0
+        self._starlink_stale_logged: bool = False
         self._forecast_list: List[GPSRecord] = []
         self._forecast_time: float = 0.0
 
@@ -377,29 +386,39 @@ class MavLinkGPSHub:
 
                         self.is_moving = self._stargps.kalman_awake
 
+                        # get_status() повертає None при збої (той самий контракт,
+                        # що get_location()) — раніше тут беззастережно читались
+                        # атрибути status.gps_stats.* на можливому None/dict-
+                        # заглушці, і справжня причина збою (напр. gRPC Deadline
+                        # Exceeded — dish не відповідає) губилась за
+                        # незрозумілим AttributeError. Так само location
+                        # перевіряємо перед .get(), а не лише нижче — обидва
+                        # виклики можуть провалитись одночасно (той самий
+                        # недоступний dish).
                         status = starlink.starlink_client.get_status()
-                        data = {
-                            "pnt_filter": str(status.gps_stats.pnt_filter_convergence_state),
-                            "downlink_bps": status.downlink_throughput_bps,
-                            "uplink_bps": status.uplink_throughput_bps,
-                            "ping_ms": status.pop_ping_latency_ms,
-                            "obstruction": status.obstruction_stats.fraction_obstructed,
-                            "tilt_deg": status.alignment_stats.tilt_angle_deg,
-                            "azimuth_deg": status.alignment_stats.boresight_azimuth_deg,
-                            "elevation_deg": status.alignment_stats.boresight_elevation_deg,
-                            "lat": location.get("latitude"),
-                            "lon": location.get("longitude"),
-                            "alt": location.get("altitude"),
-                            "quaternion": {
-                                "scalar": status.ned2dish_quaternion.q_scalar,
-                                "x": status.ned2dish_quaternion.q_x,
-                                "y": status.ned2dish_quaternion.q_y,
-                                "z": status.ned2dish_quaternion.q_z,
+                        if status is not None:
+                            data = {
+                                "pnt_filter": str(status.gps_stats.pnt_filter_convergence_state),
+                                "downlink_bps": status.downlink_throughput_bps,
+                                "uplink_bps": status.uplink_throughput_bps,
+                                "ping_ms": status.pop_ping_latency_ms,
+                                "obstruction": status.obstruction_stats.fraction_obstructed,
+                                "tilt_deg": status.alignment_stats.tilt_angle_deg,
+                                "azimuth_deg": status.alignment_stats.boresight_azimuth_deg,
+                                "elevation_deg": status.alignment_stats.boresight_elevation_deg,
+                                "lat": location.get("latitude") if location else None,
+                                "lon": location.get("longitude") if location else None,
+                                "alt": location.get("altitude") if location else None,
+                                "quaternion": {
+                                    "scalar": status.ned2dish_quaternion.q_scalar,
+                                    "x": status.ned2dish_quaternion.q_x,
+                                    "y": status.ned2dish_quaternion.q_y,
+                                    "z": status.ned2dish_quaternion.q_z,
+                                }
                             }
-                        }
 
-                        with open(motion_log_path, "a") as f:
-                            f.write(json.dumps(data) + "\n")
+                            with open(motion_log_path, "a") as f:
+                                f.write(json.dumps(data) + "\n")
 
                         if location and location.get("available"):
                             # 1. Оригінальний фільтр (moving average + outlier rejection)
@@ -455,7 +474,8 @@ class MavLinkGPSHub:
                         else:
                             with open(motion_log_path, "a") as f:
                                 f.write(f"Starlink worker помилка: location unavailable\n")
-                            self._register_starlink_failure("location unavailable")
+                            reason = "location unavailable" if status is not None else "status and location unavailable"
+                            self._register_starlink_failure(reason)
 
                     except Exception as e:
                         with open(motion_log_path, "a") as f:
@@ -634,9 +654,17 @@ class MavLinkGPSHub:
                         last_gps_send_ts = now
                         if self._stargps and self._stargps._data:
                             last_rec = self._stargps._data[-1]
-
-                            self.send_starlink_to_server(last_rec)
-                            logger.info(f"Starlink telemetry sent to server: {last_rec.lat}, {last_rec.lon}")
+                            age = (datetime.datetime.now(datetime.UTC) - last_rec.timestamp).total_seconds()
+                            if age <= STARLINK_STALE_SEC:
+                                self.send_starlink_to_server(last_rec)
+                                logger.info(f"Starlink telemetry sent to server: {last_rec.lat}, {last_rec.lon}")
+                                self._starlink_stale_logged = False
+                            elif not self._starlink_stale_logged:
+                                logger.warning(
+                                    f"Starlink дані застаріли ({age:.1f}s, поріг {STARLINK_STALE_SEC}s) — "
+                                    "припиняю слати в адмінку той самий запис"
+                                )
+                                self._starlink_stale_logged = True
 
                 if processed == 0:
                     time.sleep(0.002)

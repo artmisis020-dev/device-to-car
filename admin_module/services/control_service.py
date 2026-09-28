@@ -15,6 +15,7 @@ FC-side failsafe, який не залежить від стану браузе�
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 
@@ -23,9 +24,32 @@ from pymavlink import mavutil
 from ..helpers import now_str
 from . import repository
 
+log = logging.getLogger(__name__)
+
 CONTROL_PORT = 14567
 STICK_RATE_HZ = 10
 STICK_TIMEOUT_SEC = 0.5
+# Скільки МОЖЕ тривати застій стіка, перш ніж сесію справді закрити (не
+# просто занулити оверрайд). 2026-09-26: користувач явно попросив, щоб
+# сесія ніяким чином не переривалась, поки пульт лишається підключений —
+# короткі застої (модалка підтвердження команди, миттєвий USB-глюк пульта,
+# мережевий джиттер) НЕ повинні змушувати заново тиснути "підтвердити
+# пульт". Це суто anti-leak запобіжник на випадок СПРАВДІ покинутої вкладки
+# (закрили браузер, не натиснувши "зупинити") — жодного впливу на безпеку
+# польоту: FC-оверрайд і так зануляється вже через STICK_TIMEOUT_SEC.
+SESSION_ABANDON_SEC = 300
+# Живцем зловлений інцидент (2026-09-25): RC_CHANNELS на FC застряг на
+# ФІКСОВАНИХ ненульових значеннях майже на 60с під час польоту через те,
+# що navigator.getGamepads() у браузері "застиг" на закешованому стані
+# після короткого USB-глюку пульта (без події gamepaddisconnected) — JS
+# і далі сумлінно слав /control/stick кожні 100мс з тими самими даними.
+# Пробував ловити це на сервері порівнянням "чи значення взагалі
+# змінюються" — НЕ ПРАЦЮЄ: реальний пульт під нерухомою рукою (напр. рівне
+# висіння) цілком може віддавати біт-в-біт те саме число довше будь-якого
+# розумного порогу, тож такий підхід рвав робочі сесії хибно. Правильне
+# місце для цього — сам браузер (Gamepad.timestamp: чи Gamepad API взагалі
+# ще оновлює дані для цього пристрою, незалежно від того, змінились самі
+# осі) — див. _control_panel.html.
 
 MAV_CMD_COMPONENT_ARM_DISARM = mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM
 MAV_CMD_NAV_RETURN_TO_LAUNCH = mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH
@@ -188,19 +212,44 @@ class _ControlSession:
 
     def _run(self):
         period = 1.0 / STICK_RATE_HZ
+        stale_logged = False
         while self.running:
             with self.lock:
                 axes = list(self.axes)
                 aux = list(self.aux)
                 age = time.time() - self.last_update_ts
 
-            if age > STICK_TIMEOUT_SEC:
-                # Браузер перестав слати стіки (закрита вкладка, відвалився
-                # джойстик, мережа) — негайно звільняємо оверрайд, не чекаючи
-                # на власний failsafe FC.
+            if age > SESSION_ABANDON_SEC:
+                # Дійсно покинута сесія (вкладку закрили, не натиснувши
+                # "зупинити") — прибираємо, інакше нитка й UDP-конект
+                # лишаються назавжди.
+                log.warning(
+                    "RC-сесія %s закрита: %.0fs без жодного стіку (ймовірно покинута вкладка)",
+                    self.device_id, age,
+                )
                 self._send_override(0, 0, 0, 0, 0, 0, 0, 0)
                 self.running = False
                 break
+
+            if age > STICK_TIMEOUT_SEC:
+                # Браузер тимчасово не шле стіки (модалка підтвердження,
+                # миттєвий USB-глюк пульта, мережевий джиттер) — зануляємо
+                # оверрайд (FC-safe: 0 = "не оверрайдити канал"), АЛЕ сесію
+                # НЕ закриваємо. Щойно прийдуть свіжі дані — керування
+                # продовжиться без повторного "підтвердити пульт".
+                if not stale_logged:
+                    log.warning(
+                        "RC-сесія %s: стік застарів (%.2fs, ліміт %.1fs) — оверрайд занулено, сесія лишається активною",
+                        self.device_id, age, STICK_TIMEOUT_SEC,
+                    )
+                    stale_logged = True
+                self._send_override(0, 0, 0, 0, 0, 0, 0, 0)
+                time.sleep(period)
+                continue
+
+            if stale_logged:
+                log.info("RC-сесія %s: свіжі дані відновились після застою", self.device_id)
+                stale_logged = False
 
             self._send_override(*stick_to_rc(axes, aux))
             time.sleep(period)
@@ -220,6 +269,7 @@ def enable_control(device_id):
             return {"status": "already_enabled"}, 200
         _control_sessions[device_id] = _ControlSession(device_id, conn)
 
+    log.info("RC-сесія %s увімкнена", device_id)
     return {"status": "control_enabled"}, 200
 
 
@@ -236,6 +286,7 @@ def disable_control(device_id):
     with _sessions_lock:
         session = _control_sessions.pop(device_id, None)
     if session is not None:
+        log.info("RC-сесія %s вимкнена явно (кнопка/вкладка закрита)", device_id)
         session.stop()
     else:
         # Немає активної сесії — все одно шлемо один release-кадр про всяк

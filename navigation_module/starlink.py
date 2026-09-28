@@ -88,21 +88,28 @@ class StarlinkClient:
             logger.warning(f"Не вдалось отримати координати від Starlink: {e}")
             return None
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> Any | None:
         """
         Отримати повний статус Starlink dish.
 
         Returns:
-            Dict з повною інформацією про dish (див. starlink_grpc.py документацію).
-            При помилці повертає кешовані дані або пусту структуру.
+            Об'єкт статусу gRPC (не dict — атрибути типу status.gps_stats.*,
+            звідси й тип підказки Any) або None при помилці. Раніше тут при
+            збої повертався фейковий {"available": False} (dict) — виклик
+            starlink_worker() в main.py безумовно робить
+            status.gps_stats.pnt_filter_convergence_state, тож на dict це
+            падало з AttributeError, який маскував справжню причину збою
+            (напр. gRPC Deadline Exceeded) під незрозуміле "'dict' object
+            has no attribute 'gps_stats'". Той самий контракт, що вже є в
+            get_location() (повертає None при помилці, а не заглушку) —
+            виклик має явно перевіряти на None перед доступом до атрибутів.
         """
         try:
-            data = self.grpc.get_status()
-            return data
+            return self.grpc.get_status()
 
         except Exception as e:
             logger.warning(f"Не вдалось отримати статус Starlink: {e}")
-            return {"available": False}
+            return None
 
     # TODO: REVIEW THIS!
     def get_software_update_status(

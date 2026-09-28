@@ -18,7 +18,7 @@ from typing import Dict, List
 
 from sirena_manager.utils.env import read_env, write_env
 from sirena_manager.utils.network import wireguard_ip
-from .cameras_services import _FOURCC_ALIASES, list_cameras
+from .cameras_services import list_cameras
 from .config import (
     ADMIN_SERVER_URL,
     BOOT_SEQUENCE,
@@ -265,28 +265,38 @@ class SirenaSupervisor:
         env_values = read_env()
 
         # Різні камери мають різні нативні режими (живий приклад: тепловізор
-        # тільки 640x512, USB-грабер лише 25fps-максимум і YUYV лише на
-        # 480x320, MJPG окремо на 720x480/640x480) — сліпе перемикання
+        # тільки 640x512 YUYV, USB AV-грабер лише 25fps-максимум, YUYV на ньому
+        # лише 480x320, а MJPG окремо аж до 720x480) — сліпе перемикання
         # пристрою без урахування цього валило пайплайн у crash-loop
-        # (VIDIOC_STREAMON EINVAL / caps negotiation failure). Дані про
-        # сумісні режими беремо саме з виявлення камер (Camera.modes), а не
-        # вгадуємо; фільтруємо саме на той INPUT_FORMAT, який реально
-        # налаштований у пайплайні (той самий env-файл, що читає
-        # capture_relay/config.py — дефолт YUY2 звідти ж).
-        wanted_format = _FOURCC_ALIASES.get(
-            env_values.get("INPUT_FORMAT", "YUY2").strip().upper()
-        )
-        candidate_modes = [m for m in (camera.modes or []) if m[0] == wanted_format]
-        if not candidate_modes:
+        # (VIDIOC_STREAMON EINVAL / caps negotiation failure).
+        #
+        # 2026-09-26: раніше формат брався ФІКСОВАНО з env INPUT_FORMAT
+        # (дефолт YUY2) — це означало, що AV-грабер міг перемкнутись лише на
+        # свій YUYV-режим (480x320), хоча реально вміє 720x480 через MJPG, а
+        # виправити це вручну (виставити INPUT_FORMAT=MJPG) зламало б
+        # перемикання НА тепловізор (він MJPG не вміє взагалі — 0 сумісних
+        # режимів). Тепер формат визначається з САМОЇ камери: camera.modes уже
+        # відсортований за спаданням (площа, fps) по _usable_modes(), тож
+        # modes[0][0] — це формат, у якому ця камера дає свій найкращий
+        # реальний режим. Кожна камера сама "каже", який їй потрібен
+        # INPUT_FORMAT — більше не треба вручну підганяти один спільний env
+        # під обидві камери.
+        modes = camera.modes or []
+        if not modes:
             return {
                 "success": False,
                 "error": (
-                    f"Camera {camera.label or camera.name!r} has no {wanted_format or 'compatible'} "
-                    "capture mode for this pipeline — refusing to switch to avoid "
-                    "crash-looping the video service"
+                    f"Camera {camera.label or camera.name!r} has no compatible capture "
+                    "mode for this pipeline — refusing to switch to avoid crash-looping "
+                    "the video service"
                 ),
                 "requested": id,
             }
+        wanted_format = modes[0][0]
+        candidate_modes = [m for m in modes if m[0] == wanted_format]
+
+        _FOURCC_TO_INPUT_FORMAT = {"YUYV": "YUY2", "MJPG": "MJPG"}
+        env_values["INPUT_FORMAT"] = _FOURCC_TO_INPUT_FORMAT.get(wanted_format, wanted_format)
 
         video_config = self._read_video_config()
         current_mode = [

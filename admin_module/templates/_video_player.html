@@ -90,15 +90,20 @@
   /* ─── OSD-оверлей (телеметрія з MAVLink, накладена поверх відео) ─── */
   @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&display=swap');
 
-  .svp-osd { position:absolute; inset:0; pointer-events:none; font-variant-numeric:tabular-nums; }
+  /* Базовий розмір тексту OSD подвоєно (2rem замість дефолтних 1rem) —
+     пілоти скаржились, що статуси не видно на широкому екрані. Дочірні
+     em-розміри (.svp-osd-unit/.svp-osd-mode) масштабуються від цієї
+     базової величини автоматично, .svp-osd-bottom-center — окремо нижче
+     (там був явний rem, а не наслідування). */
+  .svp-osd { position:absolute; inset:0; pointer-events:none; font-variant-numeric:tabular-nums; font-size:2rem; }
   .svp-osd[hidden] { display:none; }
   .svp-osd-demo-badge {
     position:absolute; top:8px; left:50%; transform:translateX(-50%);
-    background:rgba(200,40,40,.85); color:#fff; font-weight:700; font-size:.7rem;
-    padding:2px 10px; border-radius:4px; letter-spacing:.08em;
+    background:rgba(200,40,40,.85); color:#fff; font-weight:700; font-size:1.4rem;
+    padding:4px 14px; border-radius:4px; letter-spacing:.08em;
   }
   .svp-osd-top-left, .svp-osd-top-right, .svp-osd-bottom-left, .svp-osd-bottom-right {
-    position:absolute; padding:5px 9px;
+    position:absolute; padding:8px 14px;
   }
   .svp-osd-top-left { top:0; left:0; }
   .svp-osd-top-right { top:0; right:0; text-align:right; }
@@ -109,7 +114,7 @@
   }
   .svp-osd-bottom-center {
     position:absolute; bottom:5px; left:50%; transform:translateX(-50%);
-    font-size:1.35rem; font-weight:700;
+    font-size:2.7rem; font-weight:700;
   }
   .svp-osd-unit { font-size:.65em; margin-left:2px; opacity:.85; }
   .svp-osd-mode { text-transform:uppercase; font-size:.85em; opacity:.9; }
@@ -129,7 +134,7 @@
   .svp-osd-horizon-bar-left::before { left:0; }
   .svp-osd-horizon-bar-right::before { right:0; }
   .svp-osd-horizon-dot { flex:none; width:6px; height:6px; border-radius:50%; background:currentColor; }
-  .svp-compact .svp-osd { font-size:.72rem; }
+  .svp-compact .svp-osd { font-size:1.72rem; }
   .svp-compact .svp-osd-bottom-center { font-size:1rem; }
   .svp-compact .svp-osd-horizon { gap:10px; }
   .svp-compact .svp-osd-horizon-bar { width:44px; }
@@ -232,7 +237,7 @@
     <div id="svpOverlay" class="svp-overlay">Очікування WebRTC стріму...</div>
     <canvas id="svpVisionCanvas" class="svp-osd" style="pointer-events:none"></canvas>
     <div id="svpOsd" class="svp-osd" data-skin="none" hidden>
-      <div class="svp-osd-demo-badge" id="svpOsdDemoBadge" hidden>ДЕМО</div>
+      <div class="svp-osd-demo-badge" id="svpOsdDemoBadge" hidden>НЕМАЄ ЗВ'ЯЗКУ</div>
       <div class="svp-osd-horizon" id="svpOsdHorizon">
         <div class="svp-osd-horizon-bar svp-osd-horizon-bar-left"></div>
         <div class="svp-osd-horizon-dot"></div>
@@ -824,33 +829,35 @@
     };
   }
 
-  function osdDemoState(t) {
-    return {
-      lat: 50.4501 + Math.sin(t / 40) * 0.001,
-      lon: 30.5234 + Math.cos(t / 40) * 0.001,
-      alt: 40 + Math.sin(t / 6) * 5,
-      sats: 11, fix: 3,
-      roll: Math.sin(t / 2) * 12,
-      pitch: Math.sin(t / 3 + 1) * 6,
-      speed: 6 + Math.sin(t / 5) * 3,
-      heading: (t * 8) % 360,
-      climb: Math.sin(t / 4),
-      battV: 22.2 - (t % 300) / 300 * 3,
-      battPct: Math.max(10, 100 - (t % 300) / 3),
-      armed: Math.floor(t / 10) % 2 === 0,
-      mode: 5,
-    };
-  }
-
   function osdRender() {
     const layer = el('svpOsd');
     if (!layer || layer.hidden) return;
     const now = Date.now() / 1000;
     const isLive = (now - (osdState.lastTs || 0)) < 3;
-    const s = isLive ? osdState : osdDemoState(now);
     const demoBadge = el('svpOsdDemoBadge');
     if (demoBadge) demoBadge.hidden = isLive;
 
+    if (!isLive) {
+      // Немає свіжих даних з дрона — свідомо показуємо порожні значення,
+      // а НЕ синтетичну "демо"-траєкторію: вона виглядала як правдоподібні
+      // цифри й пілот не міг з першого погляду відрізнити реальний зв'язок
+      // від його відсутності (плутанина, знайдена живцем 2026-09-25).
+      setText('svpOsdBatVolt', '--.-V');
+      setText('svpOsdBatPct', '--%');
+      setText('svpOsdSats', '--');
+      setText('svpOsdFix', "НЕМАЄ ЗВ'ЯЗКУ");
+      setText('svpOsdCoords', '--.-----, --.-----');
+      setText('svpOsdHeading', '---°');
+      const armedEl = el('svpOsdArmed');
+      if (armedEl) { armedEl.textContent = '--'; armedEl.classList.remove('disarmed'); }
+      setText('svpOsdMode', '-');
+      setText('svpOsdSpeed', '--');
+      setText('svpOsdAlt', '--');
+      setText('svpOsdClimb', '--');
+      return;
+    }
+
+    const s = osdState;
     setText('svpOsdBatVolt', (s.battV != null ? s.battV.toFixed(1) : '0.0') + 'V');
     setText('svpOsdBatPct', (s.battPct != null ? s.battPct : '--') + '%');
     setText('svpOsdSats', s.sats != null ? s.sats : 0);

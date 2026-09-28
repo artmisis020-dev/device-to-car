@@ -84,7 +84,11 @@ def start(device_id: str) -> dict:
         if proc.poll() is not None:
             detail = _read_log_tail(log_path)
             logger.warning("[lowercam-recording] ffmpeg впав одразу для %s (stream=%s): %s", device_id, stream, detail)
-            _cleanup_files(path, log_path)
+            # Лог НЕ видаляємо при збої (лише порожній/сміттєвий .mp4) —
+            # раніше видалялись обидва, і при повторюваних збоях (живцем
+            # зловлено: 4 порожні файли поспіль) не лишалось жодного
+            # діагностичного сліду, чому саме ffmpeg не зміг підключитись.
+            _cleanup_files(path)
             return {"success": False, "error": f"ffmpeg не зміг підключитись до стріму: {detail or 'невідома помилка'}"}
 
         _active[device_id] = {"proc": proc, "path": str(path), "log_path": str(log_path)}
@@ -134,7 +138,9 @@ def status(device_id: str) -> dict:
             _active.pop(device_id, None)
             detail = _read_log_tail(Path(entry["log_path"]))
             logger.warning("[lowercam-recording] запис для %s обірвався сам собою: %s", device_id, detail)
-            _cleanup_files(Path(entry["log_path"]))
+            # Лог НЕ видаляємо тут (на відміну від нормального stop()) —
+            # це саме випадок несподіваного обриву, той самий діагностичний
+            # аргумент, що й у start().
             entry = None
 
     if entry is None:

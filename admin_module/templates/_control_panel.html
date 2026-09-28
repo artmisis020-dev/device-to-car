@@ -46,6 +46,14 @@
   </div>
   <div class="card-body p-2">
     <div id="gamepadHint" class="small text-muted mb-1">Підключіть USB-пульт і натисніть будь-яку кнопку на ньому</div>
+    <!-- Візуальне попередження, НІКОЛИ не розриває сесію автоматично (див.
+         checkGamepadFreshness нижче) — живцем зловлено, що застигання
+         Gamepad.timestamp не обов'язково означає реальний глюк пульта,
+         частина браузерів/драйверів просто не оновлює це поле стабільно.
+         Лише сигнал пілоту "придивись", рішення розірвати чи ні — за ним. -->
+    <div id="gamepadStaleWarning" class="small fw-bold mb-1" style="color:#e0a800" hidden>
+      ⚠ Дані пульта не оновлюються кілька секунд — можливо, завис зв'язок із контролером. Керування й далі шле останнє відоме положення стіків.
+    </div>
     <div class="row g-2">
       <div class="col-6">
         <div class="d-flex justify-content-between align-items-center small text-muted">
@@ -131,7 +139,49 @@
   // дрон НЕ йдуть) -> armed (після підтвердження, реально шле RC override).
   let gamepadIndex = null;
   let controlState = 'disconnected';
-  let controlStickInterval = null;
+  let stickLoopActive = false;
+
+  // ─── Виявлення "зависання" Gamepad API (лише попередження, НЕ авто-розрив) ──
+  // Живцем зловлений інцидент (2026-09-25): navigator.getGamepads() інколи
+  // застигає на закешованому стані після короткого USB-глюку пульта (без
+  // події gamepaddisconnected) — і значення осей лишаються ЖИВИМИ на вигляд,
+  // просто старими. Порівнювати самі осі ненадійно: реальний пульт під
+  // нерухомою рукою (рівне висіння) може віддавати те саме число як завгодно
+  // довго — це НЕ баг. Gamepad.timestamp — окреме поле, яке браузер оновлює
+  // щоразу, коли РЕАЛЬНО опитав пристрій, незалежно від того, змінились самі
+  // осі. Але надійність САМОГО timestamp теж варіюється між браузерами/
+  // драйверами, тому: (1) спершу переконуємось, що для ЦЬОГО пульта в ЦЬОМУ
+  // браузері timestamp взагалі колись змінювався (gpTimestampSupported), і
+  // лише тоді довіряємо його "застиганню"; (2) навіть тоді — лише візуальне
+  // попередження пілоту, рішення розривати сесію чи ні лишається за людиною.
+  const GP_STALE_WARN_MS = 1500;
+  const GP_SUPPORT_PROBE_MS = 3000;
+  let gpLastTimestamp = null;
+  let gpLastTimestampChangeAt = 0;
+  let gpTimestampSupported = null; // null = ще не з'ясовано
+
+  function checkGamepadFreshness(gp) {
+    const now = performance.now();
+    if (gp.timestamp !== gpLastTimestamp) {
+      if (gpLastTimestamp !== null) gpTimestampSupported = true;
+      gpLastTimestamp = gp.timestamp;
+      gpLastTimestampChangeAt = now;
+      document.getElementById('gamepadStaleWarning').hidden = true;
+      return;
+    }
+    if (gpTimestampSupported === null) {
+      if (now - gpLastTimestampChangeAt > GP_SUPPORT_PROBE_MS) {
+        // timestamp жодного разу не змінився за розумний час — ця пара
+        // браузер/драйвер, схоже, просто не оновлює поле стабільно, тож
+        // не довіряємо сигналу зовсім (краще мовчати, ніж хибно лякати).
+        gpTimestampSupported = false;
+      }
+      return;
+    }
+    if (gpTimestampSupported && now - gpLastTimestampChangeAt > GP_STALE_WARN_MS) {
+      document.getElementById('gamepadStaleWarning').hidden = false;
+    }
+  }
 
   function updateGamepadBadge(connected) {
     document.getElementById('gamepadBadge').innerHTML = connected
@@ -142,6 +192,13 @@
   function setControlState(state) {
     controlState = state;
     updateGamepadBadge(state !== 'disconnected');
+    if (state === 'disconnected') {
+      // Новий пульт (чи те саме перепідключення) — пробу свіжості timestamp
+      // варто почати заново, старий "не оновлюється" стан більше нерелевантний.
+      gpLastTimestamp = null;
+      gpTimestampSupported = null;
+      document.getElementById('gamepadStaleWarning').hidden = true;
+    }
     const hint = document.getElementById('gamepadHint');
     const raw = document.getElementById('rawGamepadInputs');
     const btn = document.getElementById('btnGamepadPrimary');
@@ -170,12 +227,36 @@
     if (controlState === 'disconnected') setControlState('connected');
   });
 
+  // Скільки чекати після gamepaddisconnected, перш ніж СПРАВДІ зупиняти
+  // керування — 2026-09-26: користувач попросив, щоб сесія ніяким чином
+  // не переривалась, поки пульт лишається підключений. Браузерна подія
+  // gamepaddisconnected сама по собі буває спрацьовує на короткий
+  // USB-глюк (той самий клас проблем, що й вже задокументований
+  // "застиглий Gamepad API" вище) — тому не рвемо сесію одразу: чекаємо
+  // GAMEPAD_RECONNECT_GRACE_MS, і якщо пульт перепідключиться (звичайний
+  // gamepadconnected) в цьому вікні — просто продовжуємо, як нічого й не
+  // було. Сервер (control_service.py) синхронно теж не рве сесію на
+  // короткий застій стіка — лише зануляє оверрайд.
+  const GAMEPAD_RECONNECT_GRACE_MS = 3000;
+  let gamepadDisconnectTimer = null;
+
+  window.addEventListener('gamepadconnected', (e) => {
+    if (gamepadDisconnectTimer) {
+      clearTimeout(gamepadDisconnectTimer);
+      gamepadDisconnectTimer = null;
+    }
+  });
+
   window.addEventListener('gamepaddisconnected', (e) => {
-    if (gamepadIndex === e.gamepad.index) {
-      gamepadIndex = null;
+    if (gamepadIndex !== e.gamepad.index) return;
+    gamepadIndex = null;
+    if (gamepadDisconnectTimer) clearTimeout(gamepadDisconnectTimer);
+    gamepadDisconnectTimer = setTimeout(() => {
+      gamepadDisconnectTimer = null;
+      if (gamepadIndex !== null) return; // встиг перепідключитись
       if (controlState === 'armed') stopControl(true);
       setControlState('disconnected');
-    }
+    }, GAMEPAD_RECONNECT_GRACE_MS);
   });
 
   // Канал -> реальний індекс осі на фізичному пульті. RC-передавачі через
@@ -493,7 +574,10 @@
     if (gamepadIndex !== null && controlState !== 'disconnected') {
       const pads = navigator.getGamepads ? navigator.getGamepads() : [];
       const gp = pads[gamepadIndex];
-      if (gp) renderRawGamepad(gp);
+      if (gp) {
+        renderRawGamepad(gp);
+        checkGamepadFreshness(gp);
+      }
     }
     requestAnimationFrame(gamepadLoop);
   }
@@ -529,7 +613,7 @@
         return;
       }
       setControlState('armed');
-      controlStickInterval = setInterval(sendStick, 100);
+      scheduleStickLoop();
     } catch (e) {
       alert('Помилка запиту: ' + e.message);
     } finally {
@@ -538,10 +622,7 @@
   }
 
   async function stopControl(skipStateChange) {
-    if (controlStickInterval) {
-      clearInterval(controlStickInterval);
-      controlStickInterval = null;
-    }
+    stopStickLoop();
     if (!skipStateChange) setControlState(gamepadIndex !== null ? 'connected' : 'disconnected');
     try {
       await fetch('/api/devices/' + deviceId + '/control/disable', {
@@ -556,14 +637,28 @@
     if (controlState !== 'armed') return;
     const axes = readGamepadAxes();
     if (!axes) {
-      await stopControl();
+      // gamepadIndex тимчасово null (щойно спрацював gamepaddisconnected) —
+      // саму сесію тут НЕ рвемо, це робить лише таймер грейс-періоду вище
+      // (gamepadDisconnectTimer), якщо пульт справді не повернеться за
+      // GAMEPAD_RECONNECT_GRACE_MS. Просто пропускаємо цей тік.
       return;
     }
     const aux = readGamepadAux();
+    // AbortController з коротким тайм-аутом — навмисно: якщо запит зависає
+    // (мережевий джиттер), не даємо йому займати одне з ~6 паралельних
+    // з'єднань браузера до origin надовго. Без цього і без scheduleStickLoop()
+    // нижче (яка гарантує лише ОДИН запит у польоті), setInterval(sendStick, 100)
+    // раніше міг накопичити чергу зависших запитів під час звичайного
+    // мережевого лагу — жоден новий стік не долітав до сервера довше 0.5с,
+    // і control_service.py (STICK_TIMEOUT_SEC) сам рвав сесію, хоча пульт
+    // фізично весь час слав свіжі дані. Це і була причина "сесія злітає".
+    const controller = new AbortController();
+    const abortTimer = setTimeout(() => controller.abort(), 400);
     try {
       const res = await fetch('/api/devices/' + deviceId + '/control/stick', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ axes, aux })
+        body: JSON.stringify({ axes, aux }),
+        signal: controller.signal
       });
       if (res.status === 409) {
         // Сервер сам розірвав RC-сесію (watchdog: >0.5с без нового стіку —
@@ -576,7 +671,27 @@
       }
     } catch (e) {
       console.error('stick send failed', e);
+    } finally {
+      clearTimeout(abortTimer);
     }
+  }
+
+  function scheduleStickLoop() {
+    if (stickLoopActive) return;
+    stickLoopActive = true;
+    (async () => {
+      while (stickLoopActive) {
+        const start = performance.now();
+        await sendStick();
+        if (!stickLoopActive) break;
+        const wait = Math.max(0, 100 - (performance.now() - start));
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      }
+    })();
+  }
+
+  function stopStickLoop() {
+    stickLoopActive = false;
   }
 
   document.addEventListener('visibilitychange', () => {
