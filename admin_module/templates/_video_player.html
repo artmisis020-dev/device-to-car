@@ -308,6 +308,7 @@
     <div class="svp-stat"><div class="svp-stat-label">RTT</div><div class="svp-stat-value" id="svpStatRtt">-</div></div>
     <div class="svp-stat"><div class="svp-stat-label">Jitter</div><div class="svp-stat-value" id="svpStatJitter">-</div></div>
     <div class="svp-stat" title="Затримка буфера відтворення WebRTC (jitterBufferDelay) — лише прийомна частина в браузері, без камери/кодера/мережі"><div class="svp-stat-label">Буфер прийому</div><div class="svp-stat-value" id="svpStatLatency">-</div></div>
+    <div class="svp-stat" title="Час декодування кадру браузером (totalDecodeTime/framesDecoded) — частина наскрізної затримки, яку неможливо змінити з нашого боку"><div class="svp-stat-label">Декодування</div><div class="svp-stat-value" id="svpStatDecode">-</div></div>
     <div class="svp-stat" title="Повна наскрізна (glass-to-glass) затримка: час від моменту зйомки кадру на РПі до показу в браузері. Рахується з мітки часу, вшитої прямо в кадр (timestamp_overlay.py)"><div class="svp-stat-label">Наскрізна затримка</div><div class="svp-stat-value" id="svpStatE2eLatency">-</div></div>
     <div class="svp-stat"><div class="svp-stat-label">Роздільна здатність</div><div class="svp-stat-value" id="svpStatRes">-</div></div>
   </div>
@@ -791,7 +792,17 @@
         const latencyMs = dCount > 0 ? (dDelay / dCount) * 1000 : null;
         setText('svpStatLatency', latencyMs != null ? `${latencyMs.toFixed(0)} ms` : '-');
       }
-      lastVideoStats = {timestamp: now, bytes, frames, jbDelay, jbCount};
+      // Реальний час декодування (totalDecodeTime/framesDecoded, стандартна
+      // WebRTC-метрика) — частина наскрізної затримки, яку не видно через
+      // jitterBufferDelay (той рахує лише чекання в буфері ДО декодування).
+      const decodeTime = inboundVideo.totalDecodeTime || 0;
+      if (lastVideoStats && lastVideoStats.decodeTime != null) {
+        const dFrames = frames - lastVideoStats.frames;
+        const dDecodeTime = decodeTime - lastVideoStats.decodeTime;
+        const decodeMs = dFrames > 0 ? (dDecodeTime / dFrames) * 1000 : null;
+        setText('svpStatDecode', decodeMs != null ? `${decodeMs.toFixed(1)} ms` : '-');
+      }
+      lastVideoStats = {timestamp: now, bytes, frames, jbDelay, jbCount, decodeTime};
       setText('svpStatJitter', inboundVideo.jitter ? `${(inboundVideo.jitter * 1000).toFixed(1)} ms` : '-');
       if (inboundVideo.frameWidth && inboundVideo.frameHeight) {
         setText('svpStatRes', `${inboundVideo.frameWidth}x${inboundVideo.frameHeight}`);
