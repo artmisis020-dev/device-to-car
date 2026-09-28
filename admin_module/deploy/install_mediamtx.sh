@@ -52,16 +52,31 @@ if ! command -v tar >/dev/null 2>&1; then
     apt-get install -y tar
 fi
 
-TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"' EXIT
+# Патчений білд (SRT ReceiverLatency 10мс замість захардкодженого в
+# gosrt дефолту 120мс — див. mediamtx-patches/README.md) має пріоритет над
+# офіційним релізом. Без цього кожен redeploy тихо повертав би затримку
+# відеостріму на ~120мс, і ніхто б не помітив, поки не почав знову міряти.
+PATCHED_BIN="$SCRIPT_DIR/mediamtx-patches/mediamtx-v${MEDIAMTX_VERSION}-srt10ms_${ASSET_ARCH}"
 
-ARCHIVE="mediamtx_v${MEDIAMTX_VERSION}_${ASSET_ARCH}.tar.gz"
-DOWNLOAD_URL="https://github.com/bluenviron/mediamtx/releases/download/v${MEDIAMTX_VERSION}/${ARCHIVE}"
+if [ -f "$PATCHED_BIN" ]; then
+    echo "Installing patched MediaMTX v${MEDIAMTX_VERSION} (${ASSET_ARCH}, SRT latency=10ms) from repo"
+    install -m 0755 "$PATCHED_BIN" "$BIN_PATH"
+else
+    echo "WARNING: no patched MediaMTX binary for ${ASSET_ARCH} at $PATCHED_BIN" >&2
+    echo "WARNING: falling back to stock release — SRT latency will regress to ~120ms" >&2
+    echo "WARNING: rebuild it with admin_module/deploy/mediamtx-patches/build.sh" >&2
 
-echo "Installing MediaMTX v${MEDIAMTX_VERSION} (${ASSET_ARCH})"
-curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/$ARCHIVE"
-tar -xzf "$TMP_DIR/$ARCHIVE" -C "$TMP_DIR"
-install -m 0755 "$TMP_DIR/mediamtx" "$BIN_PATH"
+    TMP_DIR="$(mktemp -d)"
+    trap 'rm -rf "$TMP_DIR"' EXIT
+
+    ARCHIVE="mediamtx_v${MEDIAMTX_VERSION}_${ASSET_ARCH}.tar.gz"
+    DOWNLOAD_URL="https://github.com/bluenviron/mediamtx/releases/download/v${MEDIAMTX_VERSION}/${ARCHIVE}"
+
+    echo "Installing MediaMTX v${MEDIAMTX_VERSION} (${ASSET_ARCH})"
+    curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/$ARCHIVE"
+    tar -xzf "$TMP_DIR/$ARCHIVE" -C "$TMP_DIR"
+    install -m 0755 "$TMP_DIR/mediamtx" "$BIN_PATH"
+fi
 
 cp "$UNIT_TEMPLATE" "$UNIT_PATH"
 sed -i "s|__SERVICE_USER__|$SERVICE_USER|g" "$UNIT_PATH"
