@@ -92,6 +92,7 @@ def get_encoder_chain(bitrate_kbps: int) -> "tuple[str, bool]":
         f"key-int-max={config.KEYINT} "
         "bframes=0 "
         "sliced-threads=true "
+        "rc-lookahead=0 "
         "byte-stream=true "
         "option-string=repeat-headers=1 ! "
         f"capsfilter caps=\"video/x-h264,profile={caps_profile},stream-format=byte-stream,alignment=au\""
@@ -117,7 +118,7 @@ def create_pipeline_string() -> "tuple[str, bool]":
         f"{encoder_chain} ! "
         "h264parse config-interval=1 ! "
         "mpegtsmux alignment=7 ! "
-        f"srtsink name=srt_sink uri=\"{config.SIRENA_RELAY_TARGET}\" sync=false"
+        f"srtsink name=srt_sink uri=\"{config.SIRENA_RELAY_TARGET}\" sync=false processing-deadline=0"
     )
 
     if config.INPUT_FORMAT in ("MJPG", "JPEG"):
