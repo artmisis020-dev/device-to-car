@@ -27,6 +27,7 @@ if str(current_dir) not in sys.path:
 
 import capture_relay.config as config
 import capture_relay.registry as registry
+import capture_relay.timestamp_overlay as timestamp_overlay
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [srt-relay-capture]: %(message)s")
 log = logging.getLogger(__name__)
@@ -101,6 +102,17 @@ def get_encoder_chain(bitrate_kbps: int) -> "tuple[str, bool]":
 def create_pipeline_string() -> "tuple[str, bool]":
     encoder_chain, is_software_encoder = get_encoder_chain(config.bitrate_kbps())
     encode_and_send = (
+        # cairooverlay вимагає BGRx/BGRA/RGB16 (не I420) — тому конвертація
+        # туди-назад навколо нього. Малює timestamp_overlay.on_draw() —
+        # двійкова мітка часу для вимірювання наскрізної (glass-to-glass)
+        # затримки в _video_player.html. cairooverlay — стандартний елемент
+        # gst-plugins-good, перевірено наявний на РПі (gst-inspect-1.0
+        # cairooverlay); якщо колись його не буде на цільовій збірці —
+        # Gst.parse_launch() впаде одразу з чіткою помилкою про невідомий
+        # елемент, не мовчки.
+        "video/x-raw,format=BGRx ! "
+        "cairooverlay name=ts_overlay ! "
+        "videoconvert ! "
         f"video/x-raw,format=I420,width={config.WIDTH},height={config.HEIGHT} ! "
         f"{encoder_chain} ! "
         "h264parse config-interval=1 ! "
@@ -294,6 +306,11 @@ try:
     if config.TRACK_TAP_ENABLED:
         import capture_relay.track_tap as track_tap
         track_tap.start(pipeline, config)
+
+    if timestamp_overlay.attach(pipeline):
+        log.info("[TimestampOverlay] мітка часу увімкнена — доступна наскрізна затримка в плеєрі")
+    else:
+        log.warning("[TimestampOverlay] елемент ts_overlay не знайдено в пайплайні — наскрізна затримка недоступна")
 
     bus = pipeline.get_bus()
     if bus is None:

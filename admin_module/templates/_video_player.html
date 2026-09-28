@@ -307,6 +307,8 @@
     <div class="svp-stat"><div class="svp-stat-label">Бітрейт</div><div class="svp-stat-value" id="svpStatBitrate">-</div></div>
     <div class="svp-stat"><div class="svp-stat-label">RTT</div><div class="svp-stat-value" id="svpStatRtt">-</div></div>
     <div class="svp-stat"><div class="svp-stat-label">Jitter</div><div class="svp-stat-value" id="svpStatJitter">-</div></div>
+    <div class="svp-stat" title="Затримка буфера відтворення WebRTC (jitterBufferDelay) — лише прийомна частина в браузері, без камери/кодера/мережі"><div class="svp-stat-label">Буфер прийому</div><div class="svp-stat-value" id="svpStatLatency">-</div></div>
+    <div class="svp-stat" title="Повна наскрізна (glass-to-glass) затримка: час від моменту зйомки кадру на РПі до показу в браузері. Рахується з мітки часу, вшитої прямо в кадр (timestamp_overlay.py)"><div class="svp-stat-label">Наскрізна затримка</div><div class="svp-stat-value" id="svpStatE2eLatency">-</div></div>
     <div class="svp-stat"><div class="svp-stat-label">Роздільна здатність</div><div class="svp-stat-value" id="svpStatRes">-</div></div>
   </div>
   {% if video_player_compact %}
@@ -325,6 +327,18 @@
   let recordActive = false;
   let lastVideoStats = null;
   let switchingCamera = false;
+  // Декодування мітки часу, вшитої в кадр на РПі (video_module/capture_relay/
+  // timestamp_overlay.py) — для НАСКРІЗНОЇ (glass-to-glass) затримки, на
+  // відміну від jitterBufferDelay вище (лише буфер браузера). Константи
+  // МАЮТЬ збігатись з тими, що в timestamp_overlay.py.
+  const TS_NUM_BITS = 24;
+  const TS_BLOCK_SIZE = 14;
+  const TS_MARGIN = 2;
+  const TS_SYNC_BITS = [0, 1];
+  const TS_MOD = 2 ** TS_NUM_BITS;
+  const TS_MAX_PLAUSIBLE_MS = 10000; // більше — радше нечитаний кадр, ніж реальна затримка
+  let tsCanvas = null;
+  let tsCtx = null;
   let disconnectGraceTimer = null;
   let reconnectTimer = null;
   let staleFrameTicks = 0;
@@ -671,6 +685,59 @@
     if (video) video.srcObject = null;
   }
 
+  function sampleBlockBrightness(ctx, index) {
+    const x = Math.round(TS_MARGIN + index * TS_BLOCK_SIZE + TS_BLOCK_SIZE / 2);
+    const y = Math.round(TS_MARGIN + TS_BLOCK_SIZE / 2);
+    const d = ctx.getImageData(x, y, 1, 1).data;
+    return (d[0] + d[1] + d[2]) / 3;
+  }
+
+  function decodeFrameTimestampMs(video) {
+    if (!video.videoWidth || !video.videoHeight) return null;
+    const totalBlocks = TS_SYNC_BITS.length + TS_NUM_BITS;
+    const stripH = TS_MARGIN * 2 + TS_BLOCK_SIZE;
+    if (!tsCanvas) {
+      tsCanvas = document.createElement('canvas');
+      tsCtx = tsCanvas.getContext('2d', {willReadFrequently: true});
+    }
+    if (tsCanvas.width !== video.videoWidth || tsCanvas.height !== stripH) {
+      tsCanvas.width = video.videoWidth;
+      tsCanvas.height = stripH;
+    }
+    // Малюємо лише верхню смужку кадру (де мітка) — дешевше за весь кадр.
+    tsCtx.drawImage(video, 0, 0, video.videoWidth, stripH, 0, 0, video.videoWidth, stripH);
+
+    const need = TS_MARGIN * 2 + totalBlocks * TS_BLOCK_SIZE;
+    if (video.videoWidth < need) return null; // кадр вужчий, ніж мітка — не мала б трапитись
+
+    const brightness = [];
+    for (let i = 0; i < totalBlocks; i++) brightness.push(sampleBlockBrightness(tsCtx, i));
+
+    // Калібруємо поріг чорне/біле по двох sync-блоках (завжди [0,1]) —
+    // компенсує зсув яскравості від H.264-стиснення, а не жорсткий 128.
+    const syncBlack = brightness[0];
+    const syncWhite = brightness[1];
+    if (syncWhite - syncBlack < 40) return null; // sync нечитабельний
+
+    const threshold = (syncBlack + syncWhite) / 2;
+    let value = 0;
+    for (let i = 0; i < TS_NUM_BITS; i++) {
+      const bit = brightness[TS_SYNC_BITS.length + i] > threshold ? 1 : 0;
+      value = (value << 1) | bit; // MSB перший, як на кодуванні
+    }
+    return value >>> 0;
+  }
+
+  function computeE2eLatencyMs(video) {
+    const decoded = decodeFrameTimestampMs(video);
+    if (decoded == null) return null;
+    const nowMod = Date.now() % TS_MOD;
+    let diff = nowMod - decoded;
+    if (diff < 0) diff += TS_MOD;
+    if (diff > TS_MAX_PLAUSIBLE_MS) return null; // радше нечитаний кадр, ніж реальна затримка
+    return diff;
+  }
+
   async function updateStats() {
     if (!pc) return;
     const report = await pc.getStats();
@@ -711,7 +778,20 @@
           staleFrameTicks = 0;
         }
       }
-      lastVideoStats = {timestamp: now, bytes, frames};
+      // Затримка буфера відтворення (jitterBufferDelay/jitterBufferEmittedCount,
+      // стандартні WebRTC-метрики) — середній час, який кожен кадр проводить
+      // у приймальному буфері перед показом. Дельта між двома опитуваннями
+      // (як і бітрейт/fps вище), бо самі лічильники — накопичувальні суми за
+      // весь конект, а не миттєве значення.
+      const jbDelay = inboundVideo.jitterBufferDelay || 0;
+      const jbCount = inboundVideo.jitterBufferEmittedCount || 0;
+      if (lastVideoStats && lastVideoStats.jbCount != null) {
+        const dCount = jbCount - lastVideoStats.jbCount;
+        const dDelay = jbDelay - lastVideoStats.jbDelay;
+        const latencyMs = dCount > 0 ? (dDelay / dCount) * 1000 : null;
+        setText('svpStatLatency', latencyMs != null ? `${latencyMs.toFixed(0)} ms` : '-');
+      }
+      lastVideoStats = {timestamp: now, bytes, frames, jbDelay, jbCount};
       setText('svpStatJitter', inboundVideo.jitter ? `${(inboundVideo.jitter * 1000).toFixed(1)} ms` : '-');
       if (inboundVideo.frameWidth && inboundVideo.frameHeight) {
         setText('svpStatRes', `${inboundVideo.frameWidth}x${inboundVideo.frameHeight}`);
@@ -720,6 +800,12 @@
 
     if (candidatePair && candidatePair.currentRoundTripTime != null) {
       setText('svpStatRtt', `${(candidatePair.currentRoundTripTime * 1000).toFixed(0)} ms`);
+    }
+
+    const video = el('svpVideo');
+    if (video) {
+      const e2e = computeE2eLatencyMs(video);
+      setText('svpStatE2eLatency', e2e != null ? `${e2e.toFixed(0)} ms` : '-');
     }
   }
 
