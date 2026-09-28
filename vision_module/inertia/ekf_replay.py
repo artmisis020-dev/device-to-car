@@ -24,6 +24,7 @@ from imu_math import deg_to_rad, mg_to_ms2, rotation_matrix
 from replay import _gps_source, _latlon_to_north_east, GPS_MAX_JUMP_DISTANCE_M, load_log
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "optical_flow"))
+from combined_estimator import CombinedMotionEstimator  # noqa: E402
 from ekf_bridge import update_ekf_with_flow  # noqa: E402
 from flow_estimator import OpticalFlowEstimator  # noqa: E402
 from video_sync import RecordingFrameSource  # noqa: E402
@@ -95,7 +96,7 @@ def _estimate_wind(gps_positions, t_all, i, roll, pitch, yaw, airspeed_ms, win_s
 
 def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
         use_baro=True, use_zupt=None, use_nhc=None, use_airspeed=None,
-        video_path=None, use_flow=None,
+        video_path=None, use_flow=None, use_keypoints: bool = False,
         config: EKFConfig | None = None, start_idx=0, max_dt=0.5, verbose=True):
     """Прогонити лог через EKFEstimator з періодичними псевдо-GPS/visual
     корекціями (reset_interval_s) — щоб виміряти, наскільки далеко "уносить"
@@ -132,6 +133,12 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
     БУДЬ-ЯКОГО апарата — вимірює швидкість відносно землі напряму, без
     залежності від вітру. use_flow=None (авто) — увімкнено, щойно заданий
     video_path; явний False вимикає навіть при наявному відео.
+
+    use_keypoints: явний вимикач (НЕ auto, на відміну від use_flow) —
+    коли True і є flow_source, замість OpticalFlowEstimator
+    використовується CombinedMotionEstimator (flow + ORB-одометрія,
+    optical_flow/combined_estimator.py). За замовчуванням False —
+    для поетапного тестування нового механізму окремо від решти.
     """
     rows = load_log(csv_path)
     gps_positions = _build_gps_reference(rows)
@@ -154,13 +161,18 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
     if use_flow is None:
         use_flow = video_path is not None
     flow_source = RecordingFrameSource(video_path) if (use_flow and video_path) else None
-    flow_estimator = OpticalFlowEstimator() if flow_source is not None else None
+    if flow_source is None:
+        flow_estimator = None
+    elif use_keypoints:
+        flow_estimator = CombinedMotionEstimator()
+    else:
+        flow_estimator = OpticalFlowEstimator()
     flow_applied_count = 0
 
     if verbose:
         print(
             f"[ekf_replay] Тип апарата: {detected_type} "
-            f"-> zupt={use_zupt} nhc={use_nhc} airspeed={use_airspeed} flow={use_flow}"
+            f"-> zupt={use_zupt} nhc={use_nhc} airspeed={use_airspeed} flow={use_flow} keypoints={use_keypoints}"
         )
 
     t_all = np.array([float(r["timestamp"]) for r in rows])
@@ -313,13 +325,17 @@ if __name__ == "__main__":
                               "розпізнається з нього для синхронізації з CSV.")
     parser.add_argument("--flow", choices=["auto", "on", "off"], default="auto",
                          help="auto (за замовчуванням) = увімкнено, якщо задано --video")
+    parser.add_argument("--keypoints", action="store_true",
+                         help="Явно увімкнути ORB-одометрію разом з оптичним потоком "
+                              "(CombinedMotionEstimator). Вимкнено за замовчуванням — "
+                              "для поетапного тестування окремо від решти.")
     args = parser.parse_args()
 
     result = run(
         args.csv_path, reset_interval_s=args.interval,
         pos_std=args.pos_std, vel_std=args.vel_std,
         use_zupt=_tristate(args.zupt), use_nhc=_tristate(args.nhc), use_airspeed=_tristate(args.airspeed),
-        video_path=args.video, use_flow=_tristate(args.flow),
+        video_path=args.video, use_flow=_tristate(args.flow), use_keypoints=args.keypoints,
     )
     if not result["has_ground_truth"]:
         print(f"{args.csv_path}: немає GPS/local_position — звірку дрейфу пропущено, лише сира траєкторія EKF.")

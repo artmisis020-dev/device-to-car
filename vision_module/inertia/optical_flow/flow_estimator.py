@@ -24,6 +24,7 @@ from flow_math import (
     flow_to_body_velocity,
     robust_mean_flow,
     homography_translation_px,
+    verify_homography,
 )
 
 
@@ -111,7 +112,7 @@ class OpticalFlowEstimator:
         src = np.float32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
         dst = np.float32([kp2[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
         H, mask = cv2.findHomography(src, dst, cv2.RANSAC, cfg.ransac_reproj_thresh)
-        if H is None:
+        if H is None or not verify_homography(H):
             return None, len(matches), 0.0
 
         inliers = int(mask.sum()) if mask is not None else 0

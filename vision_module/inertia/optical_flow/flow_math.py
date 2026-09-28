@@ -71,6 +71,33 @@ def robust_mean_flow(points_prev: np.ndarray, points_curr: np.ndarray,
     return diffs[keep_idx].mean(axis=0)
 
 
+def verify_homography(H: np.ndarray, max_scale: float = 3.0, min_scale: float = 0.33,
+                       max_perspective: float = 0.01) -> bool:
+    """Перевірка фізичної реалістичності матриці гомографії — перенесено
+    з gps_positions/gps_fixed_algo.py (там для drone-vs-satellite
+    матчингу, тут — для frame-to-frame; пороги адаптовані під набагато
+    менші міжкадрові зміни).
+
+    Без цього cv2.findHomography() при поганих/шумних матчах іноді
+    повертає геометрично абсурдну матрицю (вироджену, з диким масштабом
+    чи перспективою) з непоганим числом "інлаєрів" — і вона мовчки йде
+    далі як нібито валідний результат. Тут відсікаємо такі випадки ДО
+    того, як вони зіпсують EKF."""
+    if H is None:
+        return False
+    det = np.linalg.det(H[:2, :2])
+    if abs(det) < 1e-6:
+        return False
+    scale_x = np.sqrt(H[0, 0] ** 2 + H[0, 1] ** 2)
+    scale_y = np.sqrt(H[1, 0] ** 2 + H[1, 1] ** 2)
+    if not (min_scale < scale_x < max_scale and min_scale < scale_y < max_scale):
+        return False
+    perspective = np.linalg.norm(H[2, :2])
+    if perspective > max_perspective:
+        return False
+    return True
+
+
 def homography_translation_px(H: np.ndarray, image_size: tuple[int, int]) -> np.ndarray:
     """Зсув центру кадру під дією гомографії H (prev -> curr), у пікселях.
     Правильніше за читання H[0,2]/H[1,2] напряму, бо враховує й
