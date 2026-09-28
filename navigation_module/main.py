@@ -48,6 +48,25 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 # from stargps_handler import StarGPSHandler, GPSRecord, Arc4Hysteresis, run_cmad
 from stargps_handler import StarGPSHandler, GPSRecord
+
+# 2026-09-28: наш власний EKF (vision_module/inertia/ekf_estimator.py) для
+# докочування Starlink-викидів — НЕ EKF ArduPilot/FC. Причина: ArduPilot-EKF
+# сам може "зійти з розуму" (спостерігались повідомлення про несправний
+# EKF в mavlink-логах, GPS-спуф чи інші фактори здатні його зіпсувати), а
+# ми хочемо, щоб докочування на це не залежало. Підхід підтверджено
+# візуально на 2 реальних польотах (navigation_module/gps_smoothing_eval,
+# route_filtered_visioninertia.py) — EKF скидається на кожній прийнятій
+# Starlink-точці (дрейф лише на самому провалі, не увесь політ) і показав
+# ту саму якість, що й проста швидкість FC, без залежності від ArduPilot.
+#
+# ВАЖЛИВО (repo vs deployed): ekf_estimator.py/imu_math.py — канонічні
+# файли з vision_module/inertia/, тут лише імпортуються по шляху. На РПі
+# (/opt/sirena-navigation/) вони мають лежати ЯК КОПІЯ поряд з main.py
+# (той самий venv, той самий numpy) — якщо оригінали у vision_module/inertia/
+# зміняться, копію на РПі треба оновити вручну, деплой сам не синхронізує.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "vision_module" / "inertia"))
+from ekf_estimator import EKFConfig, EKFEstimator
+from imu_math import mg_to_ms2
 # Налаштування логування
 logging.basicConfig(
     level=logging.INFO,
@@ -70,6 +89,13 @@ STARLINK_FAIL_THRESHOLD = 3      # к-ть фейлів gRPC поспіль до
 # Поріг узятий з запасом над STARLINK_POLL_SEC (1с) — кілька пропущених
 # опитувань це вже не джиттер.
 STARLINK_STALE_SEC = 4.0
+# 2026-09-28: наш EKF (self._our_ekf) рахує позицію лише поки реально
+# прилітають ATTITUDE+RAW_IMU від FC. Якщо FC-лінк відвалиться — предикт
+# просто перестає викликатись, і `.position` тихо застигає на місці
+# (0,0,0 відносно останнього скиду) — це не гірше за старий "freeze", АЛЕ
+# явно перевіряємо вік останнього предикту, щоб не докочуватись на
+# завідомо мертвих даних без жодного попередження в лог.
+OUR_EKF_STALE_SEC = 2.0
 GPS_AZ_DIFF_THRE       = 20.0    # max відхилення азимуту від середнього (°)
 GPS_STDEV_AZ_THRE      = 8.0     # max кружне σ азимуту (°)
 GPS_STDEV_SPEED_THRE   = 15.0    # max σ швидкості (м/с)
@@ -128,6 +154,29 @@ class MavLinkGPSHub:
         self.starlink_max_speed_mps = config.STARLINK_MAX_SPEED_MPS
         # self.arc4_hyst = Arc4Hysteresis()
         self._starlink_samples = deque(maxlen=self.starlink_filter_window)
+
+        # 2026-09-28: наш власний EKF (vision_module/inertia/ekf_estimator.py,
+        # НЕ EKF ArduPilot) для інерційного докочування під час викидів
+        # Starlink. Скидається на нуль на кожній ПРИЙНЯТІЙ Starlink-точці
+        # (_filter_starlink_location) — вільно інтегрує лише на самому
+        # провалі. Живиться ATTITUDE+RAW_IMU з mavlink_proxy_worker(),
+        # незалежно від GLOBAL_POSITION_INT/EKF FC (лише relative_alt звідти
+        # йде в update_baro — суто вертикальний канал, на lat/lon не впливає).
+        self._our_ekf = EKFEstimator(EKFConfig())
+        self._our_ekf.reset(position=[0.0, 0.0, 0.0], velocity=[0.0, 0.0, 0.0])
+        self._imu_roll = 0.0
+        self._imu_pitch = 0.0
+        self._imu_yaw = 0.0
+        self._imu_acc = [0.0, 0.0, 0.0]
+        self._imu_has_attitude = False
+        self._imu_has_acc = False
+        self._imu_predict_last_t: float = 0.0
+        self._imu_last_update_t: float = 0.0  # для OUR_EKF_STALE_SEC
+        self._imu_baro_alt: float = 0.0
+        self._imu_baro_offset: float = 0.0
+        self._starlink_inertial_lat: Optional[float] = None
+        self._starlink_inertial_lon: Optional[float] = None
+        self._starlink_inertial_time: float = 0.0
 
         self.priority = gps_priority.GPSPriority(
             manual_timeout_sec=self.manual_hold_sec,
@@ -421,9 +470,10 @@ class MavLinkGPSHub:
                                 f.write(json.dumps(data) + "\n")
 
                         if location and location.get("available"):
-                            # 1. Оригінальний фільтр (moving average + outlier rejection)
-                            # filtered = self._filter_starlink_location(location)
-                            filtered = location
+                            # Ковзне середнє + відсічення викидів + інерційне
+                            # докочування на викидах — увімкнено 2026-09-28,
+                            # див. navigation_module/gps_smoothing_eval.
+                            filtered = self._filter_starlink_location(location)
                             with self.lock:
                                 self.starlink_available = True
                                 self.last_starlink_data = location
@@ -509,9 +559,40 @@ class MavLinkGPSHub:
         dlon_m = (lon2 - lon1) * 111320.0
         return (dlat_m * dlat_m + dlon_m * dlon_m) ** 0.5
 
+    def _ekf_predict_step(self) -> None:
+        """Викликається з mavlink_proxy_worker() на кожен ATTITUDE/RAW_IMU —
+        тобто на швидкості приходу цих повідомлень з FC (типово ~10Гц),
+        НЕ на швидкості Starlink (1Гц). Це і є наш EKF, що постійно "тримає
+        хід" дрона між Starlink-фіксами, незалежно від EKF ArduPilot."""
+        if not (self._imu_has_attitude and self._imu_has_acc):
+            return
+        now = time.time()
+        with self.lock:
+            dt = 0.0 if self._imu_predict_last_t == 0.0 else min(max(now - self._imu_predict_last_t, 0.0), 0.5)
+            self._imu_predict_last_t = now
+            self._our_ekf.predict(self._imu_roll, self._imu_pitch, self._imu_yaw, self._imu_acc, dt)
+            self._our_ekf.update_baro(self._imu_baro_alt, self._imu_baro_offset)
+            self._imu_last_update_t = now
+
     def _filter_starlink_location(self, location: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Згладжує координати Starlink ковзним середнім та відсікає викиди за відстанню та швидкістю.
+        Згладжує координати Starlink ковзним середнім та відсікає викиди за
+        відстанню та швидкістю.
+
+        2026-09-28: на викиді раніше просто "заморожували" вихід на
+        попередньому середньому. Порівняння на реальних польотах
+        (navigation_module/gps_smoothing_eval, 2 польоти) показало, що
+        інерційне докочування дає помітно плавніший трек саме в моменти
+        викидів. Перша версія бралась за швидкість FC (GLOBAL_POSITION_INT.
+        vx/vy) — працювало, але залежало від EKF ArduPilot, який сам може
+        "зійти з розуму" (GPS-спуф, збої — саме такі повідомлення були в
+        mavlink-логах). Тому докочування тепер рахує НАШ ВЛАСНИЙ EKF
+        (self._our_ekf, vision_module/inertia/ekf_estimator.py) з сирих
+        ATTITUDE+RAW_IMU — жодної залежності від EKF ArduPilot чи GPS FC.
+        EKF скидається на нуль на кожній ПРИЙНЯТІЙ Starlink-точці (дрейф
+        накопичується лише до наступного викиду), швидкість при скиді
+        перераховується з різниці двох останніх довірених точок — та сама
+        схема, підтверджена в route_filtered_visioninertia.py.
         """
         try:
             lat  = float(location.get("latitude"))
@@ -525,6 +606,7 @@ class MavLinkGPSHub:
             if alt < -200.0 or alt > 10000.0:
                 raise ValueError("invalid altitude")
 
+            is_outlier = False
             if len(self._starlink_samples) > 0:
                 prev   = self._starlink_samples[-1]
                 dist_m = self._approx_distance_m(prev["latitude"], prev["longitude"], lat, lon)
@@ -544,12 +626,17 @@ class MavLinkGPSHub:
                     self._starlink_samples.clear()
                     self._starlink_samples.append({"latitude": lat, "longitude": lon,
                                                     "altitude": alt, "gps_sats": sats, "time": now_t})
+                    self._starlink_inertial_lat = lat
+                    self._starlink_inertial_lon = lon
+                    self._starlink_inertial_time = now_t
                 # Фільтрація
                 elif (dist_m > self.starlink_pos_jump_max_m
                         or d_alt > self.starlink_alt_jump_max_m
                         or speed_mps > self.starlink_max_speed_mps):
+                    is_outlier = True
                     logger.warning(
-                        f"Starlink outlier rejected: dist={dist_m:.1f}m, speed={speed_mps:.1f}m/s (dt={dt:.3f}s), dAlt={d_alt:.1f}m"
+                        f"Starlink outlier rejected: dist={dist_m:.1f}m, speed={speed_mps:.1f}m/s "
+                        f"(dt={dt:.3f}s), dAlt={d_alt:.1f}m — докочуюсь інерційно"
                     )
                 else:
                     self._starlink_samples.append({"latitude": lat, "longitude": lon,
@@ -557,6 +644,33 @@ class MavLinkGPSHub:
             else:
                 self._starlink_samples.append({"latitude": lat, "longitude": lon,
                                                 "altitude": alt, "gps_sats": sats, "time": now_t})
+                self._starlink_inertial_lat = lat
+                self._starlink_inertial_lon = lon
+                self._starlink_inertial_time = now_t
+
+            if is_outlier:
+                with self.lock:
+                    north_m, east_m, _ = self._our_ekf.position
+                    ekf_age = now_t - self._imu_last_update_t if self._imu_last_update_t else float("inf")
+                # Немає свіжого предикту (FC-лінк відвалився, чи ATTITUDE/RAW_IMU
+                # ще жодного разу не прилітали) — докочуватись НЕМА чим,
+                # лишаємось на місці (старий "freeze"), а не їдемо застарілим
+                # .position з часів, коли предикт ще оновлювався.
+                if ekf_age > OUR_EKF_STALE_SEC:
+                    logger.debug(
+                        f"Starlink outlier: наш EKF застарів ({ekf_age:.1f}s) — без інерції, freeze"
+                    )
+                    north_m = east_m = 0.0
+                if self._starlink_inertial_lat is not None:
+                    self._starlink_inertial_lat += north_m / 110_540.0
+                    self._starlink_inertial_lon += east_m / (
+                        111_320.0 * math.cos(math.radians(self._starlink_inertial_lat))
+                    )
+                self._starlink_inertial_time = now_t
+                if self._starlink_inertial_lat is not None:
+                    return {"latitude": self._starlink_inertial_lat, "longitude": self._starlink_inertial_lon,
+                            "altitude": alt, "gps_sats": sats, "available": True}
+                return self.last_starlink_data or location
 
             if len(self._starlink_samples) == 0:
                 return self.last_starlink_data or location
@@ -566,6 +680,27 @@ class MavLinkGPSHub:
             lon_avg = sum(p["longitude"] for p in self._starlink_samples) / n
             alt_avg = sum(float(p.get("altitude", 0.0)) for p in self._starlink_samples) / n
             sats_avg = int(round(sum(int(p.get("gps_sats", 0)) for p in self._starlink_samples) / n))
+
+            # Скидаємо наш EKF на нуль САМЕ на щойно підтвердженій точці —
+            # дрейф тепер накопичується лише до наступного викиду. Швидкість
+            # перераховуємо з різниці двох останніх довірених точок (реальний
+            # еталон руху), а не несемо власну накопичену EKF-швидкість без
+            # корекції — та тихо розходиться впродовж усього польоту.
+            prev_lat, prev_lon, prev_t2 = self._starlink_inertial_lat, self._starlink_inertial_lon, self._starlink_inertial_time
+            if prev_lat is not None and prev_t2 and now_t > prev_t2:
+                dt_anchor = now_t - prev_t2
+                north_m = (lat_avg - prev_lat) * 110_540.0
+                east_m = (lon_avg - prev_lon) * 111_320.0 * math.cos(math.radians(prev_lat))
+                vel = [north_m / dt_anchor, east_m / dt_anchor, 0.0]
+            else:
+                vel = [0.0, 0.0, 0.0]
+            with self.lock:
+                self._imu_baro_offset = self._imu_baro_alt
+                self._our_ekf.reset(position=[0.0, 0.0, 0.0], velocity=vel)
+
+            self._starlink_inertial_lat = lat_avg
+            self._starlink_inertial_lon = lon_avg
+            self._starlink_inertial_time = now_t
 
             return {"latitude": lat_avg, "longitude": lon_avg,
                     "altitude": alt_avg, "gps_sats": sats_avg, "available": True}
@@ -646,6 +781,21 @@ class MavLinkGPSHub:
                         logger.info("FC HEARTBEAT detected and forwarded to GCS")
                     if self.telemetry_snapshot:
                         self.telemetry_snapshot.update_from_msg(msg_fc)
+                    fc_msg_type = msg_fc.get_type()
+                    if fc_msg_type == "ATTITUDE":
+                        self._imu_roll = msg_fc.roll
+                        self._imu_pitch = msg_fc.pitch
+                        self._imu_yaw = msg_fc.yaw
+                        self._imu_has_attitude = True
+                        self._ekf_predict_step()
+                    elif fc_msg_type == "RAW_IMU":
+                        self._imu_acc = mg_to_ms2([msg_fc.xacc, msg_fc.yacc, msg_fc.zacc])
+                        self._imu_has_acc = True
+                        self._ekf_predict_step()
+                    elif fc_msg_type == "GLOBAL_POSITION_INT":
+                        # Лише вертикальний канал (update_baro) — на lat/lon
+                        # докочування не впливає, EKF ArduPilot тут ні до чого.
+                        self._imu_baro_alt = msg_fc.relative_alt / 1000.0
                     self.bridge.send_to_gcs(msg_fc)
 
                     # === ТОЧКОВА ІН'ЄКЦІЯ STARLINK ===
@@ -673,16 +823,29 @@ class MavLinkGPSHub:
                 logger.warning(f"MAVLink proxy worker помилка: {e}")
                 time.sleep(0.01)
     def send_starlink_to_server(self, last_rec):
-        """Пряма відправка стандартною командою pymavlink."""
-        if self.bridge and self.bridge.mav_gcs:
+        """Пряма відправка стандартною командою pymavlink.
+
+        2026-09-28: раніше йшло через self.bridge.mav_gcs (udpin:0.0.0.0:14550) —
+        порт, на який у mav-router.conf НЕМАЄ жодного endpoint'у, тож
+        mav_gcs ніколи не отримував жодного пакета і не знав, куди слати
+        (pymavlink на udpin шле лише туди, звідки вже щось отримав).
+        Результат: send() виконувався без помилок, але дані нікуди не
+        долітали — жодного NAMED_VALUE_FLOAT ніколи не було в БД адмінки.
+        mav_fc (udpin:0.0.0.0:14553) — той самий сокет, яким уже успішно
+        користується send_gps_input(): mavlink-router сам активно штовхає
+        туди пакети (endpoint "navigation_service"), тож зворотна адреса
+        відома, і відправлене звідси mavlink-router розносить по всій
+        mesh-мережі (включно з telemetry_publisher/14562, звідки це вже
+        підхоплює telemetry-sender)."""
+        if self.bridge and self.bridge.mav_fc:
             ts = int(time.time() * 1000) & 0xffffffff
 
-            self.bridge.mav_gcs.mav.named_value_float_send(
+            self.bridge.mav_fc.mav.named_value_float_send(
                 ts,
                 b'STRLNK_LAT',  # Передаємо явно як байти
                 float(last_rec.lat)
             )
-            self.bridge.mav_gcs.mav.named_value_float_send(
+            self.bridge.mav_fc.mav.named_value_float_send(
                 ts,
                 b'STRLNK_LON',
                 float(last_rec.lon)
