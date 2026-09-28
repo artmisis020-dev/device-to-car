@@ -1,0 +1,21 @@
+[Unit]
+Description=Sirena — моніторинг з'єднання з РПі (ping + WireGuard handshake + loadavg)
+After=network-online.target sirena-admin.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+# root потрібен лише для `wg show` (читання стану WireGuard) — ping до
+# однієї адреси не вимагає root на сучасних дистрибутивах (unprivileged
+# ICMP), але `wg show` без root на деяких системах повертає порожньо.
+EnvironmentFile=-/opt/sirena-admin/.env
+ExecStart=/opt/sirena-admin/.venv/bin/python3 /opt/sirena-admin/admin_module/monitoring/rpi_connectivity_monitor.py
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sirena-rpi-monitor
+
+[Install]
+WantedBy=multi-user.target

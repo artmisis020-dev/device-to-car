@@ -1,0 +1,16 @@
+[Unit]
+Description=Sirena — незалежний спостерігач за дублікатами telemetry-sender (пише на диск, переживає перезавантаження)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /opt/sirena-telemetry/telemetry_watchdog.py
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=telemetry-watchdog
+
+[Install]
+WantedBy=multi-user.target
