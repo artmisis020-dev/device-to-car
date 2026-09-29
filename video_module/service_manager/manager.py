@@ -11,6 +11,22 @@ from config import SERVICES, DEFAULT_CONFIG, VIDEO_CONFIG_PATH
 log = logging.getLogger(__name__)
 
 
+def _resolve_mode(key: str) -> str:
+    """SERVICES зараз має рівно один запис (SRT — єдиний відеодвигун,
+    "mode" — застарілий механізм ще з часів webrtc/rtsp). Якщо збережене
+    чи передане значення "mode" не збігається з ключем у SERVICES
+    (напр. після перейменування ключа чи застарілого .env-дефолту), не
+    валимо запит користувача помилкою "Unknown service" — підставляємо
+    єдиний наявний рушій і логуємо попередження, щоб слід був видний."""
+    if key in SERVICES:
+        return key
+    if len(SERVICES) == 1:
+        (only_key,) = SERVICES.keys()
+        log.warning(f"Невідомий video mode '{key}' — використовую єдиний наявний '{only_key}'")
+        return only_key
+    return key
+
+
 class ServiceManager:
     def __init__(self):
         self._lock = threading.Lock()
@@ -76,6 +92,7 @@ class ServiceManager:
         return cameras or [("No camera found", "")]
 
     def get_service_status(self, key: str) -> Dict:
+        key = _resolve_mode(key)
         units = SERVICES.get(key, {}).get("systemd_units", [])
         if not units:
             return {"active": False, "error": "Unknown service"}
@@ -91,6 +108,7 @@ class ServiceManager:
             return {"active": False, "error": str(e)}
 
     def start_service(self, key: str) -> Dict:
+        key = _resolve_mode(key)
         cfg = SERVICES.get(key, {})
         units = cfg.get("systemd_units", [])
         if not units:
@@ -125,6 +143,7 @@ class ServiceManager:
             return {"success": False, "error": str(e)}
 
     def stop_service(self, key: str) -> Dict:
+        key = _resolve_mode(key)
         units = SERVICES.get(key, {}).get("systemd_units", [])
         if not units:
             return {"success": False, "error": "Unknown service"}
