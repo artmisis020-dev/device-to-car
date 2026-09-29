@@ -6,10 +6,15 @@ After=network.target
 User=sirena
 WorkingDirectory=/opt/sirena-admin
 EnvironmentFile=/opt/sirena-admin/.env
+# --threads: кожен відкритий SSE-стрім (/telemetry/live, одна вкладка
+# адмінки) займає потік на весь час з'єднання; 8 вичерпувалось уже за
+# кілька одночасних вкладок/пристроїв, і сервер переставав відповідати
+# навіть на звичайне завантаження сторінки, поки "мертві" (розірвані без
+# чистого закриття) з'єднання не спливали по ОС-таймауту.
 ExecStart=/opt/sirena-admin/.venv/bin/gunicorn \
     --workers 1 \
     --worker-class gthread \
-    --threads 8 \
+    --threads 64 \
     --bind 0.0.0.0:8080 \
     --worker-tmp-dir /tmp \
     "admin_module.main:app"
