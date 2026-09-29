@@ -11,6 +11,8 @@ import sys
 import signal
 import threading
 import logging
+import json
+import urllib.request
 from pathlib import Path
 
 import gi
@@ -159,6 +161,29 @@ def create_pipeline_string() -> "tuple[str, bool]":
     return pipeline_str, is_software_encoder
 
 
+# ТИМЧАСОВО (діагностика мережі, не постійна фіча): fire-and-forget звіт
+# внутрішнього стану AdaptiveBitrateController на admin-сервер, щоб звести
+# його в один лог разом зі стороною MediaMTX і клієнта. Видалити разом з
+# відповідним ендпоінтом/сервісом на адмін-стороні, коли аналіз завершено.
+def _report_bitrate_state(payload: dict) -> None:
+    def _send():
+        try:
+            device_id = registry.get_hardware_id()
+            data = json.dumps({**payload, "device_id": device_id}).encode()
+            req = urllib.request.Request(
+                f"{config.REGISTRY_URL}/api/video/report-bitrate/{device_id}",
+                data=data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+        except Exception:
+            pass  # best-effort — не має права зачепити живий пайплайн
+
+    threading.Thread(target=_send, daemon=True).start()
+
+
 class AdaptiveBitrateController:
     """Тримає bitrate живого x264enc у межах, які реально проходять через
     SRT-лінк. Орієнтується на власну оцінку пропускної здатності SRT
@@ -210,6 +235,7 @@ class AdaptiveBitrateController:
         if new_dropped > 0:
             log.warning(f"[AdaptiveBitrate] +{new_dropped} втрачених пакетів за інтервал — різко знижую")
             self._apply(self.current_kbps * self.DROP_CUT_FACTOR)
+            self._report(bandwidth_mbps, new_dropped, new_retransmitted)
             return True
 
         if bandwidth_mbps <= 0:
@@ -222,7 +248,18 @@ class AdaptiveBitrateController:
         else:
             self._apply(min(bw_kbps, self.current_kbps * self.RECOVERY_STEP_FACTOR, self.target_kbps))
 
+        self._report(bandwidth_mbps, new_dropped, new_retransmitted)
         return True
+
+    def _report(self, bandwidth_mbps: float, dropped_delta: int, retransmitted_delta: int) -> None:
+        _report_bitrate_state({
+            "bandwidth_mbps": bandwidth_mbps,
+            "dropped_delta": dropped_delta,
+            "retransmitted_delta": retransmitted_delta,
+            "current_kbps": self.current_kbps,
+            "target_kbps": self.target_kbps,
+            "min_kbps": self.min_kbps,
+        })
 
 
 class BusMessageHandler:

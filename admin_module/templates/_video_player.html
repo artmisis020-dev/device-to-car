@@ -818,6 +818,33 @@
       const e2e = computeE2eLatencyMs(video);
       setText('svpStatE2eLatency', e2e != null ? `${e2e.toFixed(0)} ms` : '-');
     }
+
+    // ТИМЧАСОВО — лог для аналізу наскрізної затримки (діагностика, не
+    // постійна фіча). Читаємо вже відрендерені значення плиток (простіше,
+    // ніж піднімати всі локальні змінні з блоків вище), парсимо число з
+    // тексту виду "97 ms"/"1500 kbps". Fire-and-forget — лог не має права
+    // гальмувати чи ламати оновлення статистики.
+    const numFrom = id => {
+      const t = el(id) ? el(id).textContent : '';
+      const v = parseFloat(t);
+      return Number.isFinite(v) ? v : null;
+    };
+    fetch(`/api/devices/${deviceId}/video/latency-log`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        timestamp: new Date().toISOString(),
+        e2e_latency_ms: numFrom('svpStatE2eLatency'),
+        jitter_buffer_ms: numFrom('svpStatLatency'),
+        jitter_ms: numFrom('svpStatJitter'),
+        decode_ms: numFrom('svpStatDecode'),
+        rtt_ms: numFrom('svpStatRtt'),
+        bitrate_kbps: numFrom('svpStatBitrate'),
+        fps: numFrom('svpStatFps'),
+        resolution: el('svpStatRes') ? el('svpStatRes').textContent : null,
+        connection_state: pc ? pc.connectionState : null,
+      }),
+    }).catch(() => {});
   }
 
   async function toggleRecord() {
