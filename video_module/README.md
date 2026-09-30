@@ -14,7 +14,6 @@ SRT → MediaMTX на адмін-сервері → WebRTC (WHEP) → брауз
                                                         │ WHEP
 Браузер (admin_module/templates/_video_player.html) ◄───┘
 ```
-
 | Файл | Що робить |
 |---|---|
 | `srt_relay_capture.py` | будує й запускає пайплайн, підключає мітку часу, склейку TS і автобітрейт |
