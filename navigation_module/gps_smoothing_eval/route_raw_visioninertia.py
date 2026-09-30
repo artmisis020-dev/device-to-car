@@ -66,8 +66,12 @@ def compute(raw_points: list[RawPoint], imu_rows: list[ImuRow]) -> list[tuple[fl
 
         if is_outlier:
             north_m, east_m, _ = ekf.position
-            anchor_lat, anchor_lon = geo_utils.add_ne_offset_m(anchor_lat, anchor_lon, north_m, east_m)
-            out.append((p.t, anchor_lat, anchor_lon))
+            # 2026-09-30: БЕЗ зміни якоря. EKF на викиді не скидається, тож
+            # ekf.position — зміщення від ЯКОРЯ (останньої довіреної точки);
+            # раніше тут було anchor += position на КОЖНОМУ викиді серії —
+            # зміщення з моменту скиду додавалось повторно (подвійний облік).
+            dr_lat, dr_lon = geo_utils.add_ne_offset_m(anchor_lat, anchor_lon, north_m, east_m)
+            out.append((p.t, dr_lat, dr_lon))
             continue
 
         # Швидкість для скиду — з різниці двох останніх ДОВІРЕНИХ сирих точок

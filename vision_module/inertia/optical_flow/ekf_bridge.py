@@ -37,7 +37,11 @@ def flow_velocity_to_enu(vx_forward: float, vy_right: float,
     R = rotation_matrix(roll_rad, pitch_rad, yaw_rad)
     R_enu = R.copy()
     R_enu[2, :] = -R_enu[2, :]
-    v_body = np.array([vx_forward, -vy_right, 0.0])  # body FRD: right = +Y, тут vy_right вже "вправо"
+    # body FRD: right = +Y, а vy_right вже "вправо" — БЕЗ інверсії.
+    # 2026-09-30: тут стояло -vy_right (коментар і код суперечили один
+    # одному) — рух вправо на yaw=0 давав East<0, тобто бокова швидкість
+    # з потоку йшла в EKF з протилежним знаком.
+    v_body = np.array([vx_forward, vy_right, 0.0])
     return R_enu @ v_body
 
 

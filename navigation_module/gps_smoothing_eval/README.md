@@ -6,6 +6,13 @@ Starlink GPS (сирі точки / фільтр / фільтр+інерція /
 ("фільтр + інерційне докочування"), який тепер уже в продакшн-коді
 (`navigation_module/main.py:_filter_starlink_location()`).
 
+**2026-09-30:** схему "ковзне середнє + скид EKF" у продакшні замінено на
+`InertialNavigator` (vision_module/inertia/inertial_nav.py);
+кількісна звірка — `vision_module/inertia/starlink_eval.py`, яка **читає
+`data/` з цього каталогу** (flight_a/flight_b + starlink_raw_data.json).
+Перш ніж видаляти каталог — перенеси `data/` (або передай `--data`).
+У `route_*_visioninertia.py` виправлено подвійний облік на серії викидів.
+
 **Не є частиною продакшену.** Не імпортується жодним робочим сервісом.
 Після того як обраний підхід буде підтверджено на живих польотах —
 видалити весь каталог `gps_smoothing_eval/` (код, `data/`, `output/`).

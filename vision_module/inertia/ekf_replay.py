@@ -97,7 +97,9 @@ def _estimate_wind(gps_positions, t_all, i, roll, pitch, yaw, airspeed_ms, win_s
 def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
         use_baro=True, use_zupt=None, use_nhc=None, use_airspeed=None,
         video_path=None, use_flow=None, use_keypoints: bool = False,
-        config: EKFConfig | None = None, start_idx=0, max_dt=0.5, verbose=True):
+        config: EKFConfig | None = None, start_idx=0, max_dt=0.5, verbose=True,
+        acc_rate_hz: float | None = None, att_rate_hz: float | None = None,
+        air_data=None, end_idx: int | None = None):
     """Прогонити лог через EKFEstimator з періодичними псевдо-GPS/visual
     корекціями (reset_interval_s) — щоб виміряти, наскільки далеко "уносить"
     траєкторію МІЖ фіксами (а не за весь лог одразу, як у replay.run()).
@@ -133,6 +135,17 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
     БУДЬ-ЯКОГО апарата — вимірює швидкість відносно землі напряму, без
     залежності від вітру. use_flow=None (авто) — увімкнено, щойно заданий
     video_path; явний False вимикає навіть при наявному відео.
+
+    acc_rate_hz / att_rate_hz: імітація нижчої частоти надходження
+    RAW_IMU / ATTITUDE (sample-and-hold, як на борту: останнє отримане
+    значення тримається до наступного). Потрібно, щоб на
+    високочастотному dataflash-лозі заміряти, скільки точності губиться на
+    бортових 2Гц RAW_IMU / 10Гц ATTITUDE (mavlink_client.MESSAGE_RATES до
+    2026-09-30). None — без обмеження.
+
+    air_data: опційний air_data.AirDataCalibrator (лише літак з піто) —
+    оцінює масштаб піто, похибку курсу й вітер на фіксах, КОЛИ є розворот,
+    і між фіксами подає повну 2D-швидкість з повітряної в update_velocity_ne.
 
     use_keypoints: явний вимикач (НЕ auto, на відміну від use_flow) —
     коли True і є flow_source, замість OpticalFlowEstimator
@@ -176,7 +189,7 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
         )
 
     t_all = np.array([float(r["timestamp"]) for r in rows])
-    n = len(rows)
+    n = len(rows) if end_idx is None else min(end_idx, len(rows))
 
     ekf = EKFEstimator(config or EKFConfig())
     baro_offset = float(rows[start_idx].get("baro_alt") or 0.0)
@@ -212,10 +225,22 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
     timestamps, positions, errors = [], [], []
     interval_pct, interval_max_err, interval_dist = [], [], []
 
+    held_acc_t = held_att_t = -np.inf
+    held_acc = held_att = None
+    last_air_t = -np.inf
+    air_applied_count = 0
     for i in range(start_idx, n):
         row = rows[i]
         roll = deg_to_rad(float(row["roll"])); pitch = deg_to_rad(float(row["pitch"])); yaw = deg_to_rad(float(row["yaw"]))
         acc_body = mg_to_ms2([float(row["acc_x"]), float(row["acc_y"]), float(row["acc_z"])])
+        if acc_rate_hz:
+            if t_all[i] - held_acc_t >= 1.0 / acc_rate_hz or held_acc is None:
+                held_acc, held_acc_t = acc_body, t_all[i]
+            acc_body = held_acc
+        if att_rate_hz:
+            if t_all[i] - held_att_t >= 1.0 / att_rate_hz or held_att is None:
+                held_att, held_att_t = (roll, pitch, yaw), t_all[i]
+            roll, pitch, yaw = held_att
         gyro_body = np.array([float(row["gyro_x"]), float(row["gyro_y"]), float(row["gyro_z"])]) / 1000.0
         baro_alt = float(row.get("baro_alt") or 0.0)
         airspeed_ms = float(row.get("airspeed_ms") or 0.0)
@@ -230,8 +255,16 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
             ekf.maybe_update_zupt(acc_body, gyro_body)
         if use_nhc:
             ekf.update_nhc(roll, pitch, yaw)
-        if use_airspeed and airspeed_ms > 0.5:
+        if use_airspeed and airspeed_ms > 0.5 and air_data is None:
             ekf.update_airspeed(airspeed_ms, roll, pitch, yaw, wind_enu=wind_enu)
+        if air_data is not None and airspeed_ms > 5.0 and t - last_air_t >= 0.2:
+            # 5Гц, а не на кожному IMU-семплі: вимір сильно корельований у
+            # часі (похибка вітру/масштабу), 50Гц "переконали" б фільтр, що
+            # він точніший, ніж є насправді.
+            ekf.update_velocity_ne(air_data.ground_velocity_ne(airspeed_ms, pitch, yaw),
+                                   std=air_data.measurement_std())
+            last_air_t = t
+            air_applied_count += 1
         if flow_source is not None:
             result = flow_source.frame_pair_at(t)
             if result is not None:
@@ -262,7 +295,10 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
             interval_max_err.append(cur_max_err)
             interval_dist.append(dist)
             ekf.update_position(np.zeros(3), std=pos_std)
-            ekf.update_velocity(_gps_velocity_at(gps_positions, t_all, i), std=vel_std)
+            v_fix = _gps_velocity_at(gps_positions, t_all, i)
+            ekf.update_velocity(v_fix, std=vel_std)
+            if air_data is not None:
+                air_data.add_fix(t, airspeed_ms, pitch, yaw, v_fix[0:2])
             if use_airspeed:
                 wind_enu = _estimate_wind(gps_positions, t_all, i, roll, pitch, yaw, airspeed_ms)
             baro_offset = baro_alt
@@ -299,6 +335,7 @@ def run(csv_path, reset_interval_s=10.0, pos_std=0.5, vel_std=0.2,
         "interval_max_err": np.array(interval_max_err),
         "interval_dist": np.array(interval_dist),
         "flow_applied_count": flow_applied_count,
+        "air_applied_count": air_applied_count,
     }
 
 
