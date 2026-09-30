@@ -155,6 +155,9 @@ ADAPTIVE_BITRATE=1
 ADAPTIVE_BITRATE_INTERVAL_MS=250
 ADAPTIVE_BITRATE_MIN_KBPS=150
 ADAPTIVE_BITRATE_STARLINK_GUARD=auto
+# Яка CSI-камера (шлейф) — нижня: підрядок id з `rpicam-hello --list-cameras`
+# (шина). Решта CSI-камер з'являються в списку камер як передні.
+#SIRENA_LOWERCAM_CAMERA=i2c@80000
 OSD_MODE=hud-lite
 SIRENA_TELEMETRY_SNAPSHOT_PATH=/tmp/sirena_mavlink_snapshot.json
 MAVLINK_ENDPOINT=udp:127.0.0.1:14562

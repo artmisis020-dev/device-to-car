@@ -89,6 +89,17 @@ X264_SPEED_PRESET = os.environ.get("X264_SPEED_PRESET", "ultrafast").strip().low
 # тримає кожен кадр близько до середнього розміру ціною якості I-кадрів.
 X264_VBV_BUF_MS = env_int("X264_VBV_BUF_MS", 100)
 
+# Перевернути картинку на 180° для камер, чий VIDEO_DEVICE містить один з
+# підрядків (через кому), напр. "i2c@80000" — CSI-модуль, змонтований догори
+# дриґом. videoflip у I420 до мітки часу (~1мс на 720p); діє лише на ці
+# камери, тож перемикання на іншу (тепловізор тощо) її не перевертає.
+VIDEO_ROTATE_180 = [s.strip() for s in os.environ.get("VIDEO_ROTATE_180", "").split(",") if s.strip()]
+
+
+def rotate_180() -> bool:
+    return any(s in DEVICE for s in VIDEO_ROTATE_180)
+
+
 # Потоки videoconvert (YUY2/MJPEG-декод → I420). RPi5 — 4 ядра, частину
 # забирає x264 (sliced-threads).
 VIDEOCONVERT_THREADS = env_int("VIDEOCONVERT_THREADS", 2)
@@ -147,6 +158,9 @@ VIDEO_VERSION = os.environ.get("SIRENA_VIDEO_RELAY_VERSION", "v1.0.0-relay")
 
 
 def check_device_exists() -> bool:
+    if DEVICE.startswith("libcamera:"):  # CSI-камера (див. cameras_services.py)
+        from cameras_services import csi_sensor_present
+        return csi_sensor_present(DEVICE)
     return os.path.exists(DEVICE)
 
 

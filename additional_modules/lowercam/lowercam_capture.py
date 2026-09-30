@@ -78,6 +78,12 @@ HEIGHT = int(os.environ.get("SIRENA_LOWERCAM_HEIGHT", "1080"))
 FPS = int(os.environ.get("SIRENA_LOWERCAM_FPS", "30"))
 BITRATE = int(os.environ.get("SIRENA_LOWERCAM_BITRATE", "10000000"))
 
+# Яка з CSI-камер — нижня: підрядок її id у libcamera (шина), напр.
+# "i2c@80000" (дивись `rpicam-hello --list-cameras`). Без нього rpicam-vid
+# бере камеру 0, а індекси libcamera зсуваються, щойно на другий роз'єм
+# підключили ще одну (передню) камеру — нижня тоді мовчки знімає передню.
+LOWERCAM_CAMERA = os.environ.get("SIRENA_LOWERCAM_CAMERA", "").strip()
+
 # Перегляд — лише перевірити, що камера працює: мала роздільність/бітрейт.
 PREVIEW_WIDTH = int(os.environ.get("SIRENA_LOWERCAM_PREVIEW_WIDTH", "640"))
 PREVIEW_HEIGHT = int(os.environ.get("SIRENA_LOWERCAM_PREVIEW_HEIGHT", "360"))
@@ -122,6 +128,26 @@ def _rpicam_supports(*options: str) -> dict:
     return {opt: (opt in text) for opt in options}
 
 
+def _camera_args() -> list[str]:
+    """["--camera", N] для закріпленої нижньої камери. Якщо її задано, але
+    зараз не видно — не стартуємо (краще без запису, ніж запис не тієї камери)."""
+    if not LOWERCAM_CAMERA:
+        return []
+    try:
+        out = subprocess.run(["rpicam-hello", "--list-cameras"], capture_output=True, text=True, timeout=15)
+        listing = out.stdout + out.stderr
+    except Exception as e:
+        log.error(f"не вдалось отримати список камер: {e}")
+        sys.exit(1)
+    for line in listing.splitlines():
+        m = re.match(r"\s*(\d+)\s*:\s*\S+.*\((.+)\)\s*$", line)
+        if m and LOWERCAM_CAMERA in m.group(2):
+            log.info(f"Нижня камера: {m.group(2)} (rpicam --camera {m.group(1)})")
+            return ["--camera", m.group(1)]
+    log.error(f"Нижню камеру ({LOWERCAM_CAMERA}) не знайдено серед:\n{listing.strip()}")
+    sys.exit(1)
+
+
 def _clock_sample() -> dict:
     return {
         "wall": time.time(),
@@ -151,7 +177,7 @@ def run_preview() -> None:
     log.info(f"Перегляд {PREVIEW_WIDTH}x{PREVIEW_HEIGHT}@{PREVIEW_FPS}, {PREVIEW_BITRATE} біт/с → {srt_target}")
     rpicam = subprocess.Popen(
         [
-            "rpicam-vid", "-t", "0", "--inline", "--nopreview",
+            "rpicam-vid", "-t", "0", "--inline", "--nopreview", *_camera_args(),
             "--width", str(PREVIEW_WIDTH), "--height", str(PREVIEW_HEIGHT),
             "--framerate", str(PREVIEW_FPS), "--bitrate", str(PREVIEW_BITRATE),
             "--profile", "high",
@@ -214,7 +240,7 @@ def run_record() -> None:
     sup = _rpicam_supports("--save-pts", "--metadata")
 
     cmd = [
-        "rpicam-vid", "-t", str(remaining * 1000), "--inline", "--nopreview",
+        "rpicam-vid", "-t", str(remaining * 1000), "--inline", "--nopreview", *_camera_args(),
         "--width", str(WIDTH), "--height", str(HEIGHT),
         "--framerate", str(FPS), "--bitrate", str(BITRATE),
         "--profile", "high",

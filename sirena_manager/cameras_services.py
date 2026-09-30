@@ -32,6 +32,7 @@ from __future__ import annotations
 
 
 import logging
+import os
 import re
 from pathlib import Path
 import subprocess
@@ -246,8 +247,8 @@ def list_cameras(verbose: bool = True) -> list[Camera]:
     (напр. CSI), окрім внутрішніх ISP/кодек-вузлів RPi і вузлів без реального
     сенсора."""
     if pyudev is None:
-        logger.warning("pyudev недоступний — пошук камер вимкнено")
-        return []
+        logger.warning("pyudev недоступний — пошук USB-камер вимкнено")
+        return _csi_cameras()
     ctx = pyudev.Context()
     seen_ports: set[str] = set()
     cameras: list[Camera] = []
@@ -282,6 +283,7 @@ def list_cameras(verbose: bool = True) -> list[Camera]:
             )
         )
 
+    cameras.extend(_csi_cameras())
     cameras.sort(key=lambda c: c.port)
     if verbose:
         print(f"Знайдені камери ({len(cameras)}): {[c.as_dict() for c in cameras]}")
@@ -291,6 +293,92 @@ def list_cameras(verbose: bool = True) -> list[Camera]:
         c.label = f"{c.name} ({c.port})" if counts[c.name] > 1 else c.name
 
     return cameras
+
+
+# ─── CSI-камери (шлейф) через libcamera ─────────────────────────────────────
+# Сирий Bayer з rp1-cfe v4l2src не перетравить (див. _NON_CAMERA_NAME_HINTS),
+# тож CSI-сенсори йдуть окремим шляхом: у списку вони мають path
+# "libcamera:<id камери в libcamera>", а srt_relay_capture.py для такого
+# шляху бере джерело libcamerasrc (ISP робить дебаєризацію й масштабування)
+# — решта пайплайна, включно з автобітрейтом, та сама.
+# Перелік — з sysfs (i2c-пристрої з v4l2-subdev): id у libcamera — це шлях
+# вузла device tree, миттєво й без запуску rpicam/libcamera.
+LIBCAMERA_PREFIX = "libcamera:"
+# Режими для панелі; ISP масштабує з режиму сенсора, тож будь-який з них
+# доступний. 1280x720 першим — дефолт при перемиканні (CPU/бітрейт).
+CSI_MODES = (("LIBCAMERA", 1280, 720, 30), ("LIBCAMERA", 1920, 1080, 30), ("LIBCAMERA", 640, 480, 30))
+
+
+def list_csi_sensors() -> list[tuple[str, str, str]]:
+    """[(id камери в libcamera, назва сенсора, шина "i2c@88000")] — усі
+    підключені CSI-сенсори."""
+    sensors = []
+    for dev in sorted(Path("/sys/bus/i2c/devices").glob("*")):
+        if not (dev / "video4linux").is_dir():
+            continue
+        try:
+            of_node = os.path.realpath(dev / "of_node")
+            name = (dev / "name").read_text().strip()
+        except OSError:
+            continue
+        idx = of_node.find("/base/")
+        if idx < 0:
+            continue
+        cam_id = of_node[idx:]
+        m = re.search(r"(i2c@[0-9a-fA-F]+)", cam_id)
+        sensors.append((cam_id, name, m.group(1) if m else cam_id))
+    return sensors
+
+
+def lowercam_sensor() -> str:
+    """Підрядок id CSI-камери, закріпленої за нижньою камерою
+    (additional_modules/lowercam), напр. "i2c@80000". Її не пропонуємо як
+    передню: одну камеру може тримати лише один процес."""
+    return os.environ.get("SIRENA_LOWERCAM_CAMERA", "").strip()
+
+
+def _csi_cameras() -> list[Camera]:
+    lower = lowercam_sensor()
+    cameras = []
+    for cam_id, name, bus in list_csi_sensors():
+        if lower and lower in cam_id:
+            continue
+        cameras.append(Camera(
+            id=f"csi-{bus}",
+            label="",
+            name=f"{name} CSI",
+            path=LIBCAMERA_PREFIX + cam_id,
+            port=f"csi:{bus}",
+            serial="",
+            vendor_id="",
+            model_id="",
+            modes=[list(m) for m in CSI_MODES],
+        ))
+    return cameras
+
+
+def lowercam_rpicam_args() -> list[str]:
+    """["--camera", N] для rpicam-* під закріплену нижню камеру (індекси
+    rpicam зсуваються від кількості підключених CSI-камер); [] — не задано
+    або не знайдено (тоді rpicam бере камеру 0)."""
+    lower = lowercam_sensor()
+    if not lower:
+        return []
+    try:
+        out = subprocess.run(["rpicam-hello", "--list-cameras"], capture_output=True, text=True, timeout=15)
+    except Exception:
+        return []
+    for line in (out.stdout + out.stderr).splitlines():
+        m = re.match(r"\s*(\d+)\s*:\s*\S+.*\((.+)\)\s*$", line)
+        if m and lower in m.group(2):
+            return ["--camera", m.group(1)]
+    return []
+
+
+def csi_sensor_present(path: str) -> bool:
+    if not path.startswith(LIBCAMERA_PREFIX):
+        return False
+    return any(cam_id == path[len(LIBCAMERA_PREFIX):] for cam_id, _, _ in list_csi_sensors())
 
 
 def get_default_camera() -> Camera | None:
@@ -303,7 +391,7 @@ def resolve_video_device(
 ) -> str:
     """Повертає існуючий VIDEO_DEVICE або першу знайдену USB capture камеру."""
     configured_device = (configured_device or default_device).strip()
-    if Path(configured_device).exists():
+    if Path(configured_device).exists() or csi_sensor_present(configured_device):
         return configured_device
 
     default_camera = get_default_camera()

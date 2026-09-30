@@ -17,7 +17,7 @@ import urllib.request
 from pathlib import Path
 
 import gi
-from cameras_services import resolve_video_device, video_nodes, list_formats, list_cameras, supports_mode
+from cameras_services import resolve_video_device, video_nodes, list_formats, list_cameras, supports_mode, LIBCAMERA_PREFIX
 
 gi.require_version("Gst", "1.0")
 from gi.repository import GLib, Gst
@@ -133,6 +133,7 @@ def create_pipeline_string() -> "tuple[str, bool]":
         # (раніше cairooverlay вимагав BGRx і тягнув дві повні конвертації).
         f"videoconvert n-threads={config.VIDEOCONVERT_THREADS} ! "
         f"video/x-raw,format=I420,width={config.WIDTH},height={config.HEIGHT} ! "
+        f"{'videoflip method=rotate-180 ! ' if config.rotate_180() else ''}"
         "overlaycomposition name=ts_overlay ! "
         f"{encoder_chain} ! "
         "h264parse config-interval=1 ! "
@@ -144,7 +145,15 @@ def create_pipeline_string() -> "tuple[str, bool]":
         f"srtsink name=srt_sink uri=\"{config.SIRENA_RELAY_TARGET}\" sync=false processing-deadline=0"
     )
 
-    if config.INPUT_FORMAT in ("MJPG", "JPEG"):
+    if config.DEVICE.startswith(LIBCAMERA_PREFIX):
+        # CSI-камера: сирий Bayer дебаєризує й масштабує ISP через libcamera
+        # (gstreamer1.0-libcamera); далі — той самий пайплайн.
+        raw_chain = (
+            f"libcamerasrc camera-name=\"{config.DEVICE[len(LIBCAMERA_PREFIX):]}\" ! "
+            f"video/x-raw,format=I420,width={config.WIDTH},height={config.HEIGHT},framerate={config.FPS}/1 ! "
+            "queue max-size-buffers=1 leaky=downstream ! "
+        )
+    elif config.INPUT_FORMAT in ("MJPG", "JPEG"):
         raw_chain = (
             f"v4l2src device={config.DEVICE} ! "
             f"image/jpeg,width={config.WIDTH},height={config.HEIGHT},framerate={config.FPS}/1 ! "

@@ -18,7 +18,7 @@ from typing import Dict, List
 
 from sirena_manager.utils.env import read_env, write_env
 from sirena_manager.utils.network import wireguard_ip
-from .cameras_services import list_cameras
+from .cameras_services import list_cameras, lowercam_rpicam_args
 from .config import (
     ADMIN_SERVER_URL,
     BOOT_SEQUENCE,
@@ -346,7 +346,8 @@ class SirenaSupervisor:
         tmp_path = Path("/tmp/sirena-lowercam-test.h264")
         try:
             result = subprocess.run(
-                ["rpicam-vid", "-t", "3000", "--nopreview", "-o", str(tmp_path), "--codec", "h264"],
+                ["rpicam-vid", "-t", "3000", "--nopreview", *lowercam_rpicam_args(),
+                 "-o", str(tmp_path), "--codec", "h264"],
                 capture_output=True, text=True, timeout=15,
             )
         except FileNotFoundError:
