@@ -33,8 +33,11 @@ apt-get install -y \
     python3-gi-cairo \
     python3-gst-1.0 \
     gir1.2-gstreamer-1.0 \
+    gir1.2-gst-plugins-base-1.0 \
     gstreamer1.0-rtsp \
     gstreamer1.0-libav
+# gir1.2-gst-plugins-base-1.0 — GstVideo для capture_relay/timestamp_overlay.py
+# (overlaycomposition); без нього srt-relay-capture стартує без мітки часу.
 
 
 echo "2. Налаштування системного користувача та прав..."
@@ -85,6 +88,22 @@ systemctl enable --now avahi-daemon
 systemctl daemon-reload
 
 echo "Старт video-service-manager/srt-relay-capture/video-streamer залишено root manager-у (sirena-manager.service)."
+
+echo "7. Перевірка відеоконвеєра (GStreamer-елементи й GstVideo)..."
+# Той самий набір, що будує srt_relay_capture.py:create_pipeline_string() —
+# краще впасти тут з чітким списком, ніж отримати crash-loop сервісу на дроні.
+MISSING=""
+for el in v4l2src jpegdec videoconvert overlaycomposition x264enc h264parse mpegtsmux appsink appsrc srtsink queue; do
+    gst-inspect-1.0 "$el" >/dev/null 2>&1 || MISSING="$MISSING $el"
+done
+if ! "$INSTALL_DIR/venv/bin/python3" -c 'import gi; gi.require_version("Gst", "1.0"); gi.require_version("GstVideo", "1.0"); from gi.repository import Gst, GstVideo' 2>/dev/null; then
+    MISSING="$MISSING GstVideo(python3-gi/gir1.2-gst-plugins-base-1.0)"
+fi
+if [ -n "$MISSING" ]; then
+    echo "ПОМИЛКА: відеоконвеєру бракує:$MISSING" >&2
+    exit 1
+fi
+echo "   OK"
 
 echo ""
 echo "=== Готово ==="

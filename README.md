@@ -10,6 +10,16 @@ On the RPi, the local manager starts and supervises:
 
 The remote admin server stores registered drones, telemetry, video state, and the drone detail page.
 
+## Video
+
+Camera → SRT → MediaMTX → WebRTC with ~50-70ms glass-to-glass latency and a
+fast adaptive bitrate. Architecture, measured latency budget, the MediaMTX
+patches, adaptive bitrate design and settings: [`video_module/README.md`](video_module/README.md).
+
+The admin server must run the **patched** MediaMTX build from
+`admin_module/deploy/mediamtx-patches/` (installed automatically by
+`deploy.sh`); the stock release adds ~90ms of latency.
+
 ## Deploy Admin Server
 
 On the admin host, place the project under `/opt/sirena-admin` and run:
@@ -20,7 +30,7 @@ bash /opt/sirena-admin/admin_module/deploy/deploy.sh
 
 This deploy script now applies both services:
 - `sirena-admin` (Gunicorn/Flask app)
-- `mediamtx-admin` (MediaMTX with `admin_module/mediamtx.yml`)
+- `mediamtx-admin` (patched low-latency MediaMTX from `admin_module/deploy/mediamtx-patches/`, config `admin_module/mediamtx.yml`)
 
 If you only need to re-apply MediaMTX:
 
