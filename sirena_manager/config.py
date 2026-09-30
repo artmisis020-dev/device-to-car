@@ -27,7 +27,8 @@ VIDEO_RELAY_UNIT = "video-relay.service"
 # (webrtc-camera.service) і RTSP-relay (video-streamer.service) видалені
 # повністю — конкурента за /dev/videoN більше нема.
 SRT_RELAY_CAPTURE_UNIT = "srt-relay-capture.service"
-LOWERCAM_UNIT = "additional-lowercam.service"
+LOWERCAM_UNIT = "additional-lowercam.service"            # запис
+LOWERCAM_PREVIEW_UNIT = "additional-lowercam-preview.service"  # легкий live-стрім
 ROOT_ENV_PATH = os.environ.get("SIRENA_ROOT_ENV_PATH", "/opt/sirena/.env")
 TELEMETRY_SNAPSHOT_PATH = os.environ.get("SIRENA_TELEMETRY_SNAPSHOT_PATH", "/tmp/sirena_mavlink_snapshot.json")
 # Той самий файл, що читає/пише video_module/service_manager (video-service-manager,
@@ -35,12 +36,10 @@ TELEMETRY_SNAPSHOT_PATH = os.environ.get("SIRENA_TELEMETRY_SNAPSHOT_PATH", "/tmp
 # й за потреби підправляє width/height під нову камеру, щоб перемикання не
 # зверніло пайплайн несумісною роздільністю.
 VIDEO_CONFIG_PATH = os.environ.get("SIRENA_VIDEO_CONFIG_PATH", "/opt/sirena-video/sirena_video_config.json")
-# additional-lowercam.service (additional_modules/lowercam, CSI-камера:
-# ІСТОРИЧНЕ: старий /home/manager/record.sh писав .h264-файли сюди. Тепер
-# additional-lowercam.service лише СТРІМИТЬ (жоден процес на РПі більше
-# нічого сюди не пише — запис нижньої камери переїхав на admin-сервер,
-# admin_module/services/lowercam_recording_service.py). Директорія й
-# /api/v1/recordings лишаються — дають скачати вже наявні старі файли.
+# additional-lowercam.service (additional_modules/lowercam, CSI-камера):
+# з 2026-09-30 знову пише сюди (як старий /home/manager/record.sh) — за
+# кнопкою "REC нижня" у вікні телеметрії: .h264 + час кадрів (_pts.txt/
+# _frames.json/_clock.jsonl). /api/v1/recordings віддає їх адмінці.
 LOCAL_RECORDINGS_DIR = os.environ.get("SIRENA_LOCAL_RECORDINGS_DIR", "/home/manager/recordings")
 LOG_LINES_VIEW = int(os.environ.get("SIRENA_LOG_LINES_VIEW", "300"))
 LOG_LINES_DOWNLOAD = int(os.environ.get("SIRENA_LOG_LINES_DOWNLOAD", "5000"))
@@ -102,15 +101,19 @@ SERVICES = {
         depends_on=("video_relay",),
         controllable=False,
     ),
-    # Нижня (CSI) камера — additional_modules/lowercam/, окремий стрім
-    # (`<hostname>-lowercam`) від головної камери. НЕ в BOOT_SEQUENCE і
-    # юніт НЕ enabled — вмикається вручну кнопкою на /lowercam/<device_id>
-    # (admin_module/services/lowercam_control_service.py), не з
-    # завантаженням РПі.
+    # Нижня (CSI) камера — additional_modules/lowercam/. Не в BOOT_SEQUENCE,
+    # юніти не enabled. Два взаємовиключні режими (Conflicts= у юнітах):
+    # запис (кнопка "REC нижня") і легкий перегляд (вибір камери "Н" у
+    # вікні телеметрії) — обидва вмикає адмінка (lowercam_control_service.py).
     "lowercam": ServiceDefinition(
         name="lowercam",
-        label="Lowercam Stream (CSI)",
+        label="Lowercam Record (CSI, стеля 30хв)",
         units=(LOWERCAM_UNIT,),
+    ),
+    "lowercam_preview": ServiceDefinition(
+        name="lowercam_preview",
+        label="Lowercam Preview (CSI, live-перевірка)",
+        units=(LOWERCAM_PREVIEW_UNIT,),
     ),
 }
 

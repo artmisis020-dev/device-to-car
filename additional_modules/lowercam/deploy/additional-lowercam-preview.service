@@ -1,11 +1,10 @@
 [Unit]
-Description=Sirena Additional — CSI (нижня) камера: ЗАПИС локально на РПі (кнопка REC нижня, стеля 30хв)
+Description=Sirena Additional — CSI (нижня) камера: легкий live-стрім для перевірки (без запису)
 Documentation=file:///opt/sirena-additional/lowercam/lowercam_capture.py
-# Без залежності від мережі: запис локальний.
-After=local-fs.target
-# Камеру може тримати лише один процес: старт запису зупиняє перегляд.
-# (Зворотне — перегляд під час запису — адмінка не дозволяє сама.)
-Conflicts=additional-lowercam-preview.service
+After=network-online.target
+Wants=network-online.target
+# Камеру може тримати лише один процес (див. additional-lowercam.service).
+Conflicts=additional-lowercam.service
 
 [Service]
 Type=simple
@@ -17,10 +16,8 @@ Type=simple
 # (напр. pixel_tracking) лише читають кадри, а не займають /dev/media*.
 EnvironmentFile=-/opt/sirena/.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 /opt/sirena-additional/lowercam/lowercam_capture.py record
-# on-failure: після штатного завершення (стеля 30хв чи "Стоп") юніт лишається
-# зупиненим; при збої — піднімається й дописує решту часу сесії
-# (SESSION_MARKER у lowercam_capture.py).
+ExecStart=/usr/bin/python3 /opt/sirena-additional/lowercam/lowercam_capture.py preview
+# Вмикає/вимикає адмінка (вибір нижньої камери у вікні телеметрії).
 Restart=on-failure
 RestartSec=3s
 KillSignal=SIGTERM
@@ -31,7 +28,7 @@ KillMode=mixed
 TimeoutStopSec=15
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=lowercam-capture
+SyslogIdentifier=lowercam-preview
 
 [Install]
 WantedBy=multi-user.target

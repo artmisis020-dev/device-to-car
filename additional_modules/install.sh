@@ -62,12 +62,10 @@ systemctl enable --now additional-pixel-tracking
 sleep 2
 systemctl --no-pager status additional-pixel-tracking || true
 
-echo "8. lowercam (CSI-камера: лише live SRT-стрім, без venv, лише stdlib +"
-echo "   зовнішні rpicam-vid/ffmpeg, працює від root — доступ до /dev/media*)..."
+echo "8. lowercam (CSI-камера: перегляд у вікні телеметрії + запис кнопкою"
+echo "   'REC нижня' у /home/manager/recordings з часом кадрів; без venv, лише"
+echo "   stdlib + rpicam-vid/ffmpeg, працює від root — доступ до /dev/media*)..."
 echo "   Замінює старий /home/manager/record.sh/record.service, якщо був."
-echo "   НЕ автозапускається з завантаженням РПі — вмикається вручну кнопкою"
-echo "   на /lowercam/<device_id> (через sirena_manager service-control) або"
-echo "   'sudo systemctl start additional-lowercam'."
 systemctl disable --now record.service 2>/dev/null || true
 rm -f /etc/systemd/system/record.service
 
@@ -76,13 +74,15 @@ cp -a "$DEPLOY_DIR/lowercam/lowercam_capture.py" "$INSTALL_DIR/lowercam/"
 chown -R root:root "$INSTALL_DIR/lowercam"
 
 cp "$DEPLOY_DIR/lowercam/deploy/additional-lowercam.service" /etc/systemd/system/
+cp "$DEPLOY_DIR/lowercam/deploy/additional-lowercam-preview.service" /etc/systemd/system/
 systemctl daemon-reload
-systemctl disable additional-lowercam 2>/dev/null || true
-systemctl stop additional-lowercam 2>/dev/null || true
+# Обидва юніти НЕ enabled — нічого не стартує з завантаженням: перегляд і
+# запис вмикає адмінка (вікно телеметрії) через sirena_manager.
+systemctl disable additional-lowercam additional-lowercam-preview 2>/dev/null || true
 
 echo ""
 echo "=== Готово ==="
 echo "Control-API pixel_tracking: http://$(hostname -I | awk '{print $1}'):9075"
 echo "Логи pixel_tracking:        journalctl -u additional-pixel-tracking -f"
 echo "Логи lowercam:              journalctl -u additional-lowercam -f"
-echo "lowercam зараз вимкнений — вмикається кнопкою на сторінці /lowercam/<device_id>."
+echo "lowercam: керування з вікна телеметрії (камера 'Н' — перегляд, 'REC нижня' — запис)."

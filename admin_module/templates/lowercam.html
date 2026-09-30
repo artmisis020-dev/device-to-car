@@ -65,7 +65,6 @@
         Нижня камера — <span id="lcStatusText">перевірка стану...</span>
       </span>
       <span class="d-flex gap-2">
-        <button id="lcToggle" class="btn btn-sm btn-success" type="button" disabled>▶ Увімкнути</button>
         <button id="lcReconnect" class="btn btn-sm btn-outline-info" type="button">Перезавантажити плеєр</button>
       </span>
     </div>
@@ -76,7 +75,7 @@
   </div>
 
   <div class="lc-card mt-2">
-    <div class="lc-head"><span>Записи нижньої камери (на сервері)</span>
+    <div class="lc-head"><span>Записи нижньої камери (на РПі — кнопка «REC нижня» у вікні телеметрії; поряд _pts/_frames/_clock — час кадрів)</span>
       <button id="lcRecListReload" class="btn btn-sm btn-outline-info" type="button">Оновити</button>
     </div>
     <div class="lc-body">
@@ -212,20 +211,19 @@
 
   el('lcReconnect')?.addEventListener('click', connectStream);
 
-  // ─── Увімкнути / Вимкнути (керує РПі-стрімом + записом на сервері) ─────
+  // ─── Стан автозапису на РПі (кнопки керування більше немає) ────────────
   function renderStatus(data) {
     const dot = el('lcStatusDot');
     const text = el('lcStatusText');
-    const btn = el('lcToggle');
-    const rpiActive = !!data.rpi_active;
-    dot.classList.toggle('on', rpiActive);
-    text.textContent = rpiActive
-      ? `увімкнена${data.recording_active ? ' · запис іде' : ''}`
-      : 'вимкнена';
-    btn.textContent = rpiActive ? '⏹ Вимкнути' : '▶ Увімкнути';
-    btn.className = rpiActive ? 'btn btn-sm btn-outline-danger' : 'btn btn-sm btn-success';
-    btn.disabled = false;
+    // Нижня камера керується з вікна телеметрії (перегляд "Н", "REC нижня").
+    const rpiActive = !!data.preview_active;
+    dot.classList.toggle('on', rpiActive || !!data.record_active);
+    text.textContent = data.record_active
+      ? 'пише на РПі (перегляд заблоковано)'
+      : (rpiActive ? 'перегляд увімкнено' : 'вимкнена (керування — у вікні телеметрії)');
 
+    // Автопідключення — щоб відеозв'язок з'являвся одразу, щойно камера
+    // запрацювала (live-стрім на РПі вмикається SIRENA_LOWERCAM_STREAM=1).
     if (rpiActive && !lastRpiActive) {
       connectStream();
     } else if (!rpiActive && lastRpiActive) {
@@ -245,25 +243,6 @@
     }
   }
 
-  el('lcToggle')?.addEventListener('click', async () => {
-    const btn = el('lcToggle');
-    btn.disabled = true;
-    const turningOn = btn.textContent.includes('Увімкнути');
-    try {
-      const res = await fetch(`/api/devices/${deviceId}/lowercam/${turningOn ? 'start' : 'stop'}`, {method: 'POST'});
-      const data = await res.json();
-      if (!res.ok || data.success === false) {
-        el('lcStatusText').textContent = `помилка: ${data.error || res.status}`;
-        btn.disabled = false;
-        return;
-      }
-      if (!turningOn) loadRecordings(); // "Вимкнути" фіналізує файл запису — оновлюємо список
-    } catch (err) {
-      el('lcStatusText').textContent = `помилка: ${err.message}`;
-    }
-    pollLowercamStatus();
-  });
-
   pollLowercamStatus();
   statusPollTimer = setInterval(pollLowercamStatus, 5000);
 
@@ -278,7 +257,7 @@
     const list = el('lcRecList');
     list.innerHTML = '<li>Завантаження...</li>';
     try {
-      const res = await fetch(`/api/devices/${deviceId}/recordings/lowercam`);
+      const res = await fetch(`/api/devices/${deviceId}/recordings/rpi`);
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'помилка');
       if (!data.recordings.length) {
@@ -288,7 +267,7 @@
       list.innerHTML = data.recordings.map(r => `
         <li>
           <span>${r.name} (${formatBytes(r.size)})</span>
-          <a href="/api/devices/${deviceId}/recordings/lowercam/${encodeURIComponent(r.name)}" class="link-info">Скачати</a>
+          <a href="/api/devices/${deviceId}/recordings/rpi/${encodeURIComponent(r.name)}" class="link-info">Скачати</a>
         </li>
       `).join('');
     } catch (err) {

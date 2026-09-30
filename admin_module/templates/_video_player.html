@@ -225,7 +225,10 @@
         <span id="svpRecDot" class="svp-rec-dot"></span>
         <button id="svpRecord" class="btn btn-sm btn-outline-danger" type="button">REC</button>
       </span>
-      <a href="/lowercam/{{ device_id }}" class="btn btn-sm btn-outline-secondary" target="_blank" rel="noopener">Нижня камера</a>
+      <span class="svp-rec-state" title="Запис нижньої камери локально на РПі (стеля 30хв); на час запису її відображення заблоковане">
+        <span id="svpLowRecDot" class="svp-rec-dot"></span>
+        <button id="svpLowRecord" class="btn btn-sm btn-outline-danger" type="button">REC нижня</button>
+      </span>
       {% if not video_player_compact %}
       <button id="svpAiToggle" class="btn btn-sm btn-outline-info" type="button">AI-визначення</button>
       <button id="svpTrackToggle" class="btn btn-sm btn-outline-info" type="button">Піксель трекінг</button>
@@ -326,6 +329,12 @@
   let pc = null;
   let statsTimer = null;
   let recordActive = false;
+  // Нижня (CSI) камера: перегляд (легкий стрім, не записується) і запис
+  // локально на РПі — взаємовиключні (lowercam_control_service.py).
+  let viewingLowercam = false;
+  let lowercamRecordActive = false;
+  let lowercamBusy = false;
+  const LOWERCAM_BLOCKED_MSG = 'Нижня камера пише на РПі — відображення заблоковане до кінця запису';
   let lastVideoStats = null;
   let switchingCamera = false;
   // Декодування мітки часу, вшитої в кадр на РПі (video_module/capture_relay/
@@ -422,7 +431,9 @@
   }
 
   async function loadStreamInfo() {
-    const res = await fetch(`/api/video/${deviceId}/stream`);
+    const res = await fetch(viewingLowercam
+      ? `/api/video/${deviceId}/lowercam/stream`
+      : `/api/video/${deviceId}/stream`);
     if (!res.ok) {
       let errorText = 'Метадані стріму недоступні';
       try {
@@ -444,6 +455,11 @@
 
   async function connectStream() {
     stopPeer(); // теж скасовує будь-який запланований авто-реконект (див. stopPeer)
+    if (viewingLowercam && lowercamRecordActive) {
+      setOverlay(LOWERCAM_BLOCKED_MSG);
+      setText('svpStreamStatus', 'Нижня камера: запис');
+      return;
+    }
     setOverlay('Підключення WebRTC стріму...');
     setText('svpStreamStatus', 'Підключення');
     setText('svpStatConn', 'new');
@@ -569,21 +585,138 @@
       }
 
       cameras.forEach((camera, index) => {
-        const isActive = cameraIsActive(camera, active);
+        const isActive = !viewingLowercam && cameraIsActive(camera, active);
         const node = document.createElement(isActive ? 'span' : 'button');
         node.className = `svp-camera-chip svp-camera-num${isActive ? ' active' : ''}`;
         node.textContent = String(index + 1);
         node.title = `${cameraTitle(camera)}${isActive ? ' (активна)' : ''}`;
         if (!isActive) {
           node.type = 'button';
-          node.disabled = switchingCamera;
-          node.addEventListener('click', () => switchCamera(camera.id || camera.path));
+          node.disabled = switchingCamera || lowercamBusy;
+          const target = camera.id || camera.path;
+          node.addEventListener('click', () => (viewingLowercam
+            ? leaveLowercam(target, cameraIsActive(camera, active))
+            : switchCamera(target)));
         }
         list.appendChild(node);
       });
+      list.appendChild(lowercamChip());
     } catch (err) {
       list.textContent = 'Unavailable';
+      list.appendChild(lowercamChip());
     }
+  }
+
+  // ─── Нижня камера: перегляд у тому ж плеєрі + окремий запис ─────────────
+  function lowercamChip() {
+    const node = document.createElement(viewingLowercam ? 'span' : 'button');
+    node.className = `svp-camera-chip svp-camera-num${viewingLowercam ? ' active' : ''}`;
+    node.textContent = 'Н';
+    node.title = lowercamRecordActive
+      ? 'Нижня камера — зараз пише (перегляд заблоковано)'
+      : `Нижня камера (легкий перегляд, не записується)${viewingLowercam ? ' (активна)' : ''}`;
+    if (!viewingLowercam) {
+      node.type = 'button';
+      node.disabled = switchingCamera || lowercamBusy;
+      node.addEventListener('click', enterLowercam);
+    }
+    return node;
+  }
+
+  async function enterLowercam() {
+    if (lowercamBusy) return;
+    viewingLowercam = true;
+    stopPeer();
+    await loadCameras();
+    if (lowercamRecordActive) {
+      setOverlay(LOWERCAM_BLOCKED_MSG);
+      return;
+    }
+    lowercamBusy = true;
+    setOverlay('Вмикання нижньої камери...');
+    setText('svpStreamStatus', 'Нижня камера: вмикання');
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/lowercam/preview/start`, {method: 'POST'});
+      const data = await res.json();
+      if (data.record_active) {
+        lowercamRecordActive = true;
+        updateLowercamRecordBtn();
+        setOverlay(LOWERCAM_BLOCKED_MSG);
+        return;
+      }
+      if (!res.ok || data.success === false) throw new Error(data.error || `HTTP ${res.status}`);
+      connectStream();
+    } catch (err) {
+      setOverlay(`Нижня камера: ${err.message}`);
+      setText('svpStreamStatus', 'Нижня камера недоступна');
+    } finally {
+      lowercamBusy = false;
+      loadCameras();
+    }
+  }
+
+  async function leaveLowercam(targetCamera, targetIsActiveMain) {
+    viewingLowercam = false;
+    stopPeer();
+    fetch(`/api/devices/${deviceId}/lowercam/preview/stop`, {method: 'POST'}).catch(() => {});
+    if (targetIsActiveMain) {
+      await loadCameras();
+      connectStream();
+    } else {
+      switchCamera(targetCamera);
+    }
+  }
+
+  function updateLowercamRecordBtn(errorMessage) {
+    const btn = el('svpLowRecord');
+    const dot = el('svpLowRecDot');
+    if (!btn || !dot) return;
+    btn.className = lowercamRecordActive ? 'btn btn-sm btn-danger' : 'btn btn-sm btn-outline-danger';
+    btn.textContent = lowercamRecordActive ? 'Стоп REC нижня' : 'REC нижня';
+    btn.title = errorMessage || '';
+    btn.disabled = lowercamBusy;
+    dot.classList.toggle('on', lowercamRecordActive);
+  }
+
+  function applyLowercamRecordState(active) {
+    const changed = active !== lowercamRecordActive;
+    lowercamRecordActive = active;
+    updateLowercamRecordBtn();
+    if (!changed || !viewingLowercam) return;
+    if (active) {
+      stopPeer();
+      setOverlay(LOWERCAM_BLOCKED_MSG);
+    } else {
+      enterLowercam();   // запис скінчився — повертаємо перегляд
+    }
+  }
+
+  async function toggleLowercamRecord() {
+    if (lowercamBusy) return;
+    lowercamBusy = true;
+    updateLowercamRecordBtn();
+    const starting = !lowercamRecordActive;
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/lowercam/record/${starting ? 'start' : 'stop'}`, {method: 'POST'});
+      const data = await res.json();
+      if (!res.ok || data.success === false) throw new Error(data.error || `HTTP ${res.status}`);
+      lowercamBusy = false;
+      applyLowercamRecordState(starting);
+    } catch (err) {
+      lowercamBusy = false;
+      updateLowercamRecordBtn(err.message);
+    }
+    loadCameras();
+  }
+
+  async function syncLowercamState() {
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/lowercam/status`);
+      const data = await res.json();
+      if (data && typeof data.record_active === 'boolean' && !lowercamBusy) {
+        applyLowercamRecordState(data.record_active);
+      }
+    } catch (err) {}
   }
 
   async function switchCamera(cameraPath) {
@@ -1205,16 +1338,25 @@
 
   el('svpOsdSkin')?.addEventListener('change', (e) => osdApplySkin(e.target.value));
 
-  el('svpReconnect')?.addEventListener('click', connectStream);
+  // На нижній камері "Перезавантажити" заново вмикає і перегляд на РПі (його міг
+  // погасити сторож на сервері, якщо WebRTC довго не підключався).
+  el('svpReconnect')?.addEventListener('click', () => (viewingLowercam ? enterLowercam() : connectStream()));
   el('svpRecord')?.addEventListener('click', toggleRecord);
+  el('svpLowRecord')?.addEventListener('click', toggleLowercamRecord);
   el('svpApplySettings')?.addEventListener('click', applyVideoSettings);
   window.addEventListener('beforeunload', () => {
+    // Перегляд нижньої камери вимикаємо одразу (інакше його погасить сторож
+    // на сервері за ~1хв без глядачів). keepalive — щоб запит дійшов після закриття.
+    if (viewingLowercam) {
+      fetch(`/api/devices/${deviceId}/lowercam/preview/stop`, {method: 'POST', keepalive: true}).catch(() => {});
+    }
     stopPeer();
     osdSource?.close();
     if (activeMode === 'object_detector') stopAi();
     else if (activeMode === 'pixel_tracker') stopTrack();
   });
   syncRecordState();
+  syncLowercamState();
   loadCameras();
   loadVideoSettings();
   connectStream();
@@ -1222,6 +1364,7 @@
   osdStartLive();
   setInterval(osdRender, 250);
   setInterval(syncRecordState, 5000);
+  setInterval(syncLowercamState, 5000);
   setInterval(loadCameras, 10000);
 })();
 </script>
