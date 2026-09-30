@@ -10,6 +10,7 @@ Sirena SRT Relay Capture — один нативний GStreamer-пайплай�
 import sys
 import signal
 import threading
+import time
 import logging
 import json
 import urllib.request
@@ -184,8 +185,13 @@ def create_pipeline_string() -> "tuple[str, bool]":
 # внутрішнього стану AdaptiveBitrateController на admin-сервер, щоб звести
 # його в один лог разом зі стороною MediaMTX і клієнта. Видалити разом з
 # відповідним ендпоінтом/сервісом на адмін-стороні, коли аналіз завершено.
+_REPORT_FAIL_LOG_EVERY_S = 60.0
+_last_report_fail_log = 0.0
+
+
 def _report_bitrate_state(payload: dict) -> None:
     def _send():
+        global _last_report_fail_log
         try:
             device_id = registry.get_hardware_id()
             data = json.dumps({**payload, "device_id": device_id}).encode()
@@ -197,8 +203,14 @@ def _report_bitrate_state(payload: dict) -> None:
             )
             with urllib.request.urlopen(req, timeout=5):
                 pass
-        except Exception:
-            pass  # best-effort — не має права зачепити живий пайплайн
+        except Exception as exc:
+            # best-effort — не має права зачепити живий пайплайн, але й не
+            # мовчки: раніше будь-який збій тут був невидимий (rpi_* колонки
+            # діагностичного CSV порожні без жодного сліду в журналі).
+            now = time.monotonic()
+            if now - _last_report_fail_log >= _REPORT_FAIL_LOG_EVERY_S:
+                _last_report_fail_log = now
+                log.warning(f"[AdaptiveBitrate] звіт на адмін-сервер не вдався: {exc}")
 
     threading.Thread(target=_send, daemon=True).start()
 
@@ -244,6 +256,7 @@ class AdaptiveBitrateController:
         if self._last_dropped is None:
             self._last_dropped = dropped
             self._last_retransmitted = retransmitted
+            self._report(bandwidth_mbps, 0, 0)
             return True
 
         new_dropped = dropped - self._last_dropped
@@ -258,7 +271,11 @@ class AdaptiveBitrateController:
             return True
 
         if bandwidth_mbps <= 0:
-            return True  # SRT ще не встиг оцінити лінк
+            # SRT ще не встиг оцінити лінк — рішення не приймаємо, але стан
+            # звітуємо (інакше діагностичний лог мав би дірки саме тоді, коли
+            # найцікавіше — на старті/після перепідключення).
+            self._report(bandwidth_mbps, new_dropped, new_retransmitted)
+            return True
 
         bw_kbps = bandwidth_mbps * 1000 * self.BANDWIDTH_HEADROOM
 
