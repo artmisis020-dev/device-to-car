@@ -1,0 +1,131 @@
+diff --git a/internal/protocols/webrtc/peer_connection.go b/internal/protocols/webrtc/peer_connection.go
+index b58972a..e04ff36 100644
+--- a/internal/protocols/webrtc/peer_connection.go
++++ b/internal/protocols/webrtc/peer_connection.go
+@@ -217,6 +217,13 @@ func (co *PeerConnection) Start() error {
+ 		return err
+ 	}
+ 
++	if co.Publish {
++		err = registerPlayoutDelay(mediaEngine, interceptorRegistry)
++		if err != nil {
++			return err
++		}
++	}
++
+ 	api := webrtc.NewAPI(
+ 		webrtc.WithSettingEngine(settingsEngine),
+ 		webrtc.WithMediaEngine(mediaEngine),
+diff --git a/internal/protocols/webrtc/playout_delay.go b/internal/protocols/webrtc/playout_delay.go
+new file mode 100644
+index 0000000..9988d6c
+--- /dev/null
++++ b/internal/protocols/webrtc/playout_delay.go
+@@ -0,0 +1,89 @@
++package webrtc
++
++import (
++	"os"
++	"strconv"
++	"strings"
++
++	"github.com/pion/interceptor"
++	"github.com/pion/rtp"
++	"github.com/pion/webrtc/v4"
++)
++
++// Sirena patch: playout-delay RTP header extension on outgoing video.
++//
++// Chrome only switches to its low-latency renderer (frames shown right after
++// decoding, no render-time smoothing) when the sender signals
++// min_playout_delay=0 and max_playout_delay<=500ms through this extension;
++// RTCRtpReceiver.playoutDelayHint/jitterBufferTarget on the page only set the
++// minimum. MediaMTX does not send it by default.
++//
++// SIRENA_WEBRTC_PLAYOUT_DELAY_MAX_MS (default 0 = render as soon as
++// possible); negative disables the extension.
++
++const playoutDelayURI = "http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"
++
++func playoutDelayMaxMs() int {
++	v, err := strconv.Atoi(os.Getenv("SIRENA_WEBRTC_PLAYOUT_DELAY_MAX_MS"))
++	if err != nil {
++		return 0
++	}
++	return v
++}
++
++func registerPlayoutDelay(me *webrtc.MediaEngine, reg *interceptor.Registry) error {
++	maxMs := playoutDelayMaxMs()
++	if maxMs < 0 {
++		return nil
++	}
++
++	err := me.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: playoutDelayURI},
++		webrtc.RTPCodecTypeVideo)
++	if err != nil {
++		return err
++	}
++
++	payload, err := (&rtp.PlayoutDelayExtension{MinDelay: 0, MaxDelay: uint16(maxMs / 10)}).Marshal()
++	if err != nil {
++		return err
++	}
++
++	reg.Add(&playoutDelayFactory{payload: payload})
++	return nil
++}
++
++type playoutDelayFactory struct {
++	payload []byte
++}
++
++func (f *playoutDelayFactory) NewInterceptor(_ string) (interceptor.Interceptor, error) {
++	return &playoutDelayInterceptor{payload: f.payload}, nil
++}
++
++type playoutDelayInterceptor struct {
++	interceptor.NoOp
++	payload []byte
++}
++
++func (i *playoutDelayInterceptor) BindLocalStream(
++	info *interceptor.StreamInfo, writer interceptor.RTPWriter,
++) interceptor.RTPWriter {
++	if !strings.HasPrefix(strings.ToLower(info.MimeType), "video/") {
++		return writer
++	}
++
++	id := 0
++	for _, ext := range info.RTPHeaderExtensions {
++		if ext.URI == playoutDelayURI {
++			id = ext.ID
++		}
++	}
++	if id == 0 {
++		return writer // the browser did not negotiate the extension
++	}
++
++	return interceptor.RTPWriterFunc(func(header *rtp.Header, payload []byte, attrs interceptor.Attributes) (int, error) {
++		_ = header.SetExtension(uint8(id), i.payload)
++		return writer.Write(header, payload, attrs)
++	})
++}
+diff --git a/internal/servers/srt/server.go b/internal/servers/srt/server.go
+index 8bc6bbe..c94766d 100644
+--- a/internal/servers/srt/server.go
++++ b/internal/servers/srt/server.go
+@@ -97,6 +97,13 @@ func (s *Server) Initialize() error {
+ 	conf := srt.DefaultConfig()
+ 	conf.ConnectionTimeout = time.Duration(s.ReadTimeout)
+ 	conf.PayloadSize = uint32(srtMaxPayloadSize(s.UDPMaxPayloadSize))
++	// Sirena patch: gosrt's default ReceiverLatency/PeerLatency (120ms) is a
++	// hardcoded TSBPD floor with no MediaMTX config key to override it —
++	// dominates end-to-end video latency regardless of what the publisher
++	// requests. Lowered to fit our low-jitter WireGuard link (measured RTT
++	// ~2ms) and the <100ms glass-to-glass latency requirement.
++	conf.ReceiverLatency = 10 * time.Millisecond
++	conf.PeerLatency = 10 * time.Millisecond
+ 
+ 	var err error
+ 	s.ln, err = srt.Listen("srt", s.Address, conf)

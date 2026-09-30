@@ -82,6 +82,17 @@ H264_PROFILE_INFO = _H264_PROFILE_MAP[H264_PROFILE]  # (v4l2_profile_id, caps_pr
 # той самий CPU-бюджет.
 X264_SPEED_PRESET = os.environ.get("X264_SPEED_PRESET", "ultrafast").strip().lower()
 
+# Буфер ratecontrol x264 (VBV), мс. Дефолт x264enc — 600мс: тоді I-кадр
+# може бути в 5-10 разів більший за P-кадр (виміряно 30.09: ~29КБ проти
+# ~6КБ) і йде в мережу одним сплеском — на вузькому/шейпленому лінку це
+# черга, ретрансмісії й секундні хвости затримки раз на GOP. ~3 кадри
+# тримає кожен кадр близько до середнього розміру ціною якості I-кадрів.
+X264_VBV_BUF_MS = env_int("X264_VBV_BUF_MS", 100)
+
+# Потоки videoconvert (YUY2/MJPEG-декод → I420). RPi5 — 4 ядра, частину
+# забирає x264 (sliced-threads).
+VIDEOCONVERT_THREADS = env_int("VIDEOCONVERT_THREADS", 2)
+
 SIRENA_RELAY_TARGET = os.environ.get("SIRENA_RELAY_TARGET", "").strip().strip('"')
 
 
@@ -100,15 +111,17 @@ def bitrate_kbps() -> int:
 # з панелі застосовується як фіксований, без автопідстройки під втрати/
 # ретрансмісії лінку.
 ADAPTIVE_BITRATE_ENABLED = _cfg_bool(_MANAGER_CFG, "adaptive_bitrate", "ADAPTIVE_BITRATE", True)
-ADAPTIVE_BITRATE_INTERVAL_SEC = env_int("ADAPTIVE_BITRATE_INTERVAL_SEC", 2)
-# 0 = авто: max(150, 20% від цільового бітрейту).
-_ADAPTIVE_BITRATE_MIN_KBPS_OVERRIDE = env_int("ADAPTIVE_BITRATE_MIN_KBPS", 0)
-
-
-def adaptive_bitrate_min_kbps(target_kbps: int) -> int:
-    if _ADAPTIVE_BITRATE_MIN_KBPS_OVERRIDE > 0:
-        return _ADAPTIVE_BITRATE_MIN_KBPS_OVERRIDE
-    return max(150, target_kbps // 5)
+# Параметри контролера — capture_relay/adaptive_bitrate.py (AbrParams).
+ADAPTIVE_BITRATE_INTERVAL_MS = env_int("ADAPTIVE_BITRATE_INTERVAL_MS", 250)
+# Абсолютна нижня межа, kbps (раніше 20% цілі — при цілі 2500 це 500, вище
+# реальної ємності тонкого лінку: контролер застрягав у перевантаженні).
+ADAPTIVE_BITRATE_MIN_KBPS = env_int("ADAPTIVE_BITRATE_MIN_KBPS", 150)
+if ADAPTIVE_BITRATE_MIN_KBPS <= 0:  # старий .env: "0 = авто"
+    ADAPTIVE_BITRATE_MIN_KBPS = 150
+# Ігнорувати заміри у вікнах перемикання супутників Starlink (див. модуль):
+# auto (дефолт) — лише коли базовий RTT ≥15мс, 1 — завжди, 0 — ніколи.
+_guard = os.environ.get("ADAPTIVE_BITRATE_STARLINK_GUARD", "auto").strip().lower()
+ADAPTIVE_BITRATE_STARLINK_GUARD = "auto" if _guard == "auto" else _guard in {"1", "true", "yes", "on"}
 
 
 # Піксель-трекінг (additional_modules/pixel_tracking, порт 9075) — тег

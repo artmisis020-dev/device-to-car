@@ -52,18 +52,18 @@ if ! command -v tar >/dev/null 2>&1; then
     apt-get install -y tar
 fi
 
-# Патчений білд (SRT ReceiverLatency 10мс замість захардкодженого в
-# gosrt дефолту 120мс — див. mediamtx-patches/README.md) має пріоритет над
-# офіційним релізом. Без цього кожен redeploy тихо повертав би затримку
-# відеостріму на ~120мс, і ніхто б не помітив, поки не почав знову міряти.
-PATCHED_BIN="$SCRIPT_DIR/mediamtx-patches/mediamtx-v${MEDIAMTX_VERSION}-srt10ms_${ASSET_ARCH}"
+# Патчений білд (низька затримка SRT→WebRTC — див. mediamtx-patches/README.md)
+# має пріоритет над офіційним релізом. Без цього кожен redeploy тихо
+# повертав би +~90мс затримки відеостріму, і ніхто б не помітив, поки не
+# почав знову міряти.
+PATCHED_BIN="$SCRIPT_DIR/mediamtx-patches/mediamtx-v${MEDIAMTX_VERSION}-sirena_${ASSET_ARCH}"
 
 if [ -f "$PATCHED_BIN" ]; then
-    echo "Installing patched MediaMTX v${MEDIAMTX_VERSION} (${ASSET_ARCH}, SRT latency=10ms) from repo"
+    echo "Installing patched MediaMTX v${MEDIAMTX_VERSION} (${ASSET_ARCH}, Sirena low-latency) from repo"
     install -m 0755 "$PATCHED_BIN" "$BIN_PATH"
 else
     echo "WARNING: no patched MediaMTX binary for ${ASSET_ARCH} at $PATCHED_BIN" >&2
-    echo "WARNING: falling back to stock release — SRT latency will regress to ~120ms" >&2
+    echo "WARNING: falling back to stock release — video latency will regress by ~90ms" >&2
     echo "WARNING: rebuild it with admin_module/deploy/mediamtx-patches/build.sh" >&2
 
     TMP_DIR="$(mktemp -d)"

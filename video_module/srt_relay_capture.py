@@ -31,6 +31,8 @@ if str(current_dir) not in sys.path:
 import capture_relay.config as config
 import capture_relay.registry as registry
 import capture_relay.timestamp_overlay as timestamp_overlay
+import capture_relay.ts_packer as ts_packer
+import capture_relay.adaptive_bitrate as adaptive_bitrate
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [srt-relay-capture]: %(message)s")
 log = logging.getLogger(__name__)
@@ -115,6 +117,7 @@ def get_encoder_chain(bitrate_kbps: int) -> "tuple[str, bool]":
         "bframes=0 "
         "sliced-threads=true "
         "rc-lookahead=0 "
+        f"vbv-buf-capacity={config.X264_VBV_BUF_MS} "
         "byte-stream=true "
         "option-string=repeat-headers=1 ! "
         f"capsfilter caps=\"video/x-h264,profile={caps_profile},stream-format=byte-stream,alignment=au\""
@@ -125,21 +128,19 @@ def get_encoder_chain(bitrate_kbps: int) -> "tuple[str, bool]":
 def create_pipeline_string() -> "tuple[str, bool]":
     encoder_chain, is_software_encoder = get_encoder_chain(config.bitrate_kbps())
     encode_and_send = (
-        # cairooverlay вимагає BGRx/BGRA/RGB16 (не I420) — тому конвертація
-        # туди-назад навколо нього. Малює timestamp_overlay.on_draw() —
-        # двійкова мітка часу для вимірювання наскрізної (glass-to-glass)
-        # затримки в _video_player.html. cairooverlay — стандартний елемент
-        # gst-plugins-good, перевірено наявний на РПі (gst-inspect-1.0
-        # cairooverlay); якщо колись його не буде на цільовій збірці —
-        # Gst.parse_launch() впаде одразу з чіткою помилкою про невідомий
-        # елемент, не мовчки.
-        "video/x-raw,format=BGRx ! "
-        "cairooverlay name=ts_overlay ! "
-        "videoconvert ! "
+        # Одна конвертація в I420 (з потоками) перед міткою часу; мітку
+        # змішує overlaycomposition прямо в I420 — див. timestamp_overlay.py
+        # (раніше cairooverlay вимагав BGRx і тягнув дві повні конвертації).
+        f"videoconvert n-threads={config.VIDEOCONVERT_THREADS} ! "
         f"video/x-raw,format=I420,width={config.WIDTH},height={config.HEIGHT} ! "
+        "overlaycomposition name=ts_overlay ! "
         f"{encoder_chain} ! "
         "h264parse config-interval=1 ! "
-        "mpegtsmux alignment=7 ! "
+        # alignment=0 + ts_packer: весь кадр іде в мережу одразу, без
+        # очікування наступного кадру (див. capture_relay/ts_packer.py).
+        "mpegtsmux alignment=0 ! "
+        f"{ts_packer.APPSINK} "
+        f"{ts_packer.APPSRC} ! "
         f"srtsink name=srt_sink uri=\"{config.SIRENA_RELAY_TARGET}\" sync=false processing-deadline=0"
     )
 
@@ -147,6 +148,9 @@ def create_pipeline_string() -> "tuple[str, bool]":
         raw_chain = (
             f"v4l2src device={config.DEVICE} ! "
             f"image/jpeg,width={config.WIDTH},height={config.HEIGHT},framerate={config.FPS}/1 ! "
+            # як і для YUY2: якщо кодер/мережа не встигають — відкидаємо старий
+            # кадр тут, а не копичимо чергу (затримку) в драйвері камери
+            "queue max-size-buffers=1 leaky=downstream ! "
             "jpegdec ! "
         )
     else:
@@ -159,7 +163,7 @@ def create_pipeline_string() -> "tuple[str, bool]":
     if not config.TRACK_TAP_ENABLED:
         # Дефолтний шлях — байт-в-байт той самий рядок, що й до появи
         # піксель-трекінгу: жодного tee, жодного track_sink, нуль ризику.
-        pipeline_str = f"{raw_chain}videoconvert ! {encode_and_send}"
+        pipeline_str = f"{raw_chain}{encode_and_send}"
         return pipeline_str, is_software_encoder
 
     # SIRENA_TRACK_TAP=1 (пише additional_modules/pixel_tracking/control.py
@@ -173,7 +177,7 @@ def create_pipeline_string() -> "tuple[str, bool]":
     pipeline_str = (
         f"{raw_chain}"
         "tee name=track_tee "
-        f"track_tee. ! queue max-size-buffers=1 leaky=downstream ! videoconvert ! {encode_and_send} "
+        f"track_tee. ! queue max-size-buffers=1 leaky=downstream ! {encode_and_send} "
         "track_tee. ! queue max-size-buffers=1 leaky=downstream ! videoconvert ! "
         "video/x-raw,format=BGR ! "
         "appsink name=track_sink emit-signals=true max-buffers=1 drop=true sync=false"
@@ -182,7 +186,7 @@ def create_pipeline_string() -> "tuple[str, bool]":
 
 
 # ТИМЧАСОВО (діагностика мережі, не постійна фіча): fire-and-forget звіт
-# внутрішнього стану AdaptiveBitrateController на admin-сервер, щоб звести
+# внутрішнього стану AdaptiveBitrateRunner на admin-сервер, щоб звести
 # його в один лог разом зі стороною MediaMTX і клієнта. Видалити разом з
 # відповідним ендпоінтом/сервісом на адмін-стороні, коли аналіз завершено.
 _REPORT_FAIL_LOG_EVERY_S = 60.0
@@ -215,86 +219,77 @@ def _report_bitrate_state(payload: dict) -> None:
     threading.Thread(target=_send, daemon=True).start()
 
 
-class AdaptiveBitrateController:
-    """Тримає bitrate живого x264enc у межах, які реально проходять через
-    SRT-лінк. Орієнтується на власну оцінку пропускної здатності SRT
-    (bandwidth-mbps) і на факт реальних втрат (packets-sent-dropped) —
-    SRT вже рахує це сам, не треба вигадувати власну евристику з нуля."""
+class AdaptiveBitrateRunner:
+    """Під'єднує capture_relay.adaptive_bitrate.AdaptiveBitrate до живого
+    пайплайна: раз на інтервал бере статистику srtsink, виставляє bitrate
+    x264enc і (не частіше ніж раз на секунду) звітує стан на адмін-сервер."""
 
-    BANDWIDTH_HEADROOM = 0.7       # цільовий bitrate <= 70% оцінки SRT bandwidth
-    DROP_CUT_FACTOR = 0.5          # реальна втрата даних -> різко вдвічі вниз
-    RETRANSMIT_CUT_FACTOR = 0.85   # ретрансмісії без втрат -> обережний крок вниз
-    RECOVERY_STEP_FACTOR = 1.1     # все ок -> плавний крок вгору (до target_kbps)
+    REPORT_EVERY_S = 1.0
+    STATUS_LOG_EVERY_S = 10.0
 
-    def __init__(self, encoder: Gst.Element, sink: Gst.Element, target_kbps: int, min_kbps: int):
+    def __init__(self, encoder: Gst.Element, sink: Gst.Element, target_kbps: int):
         self.encoder = encoder
         self.sink = sink
-        self.target_kbps = target_kbps
-        self.min_kbps = min_kbps
-        self.current_kbps = target_kbps
-        self._last_dropped = None
-        self._last_retransmitted = None
+        self.abr = adaptive_bitrate.AdaptiveBitrate(target_kbps, adaptive_bitrate.AbrParams(
+            interval_s=config.ADAPTIVE_BITRATE_INTERVAL_MS / 1000.0,
+            min_kbps=config.ADAPTIVE_BITRATE_MIN_KBPS,
+            starlink_guard=config.ADAPTIVE_BITRATE_STARLINK_GUARD,
+        ))
+        self.applied_kbps = None
+        self.last_state = None
+        self.last_report = 0.0
+        self.last_status_log = 0.0
+        self.prev = None
+        self._apply(self.abr.current_kbps)
 
-    def _apply(self, new_kbps: float):
-        new_kbps = int(max(self.min_kbps, min(self.target_kbps, new_kbps)))
-        if new_kbps == self.current_kbps:
+    def _apply(self, kbps: int):
+        if kbps == self.applied_kbps:
             return
-        self.current_kbps = new_kbps
-        self.encoder.set_property("bitrate", new_kbps)
-        log.info(f"[AdaptiveBitrate] -> {new_kbps} kbps")
+        self.encoder.set_property("bitrate", kbps)
+        self.applied_kbps = kbps
 
     def tick(self) -> bool:
         stats = self.sink.get_property("stats")
         if stats is None:
-            return True  # ще не з'єднано, чекаємо наступного тіку
-
-        bandwidth_mbps = stats.get_value("bandwidth-mbps") or 0.0
-        dropped = stats.get_value("packets-sent-dropped") or 0
-        retransmitted = stats.get_value("packets-retransmitted") or 0
-
-        # Лічильники в stats кумулятивні — рахуємо приріст за інтервал.
-        if self._last_dropped is None:
-            self._last_dropped = dropped
-            self._last_retransmitted = retransmitted
-            self._report(bandwidth_mbps, 0, 0)
-            return True
-
-        new_dropped = dropped - self._last_dropped
-        new_retransmitted = retransmitted - self._last_retransmitted
-        self._last_dropped = dropped
-        self._last_retransmitted = retransmitted
-
-        if new_dropped > 0:
-            log.warning(f"[AdaptiveBitrate] +{new_dropped} втрачених пакетів за інтервал — різко знижую")
-            self._apply(self.current_kbps * self.DROP_CUT_FACTOR)
-            self._report(bandwidth_mbps, new_dropped, new_retransmitted)
-            return True
-
-        if bandwidth_mbps <= 0:
-            # SRT ще не встиг оцінити лінк — рішення не приймаємо, але стан
-            # звітуємо (інакше діагностичний лог мав би дірки саме тоді, коли
-            # найцікавіше — на старті/після перепідключення).
-            self._report(bandwidth_mbps, new_dropped, new_retransmitted)
-            return True
-
-        bw_kbps = bandwidth_mbps * 1000 * self.BANDWIDTH_HEADROOM
-
-        if new_retransmitted > 0:
-            self._apply(min(bw_kbps, self.current_kbps * self.RETRANSMIT_CUT_FACTOR))
-        else:
-            self._apply(min(bw_kbps, self.current_kbps * self.RECOVERY_STEP_FACTOR, self.target_kbps))
-
-        self._report(bandwidth_mbps, new_dropped, new_retransmitted)
+            return True  # ще не з'єднано
+        fields = {k: stats.get_value(k) for k in (
+            "packets-sent", "packets-sent-lost", "packets-retransmitted",
+            "packets-sent-dropped", "rtt-ms", "bandwidth-mbps")}
+        now = time.time()
+        kbps = self.abr.tick(fields, now=now)
+        self._apply(kbps)
+        if self.abr.cut or (self.abr.state == "start" and self.last_state is None):
+            s = self.abr.last_signals
+            log.info(f"[AdaptiveBitrate] {self.abr.state}: -> {kbps} kbps "
+                     f"(rtt {s['rtt_ms']:.0f}ms, черга {s['queue_ms']:.0f}ms, втрати {s['loss'] * 100:.1f}%, "
+                     f"оцінка ємності {s['capacity_kbps']:.0f} kbps)")
+        self.last_state = self.abr.state
+        if now - self.last_status_log >= self.STATUS_LOG_EVERY_S:
+            self.last_status_log = now
+            s = self.abr.last_signals
+            log.info(f"[AdaptiveBitrate] {kbps}/{self.abr.target_kbps} kbps, стан {self.abr.state}, "
+                     f"rtt {s['rtt_ms']:.0f}ms (база {s['base_rtt_ms']:.0f}), втрати {s['loss'] * 100:.1f}%")
+        if now - self.last_report >= self.REPORT_EVERY_S:
+            self._report(fields, now)
         return True
 
-    def _report(self, bandwidth_mbps: float, dropped_delta: int, retransmitted_delta: int) -> None:
+    def _report(self, fields: dict, now: float) -> None:
+        cur = (fields.get("packets-sent-dropped") or 0, fields.get("packets-retransmitted") or 0)
+        prev = self.prev or cur
+        self.prev = cur
+        self.last_report = now
+        s = self.abr.last_signals
         _report_bitrate_state({
-            "bandwidth_mbps": bandwidth_mbps,
-            "dropped_delta": dropped_delta,
-            "retransmitted_delta": retransmitted_delta,
-            "current_kbps": self.current_kbps,
-            "target_kbps": self.target_kbps,
-            "min_kbps": self.min_kbps,
+            "bandwidth_mbps": fields.get("bandwidth-mbps") or 0.0,
+            "dropped_delta": cur[0] - prev[0],
+            "retransmitted_delta": cur[1] - prev[1],
+            "current_kbps": self.abr.current_kbps,
+            "target_kbps": self.abr.target_kbps,
+            "min_kbps": self.abr.min_kbps,
+            "rtt_ms": s["rtt_ms"],
+            "queue_ms": s["queue_ms"],
+            "loss_pct": s["loss"] * 100,
+            "state": self.abr.state,
         })
 
 
@@ -381,6 +376,9 @@ try:
         import capture_relay.track_tap as track_tap
         track_tap.start(pipeline, config)
 
+    if not ts_packer.attach(pipeline):
+        raise RuntimeError("ts_sink/ts_src не знайдено в пайплайні")
+
     if timestamp_overlay.attach(pipeline):
         log.info("[TimestampOverlay] мітка часу увімкнена — доступна наскрізна затримка в плеєрі")
     else:
@@ -413,17 +411,16 @@ try:
 
     if config.ADAPTIVE_BITRATE_ENABLED and is_software_encoder:
         target_kbps = config.bitrate_kbps()
-        min_kbps = config.adaptive_bitrate_min_kbps(target_kbps)
-        controller = AdaptiveBitrateController(
+        runner = AdaptiveBitrateRunner(
             pipeline.get_by_name("video_encoder"),
             pipeline.get_by_name("srt_sink"),
             target_kbps,
-            min_kbps,
         )
-        GLib.timeout_add_seconds(config.ADAPTIVE_BITRATE_INTERVAL_SEC, controller.tick)
+        GLib.timeout_add(config.ADAPTIVE_BITRATE_INTERVAL_MS, runner.tick)
         log.info(
-            f"[AdaptiveBitrate] enabled: target={target_kbps}kbps min={min_kbps}kbps "
-            f"interval={config.ADAPTIVE_BITRATE_INTERVAL_SEC}s"
+            f"[AdaptiveBitrate] enabled: target={target_kbps}kbps min={runner.abr.min_kbps}kbps "
+            f"start={runner.abr.current_kbps}kbps interval={config.ADAPTIVE_BITRATE_INTERVAL_MS}ms "
+            f"starlink_guard={config.ADAPTIVE_BITRATE_STARLINK_GUARD}"
         )
     elif config.ADAPTIVE_BITRATE_ENABLED:
         log.info("[AdaptiveBitrate] увімкнено в конфізі, але апаратний енкодер не підтримує live bitrate — пропускаю")

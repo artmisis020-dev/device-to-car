@@ -1,0 +1,99 @@
+diff --git a/packet_pool.go b/packet_pool.go
+index 1ee7615..f0a368b 100644
+--- a/packet_pool.go
++++ b/packet_pool.go
+@@ -46,6 +46,24 @@ func (b *packetAccumulator) add(p *Packet) (ps []*Packet) {
+ 
+ 	mps = append(mps, p)
+ 
++	// Sirena patch: flush a PES as soon as its declared PES_packet_length has
++	// been received, instead of holding it until the next packet with
++	// PayloadUnitStartIndicator on this PID arrives. For live video that next
++	// packet is the next frame, so every frame was delayed by one frame
++	// interval (33ms at 30fps). PES with length 0 (unbounded, e.g. video
++	// frames >64KB) still wait for the next PUSI as before.
++	if isPESPayloadComplete(mps) {
++		b.q = nil
++		if len(ps) > 0 {
++			// the previous PES was flushed by this PUSI: return it now and
++			// keep the complete one for the next call — cannot return two.
++			b.q = mps
++			return
++		}
++		ps = mps
++		return
++	}
++
+ 	// Check if PSI payload is complete
+ 	if b.programMap != nil &&
+ 		(b.pid == PIDPAT || b.programMap.existsUnlocked(b.pid)) &&
+@@ -128,3 +146,24 @@ func isSameAsPrevious(ps []*Packet, p *Packet) bool {
+ 	l := len(ps)
+ 	return l > 0 && p.Header.HasPayload && p.Header.ContinuityCounter == ps[l-1].Header.ContinuityCounter
+ }
++
++// isPESPayloadComplete reports whether mps holds a whole PES whose header
++// declares a non-zero PES_packet_length.
++func isPESPayloadComplete(mps []*Packet) bool {
++	if len(mps) == 0 || !mps[0].Header.PayloadUnitStartIndicator {
++		return false
++	}
++	first := mps[0].Payload
++	if len(first) < 6 || first[0] != 0 || first[1] != 0 || first[2] != 1 {
++		return false
++	}
++	pesLen := int(first[4])<<8 | int(first[5])
++	if pesLen == 0 {
++		return false
++	}
++	total := 0
++	for _, m := range mps {
++		total += len(m.Payload)
++	}
++	return total >= pesLen+6
++}
+diff --git a/packet_pool_sirena_test.go b/packet_pool_sirena_test.go
+new file mode 100644
+index 0000000..c91de87
+--- /dev/null
++++ b/packet_pool_sirena_test.go
+@@ -0,0 +1,39 @@
++package astits
++
++import (
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++)
++
++var testCC uint8
++
++func pesPacket(pusi bool, payload []byte) *Packet {
++	testCC = (testCC + 1) & 0xf
++	return &Packet{Header: PacketHeader{PID: 256, PayloadUnitStartIndicator: pusi, HasPayload: true,
++		ContinuityCounter: testCC}, Payload: payload}
++}
++
++// Sirena patch: a PES with a known PES_packet_length is returned as soon as
++// its last packet arrives, not when the next PES starts.
++func TestPacketAccumulatorFlushesCompletePES(t *testing.T) {
++	acc := newPacketAccumulator(256, nil)
++	body := make([]byte, 300)
++	pes := append([]byte{0, 0, 1, 0xe0, byte(len(body) >> 8), byte(len(body))}, body...)
++
++	assert.Empty(t, acc.add(pesPacket(true, pes[:184])))
++	got := acc.add(pesPacket(false, pes[184:]))
++	assert.Len(t, got, 2)
++
++	// next PES starts: nothing stale is returned
++	assert.Empty(t, acc.add(pesPacket(true, pes[:184])))
++}
++
++func TestPacketAccumulatorUnboundedPESWaitsForNextStart(t *testing.T) {
++	acc := newPacketAccumulator(256, nil)
++	pes := append([]byte{0, 0, 1, 0xe0, 0, 0}, make([]byte, 300)...)
++
++	assert.Empty(t, acc.add(pesPacket(true, pes[:184])))
++	assert.Empty(t, acc.add(pesPacket(false, pes[184:])))
++	assert.Len(t, acc.add(pesPacket(true, pes[:184])), 2)
++}

@@ -32,9 +32,13 @@ admin_module/templates/_video_player.html — constants TS_* там): рядок
 frame_timestamps.py. Займають верхні 3 ряди блоків (≈44px висоти, 618px
 ширини при блоці 14px) — на 640px кадрі вміщаються.
 
-Малює через GStreamer cairooverlay (сигнал "draw") — під'єднується в
-srt_relay_capture.py одразу після Gst.parse_launch(), елемент
-`cairooverlay name=ts_overlay` вставлений у сам рядок пайплайна."""
+Малює через GStreamer overlaycomposition (сигнал "draw" повертає
+GstVideoOverlayComposition з одним ARGB-прямокутником, який елемент
+змішує прямо в I420-кадр) — під'єднується в srt_relay_capture.py одразу
+після Gst.parse_launch(), елемент `overlaycomposition name=ts_overlay`
+вставлений у сам рядок пайплайна. Раніше був cairooverlay — він вимагав
+BGRx і тягнув дві повні конвертації кадру (YUY2→BGRx→I420) на CPU;
+overlaycomposition працює в I420 і змішує лише площу мітки."""
 
 from __future__ import annotations
 
@@ -97,34 +101,67 @@ def _capture_wall_ms(overlay, buffer_pts_ns, now_s: float) -> int:
     return int(now_s * 1000)
 
 
-def on_draw(overlay, context, timestamp, duration) -> None:
-    global _frame_counter
-    now_s = time.time()
-    draw_ms = int(now_s * 1000)
-    capture_ms = _capture_wall_ms(overlay, timestamp, now_s)
-    rows = frame_rows(draw_ms, capture_ms, _frame_counter)
-    _frame_counter += 1
+_TRANSPARENT_PX = b"\x00\x00\x00\x00"
+_WHITE_BLOCK = b"\xff\xff\xff\xff" * (BLOCK_SIZE - 1)
+_BLACK_BLOCK = b"\x00\x00\x00\xff" * (BLOCK_SIZE - 1)
 
-    for r, bits in enumerate(rows):
-        y = MARGIN + r * BLOCK_SIZE
-        for i, bit in enumerate(bits):
-            x = MARGIN + i * BLOCK_SIZE
-            context.rectangle(x, y, BLOCK_SIZE - 1, BLOCK_SIZE - 1)
-            if bit:
-                context.set_source_rgb(1.0, 1.0, 1.0)
-            else:
-                context.set_source_rgb(0.0, 0.0, 0.0)
-            context.fill()
+
+def render_argb(rows: list[list[int]]) -> "tuple[bytes, int, int]":
+    """BGRA-зображення мітки (на little-endian — формат
+    GST_VIDEO_OVERLAY_COMPOSITION_FORMAT_RGB). Геометрія та сама, що була
+    в cairooverlay: блок BLOCK_SIZE-1 px, 1px проміжок прозорий (там
+    лишається відео), тож декодери (плеєр, frame_timestamps.py) не міняються."""
+    width = max(len(bits) for bits in rows) * BLOCK_SIZE
+    height = len(rows) * BLOCK_SIZE
+    gap = _TRANSPARENT_PX
+    out = bytearray()
+    for bits in rows:
+        line = b"".join((_WHITE_BLOCK if bit else _BLACK_BLOCK) + gap for bit in bits)
+        line += gap * (width - len(line) // 4)
+        out += line * (BLOCK_SIZE - 1)
+        out += gap * width
+    return bytes(out), width, height
+
+
+class _Overlay:
+    def __init__(self, gst, gst_video):
+        self.Gst = gst
+        self.GstVideo = gst_video
+
+    def on_draw(self, overlay, sample):
+        global _frame_counter
+        Gst, GstVideo = self.Gst, self.GstVideo
+        buffer = sample.get_buffer()
+        now_s = time.time()
+        draw_ms = int(now_s * 1000)
+        capture_ms = _capture_wall_ms(overlay, buffer.pts if buffer else None, now_s)
+        rows = frame_rows(draw_ms, capture_ms, _frame_counter)
+        _frame_counter += 1
+
+        data, width, height = render_argb(rows)
+        argb = Gst.Buffer.new_wrapped(data)
+        GstVideo.buffer_add_video_meta(
+            argb, GstVideo.VideoFrameFlags.NONE, GstVideo.VideoFormat.BGRA, width, height
+        )
+        rect = GstVideo.VideoOverlayRectangle.new_raw(
+            argb, MARGIN, MARGIN, width, height, GstVideo.VideoOverlayFormatFlags.NONE
+        )
+        return GstVideo.VideoOverlayComposition.new(rect)
 
 
 def attach(pipeline) -> bool:
     """Під'єднує draw-колбек до елемента ts_overlay в пайплайні, якщо він
-    там є (пайплайн будується з cairooverlay в рядку — див.
+    там є (пайплайн будується з overlaycomposition в рядку — див.
     srt_relay_capture.py:create_pipeline_string()). Повертає False, якщо
-    елемента нема (напр. cairooverlay недоступний на цій збірці GStreamer) —
-    відео й далі йде штатно, просто без мітки/без наскрізної затримки."""
+    елемента нема — відео й далі йде штатно, просто без мітки/без
+    наскрізної затримки."""
     overlay = pipeline.get_by_name("ts_overlay")
     if overlay is None:
         return False
-    overlay.connect("draw", on_draw)
+    import gi
+    gi.require_version("Gst", "1.0")
+    gi.require_version("GstVideo", "1.0")
+    from gi.repository import Gst, GstVideo
+
+    overlay.connect("draw", _Overlay(Gst, GstVideo).on_draw)
     return True

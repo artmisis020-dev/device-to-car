@@ -1,0 +1,137 @@
+diff --git a/congestion/live/receive.go b/congestion/live/receive.go
+index 7bcf7f1..0cfda11 100644
+--- a/congestion/live/receive.go
++++ b/congestion/live/receive.go
+@@ -251,6 +251,20 @@ func (r *receiver) Push(pkt packet.Packet) {
+ 	r.packetList.PushBack(pkt)
+ }
+ 
++// ackBase is where ACK/NAK scanning starts. Sirena patch: packets are now
++// delivered as soon as they are ripe and contiguous with the last delivered
++// one, without waiting for the next periodic ACK (10ms) to advance
++// lastACKSequenceNumber — so the last delivered sequence number can be ahead
++// of the last ACK. Scanning from the older ACK would treat the delivered (and
++// already removed) packets as a gap: ACK would stall and NAK would request
++// them again.
++func (r *receiver) ackBase() circular.Number {
++	if r.lastDeliveredSequenceNumber.Gt(r.lastACKSequenceNumber) {
++		return r.lastDeliveredSequenceNumber
++	}
++	return r.lastACKSequenceNumber
++}
++
+ func (r *receiver) periodicACK(now uint64) (ok bool, sequenceNumber circular.Number, lite bool) {
+ 	r.lock.Lock()
+ 	defer r.lock.Unlock()
+@@ -265,7 +279,7 @@ func (r *receiver) periodicACK(now uint64) (ok bool, sequenceNumber circular.Num
+ 	}
+ 
+ 	minPktTsbpdTime, maxPktTsbpdTime := uint64(0), uint64(0)
+-	ackSequenceNumber := r.lastACKSequenceNumber
++	ackSequenceNumber := r.ackBase()
+ 
+ 	e := r.packetList.Front()
+ 	if e != nil {
+@@ -327,7 +341,7 @@ func (r *receiver) periodicNAK(now uint64) (ok bool, from, to circular.Number) {
+ 
+ 	// Send a periodic NAK
+ 
+-	ackSequenceNumber := r.lastACKSequenceNumber
++	ackSequenceNumber := r.ackBase()
+ 
+ 	// Send a NAK only for the first gap.
+ 	// Alternatively send a NAK for max. X gaps because the size of the NAK packet is limited.
+@@ -373,7 +387,9 @@ func (r *receiver) Tick(now uint64) {
+ 	for e := r.packetList.Front(); e != nil; e = e.Next() {
+ 		p := e.Value.(packet.Packet)
+ 
+-		if p.Header().PacketSequenceNumber.Lte(r.lastACKSequenceNumber) && p.Header().PktTsbpdTime <= now {
++		seq := p.Header().PacketSequenceNumber
++		inOrder := seq.Lte(r.lastACKSequenceNumber) || seq.Equals(r.lastDeliveredSequenceNumber.Inc())
++		if inOrder && p.Header().PktTsbpdTime <= now {
+ 			r.statistics.PktBuf--
+ 			r.statistics.ByteBuf -= p.Len()
+ 
+diff --git a/congestion/live/receive_sirena_test.go b/congestion/live/receive_sirena_test.go
+new file mode 100644
+index 0000000..c0e4e3a
+--- /dev/null
++++ b/congestion/live/receive_sirena_test.go
+@@ -0,0 +1,61 @@
++package live
++
++import (
++	"net"
++	"testing"
++
++	"github.com/datarhei/gosrt/circular"
++	"github.com/datarhei/gosrt/packet"
++	"github.com/stretchr/testify/require"
++)
++
++// Sirena patch: a ripe packet contiguous with the last delivered one is
++// delivered on the next Tick without waiting for the periodic ACK, and the
++// following ACK/NAK must not treat those delivered packets as missing.
++func TestRecvDeliverBeforeACK(t *testing.T) {
++	acks := []uint32{}
++	naks := [][2]uint32{}
++	numbers := []uint32{}
++	recv := mockLiveRecv(
++		func(seq circular.Number, light bool) { acks = append(acks, seq.Val()) },
++		func(from, to circular.Number) { naks = append(naks, [2]uint32{from.Val(), to.Val()}) },
++		func(p packet.Packet) { numbers = append(numbers, p.Header().PacketSequenceNumber.Val()) },
++	)
++	addr, _ := net.ResolveIPAddr("ip", "127.0.0.1")
++	push := func(seq uint32, tsbpd uint64) {
++		p := packet.NewPacket(addr)
++		p.Header().PacketSequenceNumber = circular.New(seq, packet.MAX_SEQUENCENUMBER)
++		p.Header().PktTsbpdTime = tsbpd
++		recv.Push(p)
++	}
++
++	for i := uint32(0); i < 5; i++ {
++		push(i, 1)
++	}
++	recv.Tick(1) // before the first ACK period
++	require.Empty(t, acks)
++	require.Exactly(t, []uint32{0, 1, 2, 3, 4}, numbers)
++
++	// gap at 5 (6..7 not ripe yet): nothing is delivered past the gap
++	push(6, 40)
++	push(7, 40)
++	recv.Tick(2)
++	require.Exactly(t, []uint32{0, 1, 2, 3, 4}, numbers)
++
++	// periodic ACK: starts after the delivered packets, not at 0
++	recv.Tick(10)
++	require.NotEmpty(t, acks)
++	require.Equal(t, uint32(5), acks[0]) // next expected = the gap, not 0
++
++	// periodic NAK reports only the real gap (5), never delivered packets
++	recv.Tick(25)
++	require.NotEmpty(t, naks)
++	for _, n := range naks {
++		require.Equal(t, [2]uint32{5, 5}, n)
++	}
++
++	// once the gap is filled the rest is delivered in order
++	push(5, 40)
++	recv.Tick(40)
++	require.Exactly(t, []uint32{0, 1, 2, 3, 4, 5, 6, 7}, numbers)
++}
+diff --git a/connection.go b/connection.go
+index b9deceb..434b43d 100644
+--- a/connection.go
++++ b/connection.go
+@@ -300,7 +300,10 @@ func newSRTConn(config srtConnConfig) *srtConn {
+ 		go c.close()
+ 	})
+ 
+-	c.tick = 10 * time.Millisecond
++	// Sirena patch: 1ms tick instead of 10ms — delivery to the application only
++	// happens in Tick(), so a 10ms ticker quantized every packet's release
++	// (measured: MediaMTX RTP output locked to a 10ms grid, ~5ms avg added).
++	c.tick = 1 * time.Millisecond
+ 
+ 	// 4.8.1.  Packet Acknowledgement (ACKs, ACKACKs) -> periodicACK = 10 milliseconds
+ 	// 4.8.2.  Packet Retransmission (NAKs) -> periodicNAK at least 20 milliseconds
