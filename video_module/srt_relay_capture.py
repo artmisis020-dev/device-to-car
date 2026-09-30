@@ -16,7 +16,7 @@ import urllib.request
 from pathlib import Path
 
 import gi
-from cameras_services import resolve_video_device, video_nodes, list_formats, supports_mode
+from cameras_services import resolve_video_device, video_nodes, list_formats, list_cameras, supports_mode
 
 gi.require_version("Gst", "1.0")
 from gi.repository import GLib, Gst
@@ -56,12 +56,31 @@ if not config.check_device_exists():
     sys.exit(1)
 
 if not supports_mode(config.DEVICE, config.INPUT_FORMAT, config.WIDTH, config.HEIGHT, config.FPS):
-    log.error(
-        f"Камера {config.DEVICE} не підтримує {config.INPUT_FORMAT} "
-        f"{config.WIDTH}x{config.HEIGHT}@{config.FPS}fps — v4l2src не зможе "
-        f"домовитись про caps. Доступні режими:\n{list_formats(config.DEVICE)}"
+    # Налаштований режим (з панелі/env) орієнтувався на іншу камеру — різні
+    # пристрої мають різні моделі й кількість камер, тож НЕ падаємо в
+    # crash-loop, а самі підбираємо найкращий режим, який ця конкретна
+    # камера реально вміє (той самий принцип, що вже є в
+    # sirena_manager.SirenaSupervisor.set_camera() для ручного перемикання).
+    _camera = next((c for c in list_cameras(verbose=False) if c.path == config.DEVICE), None)
+    _modes = _camera.modes if _camera else []
+    if not _modes:
+        log.error(
+            f"Камера {config.DEVICE} не підтримує {config.INPUT_FORMAT} "
+            f"{config.WIDTH}x{config.HEIGHT}@{config.FPS}fps і не має жодного "
+            f"сумісного режиму для цього пайплайна. Доступні режими:\n{list_formats(config.DEVICE)}"
+        )
+        sys.exit(1)
+    _fourcc, _w, _h, _fps = _modes[0]  # найбільша площа, тоді fps — modes вже відсортовані
+    _new_format = {"YUYV": "YUY2", "MJPG": "MJPG"}.get(_fourcc, _fourcc)
+    log.warning(
+        f"Камера {config.DEVICE} не підтримує налаштований режим "
+        f"{config.INPUT_FORMAT} {config.WIDTH}x{config.HEIGHT}@{config.FPS}fps — "
+        f"автоматично перемикаюсь на {_new_format} {_w}x{_h}@{_fps}fps "
+        "(найкращий доступний режим цієї камери)."
     )
-    sys.exit(1)
+    config.INPUT_FORMAT, config.WIDTH, config.HEIGHT, config.FPS = _new_format, _w, _h, _fps
+    config.resync_keyint(_fps)
+    config.persist_auto_mode(_new_format, _w, _h, _fps)
 
 
 def get_encoder_chain(bitrate_kbps: int) -> "tuple[str, bool]":

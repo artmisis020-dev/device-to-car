@@ -49,13 +49,21 @@ def _cfg_bool(cfg: dict, json_key: str, env_name: str, default: bool) -> bool:
     return os.environ.get(env_name, "1" if default else "0").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _cfg_str(cfg: dict, json_key: str, env_name: str, default: str) -> str:
+    """Той самий пріоритет панель > env, що й _cfg_int, але для рядків."""
+    value = cfg.get(json_key)
+    if value is not None and str(value).strip():
+        return str(value).strip().upper()
+    return os.environ.get(env_name, default).strip().upper()
+
+
 _MANAGER_CFG = _load_manager_config()
 
 DEVICE = os.environ.get("VIDEO_DEVICE", "/dev/video0")
 WIDTH = _cfg_int(_MANAGER_CFG, "width", "SIRENA_VIDEO_WIDTH", 640)
 HEIGHT = _cfg_int(_MANAGER_CFG, "height", "SIRENA_VIDEO_HEIGHT", 512)
 FPS = _cfg_int(_MANAGER_CFG, "fps", "SIRENA_VIDEO_FPS", 30)
-INPUT_FORMAT = os.environ.get("INPUT_FORMAT", "YUY2").upper()
+INPUT_FORMAT = _cfg_str(_MANAGER_CFG, "input_format", "INPUT_FORMAT", "YUY2")
 KEYINT = env_int("KEYINT", max(1, FPS))
 VIDEO_ENCODER = os.environ.get("VIDEO_ENCODER", "auto").strip().lower()
 
@@ -127,3 +135,27 @@ VIDEO_VERSION = os.environ.get("SIRENA_VIDEO_RELAY_VERSION", "v1.0.0-relay")
 
 def check_device_exists() -> bool:
     return os.path.exists(DEVICE)
+
+
+def resync_keyint(fps: int) -> None:
+    """Перерахувати KEYINT під авто-підібраний fps (виклик — після зміни
+    config.FPS у persist_auto_mode-гілці). Не чіпає KEYINT, якщо оператор
+    задав його явно через env — тоді це свідомий вибір, не похідне від fps."""
+    global KEYINT
+    if os.environ.get("KEYINT") is None:
+        KEYINT = max(1, fps)
+
+
+def persist_auto_mode(input_format: str, width: int, height: int, fps: int) -> None:
+    """Зберігає режим, підібраний самим srt_relay_capture.py при старті (коли
+    налаштований режим камера не підтримує), у sirena_video_config.json —
+    той самий файл і патерн read-modify-write, що вже використовує
+    sirena_manager.SirenaSupervisor.set_camera() при ручному перемиканні
+    камери. Так адмін-панель і наступні рестарти бачать реальний робочий
+    режим цього конкретного пристрою, а не застарілий/чужий дефолт."""
+    cfg = _load_manager_config()
+    cfg.update({"input_format": input_format, "width": width, "height": height, "fps": fps})
+    try:
+        Path(VIDEO_CONFIG_PATH).write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    except Exception:
+        logging.exception("Не вдалось зберегти авто-підібраний режим камери")

@@ -15,7 +15,7 @@ ExecStart=/opt/sirena-admin/.venv/bin/gunicorn \
     --workers 1 \
     --worker-class gthread \
     --threads 64 \
-    --bind 0.0.0.0:8080 \
+    --bind 0.0.0.0:8080 \f/
     --worker-tmp-dir /tmp \
     "admin_module.main:app"
 Restart=on-failure
