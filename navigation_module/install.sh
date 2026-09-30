@@ -54,6 +54,19 @@ echo "3. Розгортання робочої директорії та коп�
 mkdir -p "$INSTALL_DIR"
 cp -a "$DEPLOY_DIR"/. "$INSTALL_DIR/"
 
+# Інерційка (власний EKF + злиття Starlink) живе в vision_module/inertia/ —
+# main.py імпортує ці файли; на РПі структура плоска, тому копіюємо поряд.
+# Раніше це робилось вручну і копії на РПі розходились з репо.
+INERTIA_SRC="$DEPLOY_DIR/../vision_module/inertia"
+for f in ekf_estimator.py imu_math.py integrity.py inertial_nav.py; do
+    if [ -f "$INERTIA_SRC/$f" ]; then
+        cp "$INERTIA_SRC/$f" "$INSTALL_DIR/$f"
+    else
+        echo "Помилка: $INERTIA_SRC/$f не знайдено — навігація без нього не стартує"
+        exit 1
+    fi
+done
+
 echo "4. Налаштування ізольованого Python Venv..."
 rm -rf "$INSTALL_DIR/venv"
 python3 -m venv "$INSTALL_DIR/venv"

@@ -54,6 +54,22 @@ def _get_device_id() -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+# Стеля частоти пересилання на адмін-сервер (телеметрія-БД/SSE/inertia-лог).
+# 2026-09-30: навігація (власний EKF) просить у FC RAW_IMU 50Гц / ATTITUDE
+# 25Гц — локально на РПі це потрібно, а на сервер (мережа + рядки в БД)
+# стільки не треба: раніше туди йшло ATTITUDE 10Гц / RAW_IMU 2Гц.
+FORWARD_MAX_RATE_HZ = {
+    "ATTITUDE": 10.0,
+    "RAW_IMU": 10.0,
+    "SCALED_PRESSURE": 2.0,
+    # навігація просить їх частіше лише для власного сирого логу
+    "SERVO_OUTPUT_RAW": 2.0,
+    "ESC_TELEMETRY_1_TO_4": 2.0,
+    "SCALED_IMU2": 1.0,
+    "SCALED_IMU3": 1.0,
+    "VIBRATION": 2.0,
+}
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 def main():
     try:
@@ -83,10 +99,18 @@ def main():
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
 
+    last_forward: dict[str, float] = {}
+
     def on_telemetry(msg_type: str, msg_data: dict) -> None:
         if msg_type == "BAD_DATA" or not msg_data:
             return
-        sender.enqueue(msg_type, msg_data, time.time())
+        now = time.time()
+        max_hz = FORWARD_MAX_RATE_HZ.get(msg_type)
+        if max_hz:
+            if now - last_forward.get(msg_type, 0.0) < 1.0 / max_hz:
+                return
+            last_forward[msg_type] = now
+        sender.enqueue(msg_type, msg_data, now)
 
     while True:
         try:

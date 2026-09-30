@@ -16,7 +16,12 @@ logger = logging.getLogger(__name__)
 
 
 MESSAGE_RATES = (
-    (mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE, 10),
+    # ATTITUDE/RAW_IMU — ті самі частоти, що просить navigation_module
+    # (config.NAV_*_RATE_HZ): інтервал повідомлення в ArduPilot один на
+    # порт FC, і хто запитав останнім, той і встановив. До 2026-09-30 тут
+    # стояло RAW_IMU=2Гц — цим телеметрійний демон при кожному своєму
+    # старті зрізав частоту, потрібну інерційці.
+    (mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE, 25),
     (mavutil.mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT, 5),
     (mavutil.mavlink.MAVLINK_MSG_ID_GPS_RAW_INT, 2),
     (mavutil.mavlink.MAVLINK_MSG_ID_SYS_STATUS, 2),
@@ -28,8 +33,9 @@ MESSAGE_RATES = (
     (mavutil.mavlink.MAVLINK_MSG_ID_NAV_CONTROLLER_OUTPUT, 2),
     (mavutil.mavlink.MAVLINK_MSG_ID_EKF_STATUS_REPORT, 1),
     (mavutil.mavlink.MAVLINK_MSG_ID_POWER_STATUS, 1),
-    (mavutil.mavlink.MAVLINK_MSG_ID_SERVO_OUTPUT_RAW, 2),
-    (mavutil.mavlink.MAVLINK_MSG_ID_RAW_IMU, 2),
+    (mavutil.mavlink.MAVLINK_MSG_ID_SERVO_OUTPUT_RAW, 10),  # = navigation NAV_MOTOR_RATE_HZ (інакше перебиває)
+    (mavutil.mavlink.MAVLINK_MSG_ID_RAW_IMU, 50),
+    (mavutil.mavlink.MAVLINK_MSG_ID_SCALED_PRESSURE, 10),
 )
 
 

@@ -4,3 +4,4 @@ grpcio
 grpcio-tools
 yagrc
 starlink-grpc-core
+numpy

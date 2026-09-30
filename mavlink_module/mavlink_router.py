@@ -55,7 +55,7 @@ STREAM_REQUEST_RETRIES = getattr(config, "ROUTER_STREAM_REQUEST_RETRIES", 3)
 STREAM_REQUEST_INTERVAL_SEC = getattr(config, "ROUTER_STREAM_REQUEST_INTERVAL_SEC", 10.0)
 
 STREAM_MESSAGE_RATES = (
-    (mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE, 10),
+    (mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE, 25),  # узгоджено з navigation_module (NAV_ATTITUDE_RATE_HZ)
     (mavutil.mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT, 5),
     (mavutil.mavlink.MAVLINK_MSG_ID_GPS_RAW_INT, 2),
     (mavutil.mavlink.MAVLINK_MSG_ID_SYS_STATUS, 2),
