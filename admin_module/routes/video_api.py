@@ -24,7 +24,7 @@ def api_video_report(device_id):
 
 
 # ТИМЧАСОВО — діагностика адаптивного бітрейту, не постійна фіча. Викликає
-# сам РПі (AdaptiveBitrateController.tick() в srt_relay_capture.py), без
+# сам РПі (AdaptiveBitrateRunner.tick() в srt_relay_capture.py), без
 # сесійної авторизації — той самий патерн, що й /api/video/report/<id>.
 # Видалити разом з video_latency_log_service.py, коли аналіз завершено.
 @video_api_bp.route("/api/video/report-bitrate/<device_id>", methods=["POST"])

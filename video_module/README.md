@@ -134,7 +134,16 @@ RPi5 апаратного енкодера немає). Ціль — бітре�
 
 Кожен зріз і раз на 10с стан пишуться в журнал (`journalctl -u
 srt-relay-capture | grep AdaptiveBitrate`); раз на секунду стан іде на
-адмін-сервер (`/api/video/report-bitrate`, діагностичний CSV).
+адмін-сервер (`/api/video/report-bitrate`) і потрапляє в діагностичний CSV
+(`/opt/sirena-video/video_latency_logs/<device>/<date>.csv`, рядок на
+секунду, поки відкритий плеєр): `rpi_current_kbps` / `rpi_target_kbps` /
+`rpi_min_kbps` — бітрейт, `rpi_rtt_ms` — RTT з libsrt, `rpi_queue_ms` —
+черга (RTT мінус мінімальний), `rpi_loss_pct` — втрати за NAK-звітами
+(завищені, див. вище), `rpi_abr_state` — стан контролера (`start`,
+`increase`, `probe`, `settle`, `hold`, `lossy`, `overuse`, `drain`,
+`guard`). Поруч — браузер (`e2e_latency_ms`, `jitter_buffer_ms`, ...) і
+MediaMTX (`srt_*`). Якщо набір колонок змінився посеред дня, попередній
+файл дня відкладається як `<date>_vN.csv`.
 
 ### Результати
 
@@ -206,5 +215,5 @@ sudo tc qdisc del dev wg0 root                                                  
 - **Нижня камера** (`additional_modules/lowercam`): перегляд через
   `rpicam-vid | ffmpeg` без `--low-latency` (на Pi 5 без нього програмний
   кодер тримає до ~8 кадрів) — ще не оптимізувалось.
-- Нові поля звіту автобітрейту (`rtt_ms`, `queue_ms`, `loss_pct`, `state`)
-  адмінка поки не пише в діагностичний CSV.
+- Колонка `rpi_bandwidth_mbps` — оцінка ємності від libsrt; контролер її
+  не використовує (шум 3…2000 Мбіт/с), лишена для порівняння.

@@ -1,14 +1,14 @@
 """ТИМЧАСОВО — для аналізу наскрізної затримки й адаптивного бітрейту
 (діагностика, не постійна фіча). Видалити разом із відповідними
 ендпоінтами у video_api.py, кодом відправки в _video_player.html, і
-звітуванням з AdaptiveBitrateController в srt_relay_capture.py, коли
+звітуванням з AdaptiveBitrateRunner в srt_relay_capture.py, коли
 аналіз завершено.
 
 Один зведений CSV-рядок на секунду (темп задає клієнтський JS), що
 об'єднує ТРИ джерела:
   - клієнт (браузер): naskrizna latency, jitter-буфер, jitter, decode,
     RTT, бітрейт/fps/роздільність як їх бачить WebRTC-приймач;
-  - РПі (AdaptiveBitrateController, srt_relay_capture.py): що саме
+  - РПі (AdaptiveBitrateRunner, srt_relay_capture.py): що саме
     контролер бачив і яке рішення прийняв (bandwidth-оцінка SRT, дельта
     втрачених/ретрансльованих пакетів, поточний/цільовий/мінімальний
     бітрейт) — кешується тут при кожному звіті, приклеюється до
@@ -46,13 +46,18 @@ HEADERS = [
     "fps",
     "resolution",
     "connection_state",
-    # РПі — AdaptiveBitrateController (кешоване останнє значення)
+    # РПі — AdaptiveBitrateRunner (кешоване останнє значення)
     "rpi_bandwidth_mbps",
     "rpi_dropped_delta",
     "rpi_retransmitted_delta",
     "rpi_current_kbps",
     "rpi_target_kbps",
     "rpi_min_kbps",
+    # новий контролер (capture_relay/adaptive_bitrate.py): що він бачив
+    "rpi_rtt_ms",
+    "rpi_queue_ms",
+    "rpi_loss_pct",
+    "rpi_abr_state",
     "rpi_report_age_s",
     # MediaMTX — стан SRT-з'єднання РПі→сервер (свіжий запит щоразу)
     "srt_rtt_ms",
@@ -76,6 +81,13 @@ def record_bitrate_report(device_id: str, payload: dict) -> None:
         _latest_bitrate[device_id] = {**payload, "received_at": time.time()}
 
 
+def _round(value, digits: int = 1):
+    try:
+        return round(float(value), digits)
+    except (TypeError, ValueError):
+        return None
+
+
 def _cached_bitrate_report(device_id: str) -> dict:
     with _bitrate_lock:
         entry = _latest_bitrate.get(device_id)
@@ -89,6 +101,10 @@ def _cached_bitrate_report(device_id: str) -> dict:
         "rpi_current_kbps": entry.get("current_kbps"),
         "rpi_target_kbps": entry.get("target_kbps"),
         "rpi_min_kbps": entry.get("min_kbps"),
+        "rpi_rtt_ms": _round(entry.get("rtt_ms")),
+        "rpi_queue_ms": _round(entry.get("queue_ms")),
+        "rpi_loss_pct": _round(entry.get("loss_pct"), 2),
+        "rpi_abr_state": entry.get("state"),
         "rpi_report_age_s": round(age, 1),
     }
 
@@ -149,12 +165,33 @@ def _current_log_path(device_id: str) -> Path:
     return _log_dir(device_id) / f"{day}.csv"
 
 
+def _rotate_if_header_changed(path: Path) -> None:
+    """Якщо денний файл уже є, але зі старим набором колонок (оновили
+    HEADERS посеред дня) — відкладаємо його як <день>_vN.csv і починаємо
+    новий. Інакше рядки з іншою кількістю колонок змішались би під старим
+    заголовком і файл став би непридатним для аналізу."""
+    if not path.exists():
+        return
+    try:
+        with open(path, newline="", encoding="utf-8") as fh:
+            header = next(csv.reader(fh), None)
+    except OSError:
+        return
+    if header == HEADERS:
+        return
+    n = 1
+    while (old := path.with_name(f"{path.stem}_v{n}.csv")).exists():
+        n += 1
+    path.rename(old)
+
+
 def _get_entry(device_id: str) -> dict:
     entry = _state.setdefault(device_id, {"path": None, "fh": None, "writer": None})
     path = _current_log_path(device_id)
     if entry["path"] != path:
         if entry["fh"] is not None:
             entry["fh"].close()
+        _rotate_if_header_changed(path)
         is_new = not path.exists()
         fh = open(path, "a", newline="", encoding="utf-8")
         writer = csv.writer(fh)
