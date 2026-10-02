@@ -1,0 +1,20 @@
+[Unit]
+Description=Sirena Uplink Watchdog (Starlink failover через mesh сусіда)
+# Живе рівно стільки, скільки піднятий mesh: стоп mesh → стоп сторожа.
+BindsTo=sirena-mesh.service
+After=sirena-mesh.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/opt/sirena/.env
+ExecStart=/usr/bin/python3 /opt/sirena-mesh/uplink_watchdog.py
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=10s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sirena-uplink
+Environment=PYTHONUNBUFFERED=1
+
+# Без [Install]: стартує разом з mesh через sirena_manager
+# (ServiceDefinition "mesh", units = sirena-mesh + sirena-uplink).

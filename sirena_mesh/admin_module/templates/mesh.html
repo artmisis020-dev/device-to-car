@@ -1,0 +1,614 @@
+{% extends "base.html" %}
+{% block title %}Mesh - Sirena{% endblock %}
+{% block head %}
+<style>
+  body { background:var(--sirena-bg); color:var(--sirena-text); }
+  .navbar { background:var(--sirena-header) !important; border-bottom:1px solid var(--sirena-border); }
+  .page-wrap { padding:0 1rem 1rem; }
+  .actions { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
+
+  .mesh-layout { display:grid; grid-template-columns:minmax(0, 1fr) 360px; gap:1rem; }
+  @media (max-width: 992px) { .mesh-layout { grid-template-columns:1fr; } }
+  .mesh-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(420px, 1fr)); gap:1rem; }
+  @media (max-width: 576px) { .mesh-grid { grid-template-columns:1fr; } }
+
+  .mesh-card {
+    background: var(--sirena-surface);
+    border: 1px solid var(--sirena-border);
+    border-radius: 8px;
+    color: var(--sirena-text);
+    overflow: hidden;
+  }
+  .mesh-head {
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.5rem;
+    background: var(--sirena-header);
+    border-bottom: 1px solid var(--sirena-border);
+    padding: .5rem .75rem;
+    font-weight: 600;
+    font-size: .85rem;
+  }
+  .mesh-body { padding: .75rem 1rem; font-size:.85rem; }
+  .mesh-video-shell { position:relative; width:100%; aspect-ratio:16/9; background:#000; }
+  .mesh-video { width:100%; height:100%; object-fit:contain; background:#000; }
+  .mesh-overlay {
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:#ddd; background:rgba(0,0,0,.55); font-size:.9rem; text-align:center; padding:1rem;
+  }
+  .mesh-overlay.hidden { display:none; }
+  .mesh-dot { width:9px; height:9px; border-radius:999px; background:#713E3D; display:inline-block; margin-right:.35rem; }
+  .mesh-dot.on { background:var(--sirena-ok); }
+  .mesh-empty { color:var(--sirena-muted); text-align:center; padding:3rem 0; }
+  .mesh-error { color: var(--sirena-danger); font-size:.85rem; }
+  .mesh-fullscreen { position:fixed; inset:0; z-index:1050; border-radius:0; }
+  .mesh-fullscreen .mesh-video-shell { height:calc(100vh - 42px); aspect-ratio:auto; }
+
+  .mesh-tabs .nav-link { color:var(--sirena-muted); font-size:.8rem; padding:.5rem .75rem; }
+  .mesh-tabs .nav-link.active { color:var(--sirena-text); background:transparent; border-bottom:2px solid var(--sirena-accent); }
+  .mesh-tab { display:none; }
+  .mesh-tab.active { display:block; }
+
+  .setting-row { display:flex; align-items:center; justify-content:space-between; gap:.75rem; padding:.35rem 0;
+                 border-bottom:1px solid var(--sirena-border); }
+  .setting-row:last-child { border-bottom:0; }
+  .setting-row .form-control, .setting-row .form-select { width:140px; }
+  .cam-chip { min-width:2rem; }
+  .uplink-badge { font-size:.7rem; font-weight:500; margin-left:.4rem; padding:.05rem .4rem; border-radius:4px; }
+  .uplink-badge:empty { display:none; }
+  .uplink-badge.starlink { color:var(--sirena-ok); border:1px solid var(--sirena-ok); }
+  .uplink-badge.relay { color:var(--sirena-warning); border:1px solid var(--sirena-warning); }
+  .uplink-badge.none { color:var(--sirena-danger); border:1px solid var(--sirena-danger); }
+  .mesh-diag { font-size:.8rem; margin:.5rem 0; padding:.5rem; background:var(--sirena-bg); border-radius:6px; }
+  .mesh-diag dl { display:grid; grid-template-columns:auto 1fr; gap:.1rem .75rem; margin:0 0 .5rem; }
+  .mesh-diag dt { color:var(--sirena-muted); font-weight:400; }
+  .mesh-diag dd { margin:0; font-family:monospace; }
+  .mesh-diag table { width:100%; font-family:monospace; font-size:.75rem; }
+  .mesh-diag th { color:var(--sirena-muted); font-weight:400; }
+
+  .gp-title { color:var(--sirena-muted); font-size:.75rem; text-transform:uppercase; margin:.75rem 0 .35rem; }
+  .axis-item { display:grid; grid-template-columns:70px 1fr 60px; align-items:center; gap:.5rem; margin-bottom:.25rem; }
+  .axis-bar-wrap { position:relative; height:8px; background:var(--sirena-bg); border-radius:4px; }
+  .axis-bar-wrap::after { content:""; position:absolute; left:50%; top:-2px; bottom:-2px; width:1px; background:var(--sirena-border); }
+  .axis-bar { position:absolute; top:0; bottom:0; background:var(--sirena-accent); border-radius:4px; }
+  .axis-val { font-family:monospace; text-align:right; color:var(--sirena-mono); }
+  .gp-btn-grid { display:grid; grid-template-columns:repeat(8, 1fr); gap:.25rem; }
+  .gp-btn { text-align:center; font-family:monospace; font-size:.75rem; padding:.2rem 0; border-radius:4px;
+            border:1px solid var(--sirena-border); color:var(--sirena-muted); }
+  .gp-btn.pressed { background:var(--sirena-accent); border-color:var(--sirena-accent); color:#fff; }
+</style>
+{% endblock %}
+{% block content %}
+<nav class="navbar navbar-dark">
+  <div class="container-fluid">
+    <span class="navbar-brand">Mesh — борти</span>
+    <div class="actions">
+      <button class="btn btn-sm btn-outline-success" id="btnMeshAll" onclick="meshAll()">Меш для всіх</button>
+      {% if current_user and current_user.role == 'admin' %}
+      <a href="/" class="btn btn-sm btn-outline-secondary">Назад</a>
+      {% else %}
+      <a href="/room" class="btn btn-sm btn-outline-secondary">Назад</a>
+      {% endif %}
+    </div>
+  </div>
+</nav>
+
+<div class="page-wrap mt-3">
+  <div class="mesh-layout">
+    <div class="mesh-grid" id="streamsGrid">
+      <div class="mesh-empty">Завантаження бортів…</div>
+    </div>
+
+    <div class="mesh-card align-self-start">
+      <ul class="nav mesh-tabs border-bottom" style="border-color:var(--sirena-border) !important;">
+        <li class="nav-item"><button class="nav-link active" data-tab="settings">Налаштування відео</button></li>
+        <li class="nav-item"><button class="nav-link" data-tab="gamepad">Пульт</button></li>
+      </ul>
+
+      <div class="mesh-body mesh-tab active" id="tab-settings">
+        <select class="form-select form-select-sm mb-3" id="settingsDevice"></select>
+        <div class="setting-row" id="meshRow" style="display:none;">
+          <span><span class="mesh-dot" id="meshDot"></span>Mesh</span>
+          <span class="d-flex gap-1">
+            <button class="btn btn-sm btn-outline-success" id="btnMeshUp" onclick="meshAction('up')">Підняти</button>
+            <button class="btn btn-sm btn-outline-secondary" id="btnMeshDown" onclick="meshAction('down')">Опустити</button>
+            <button class="btn btn-sm btn-outline-info" onclick="loadDiag()" title="Діагностика mesh">Діагн.</button>
+          </span>
+        </div>
+        <div id="diagBox" class="mesh-diag" style="display:none;"></div>
+        <div id="settingsBox" class="text-secondary">Оберіть борт</div>
+        <div id="settingsError" class="mesh-error mt-2"></div>
+      </div>
+
+      <div class="mesh-body mesh-tab" id="tab-gamepad">
+        <div id="gpBindings"></div>
+        <div id="gpContent">
+          <div class="text-secondary">Підключіть пульт по USB і натисніть будь-яку кнопку</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+const IS_ADMIN = {{ ((current_user and current_user.role == 'admin') or false)|tojson }};
+const fetchNoCsrf = window.sirenaFetchNoCsrf || window.fetch.bind(window);
+const el = id => document.getElementById(id);
+
+let devices = [];          // [{device_id, hostname, online, approved}]
+const players = {};        // device_id -> {pc, reconnectTimer}
+let selectedDeviceId = null;
+let currentSettings = null;
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function getJson(url, options = {}) {
+  const resp = await fetch(url, options);
+  let body = {};
+  try { body = await resp.json(); } catch (_) {}
+  return { ok: resp.ok, status: resp.status, body };
+}
+
+function deviceName(d) {
+  return d.hostname || d.device_id.slice(0, 12);
+}
+
+document.querySelectorAll('.mesh-tabs .nav-link').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mesh-tabs .nav-link').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.mesh-tab').forEach(p => p.classList.toggle('active', p.id === `tab-${btn.dataset.tab}`));
+    if (btn.dataset.tab === 'gamepad') gpUpdate();
+  });
+});
+
+// ── Борти ───────────────────────────────────────────────────
+async function loadDevices() {
+  const { ok, body } = await getJson(IS_ADMIN ? '/api/devices' : '/api/my/devices');
+  if (!ok || !Array.isArray(body)) return;
+  const next = body.filter(d => d.approved);
+  const changed = next.map(d => d.device_id).join() !== devices.map(d => d.device_id).join();
+  devices = next;
+  if (changed) {
+    renderStreams();
+    renderDeviceSelect();
+    gpRenderBindings();
+  }
+  devices.forEach(d => {
+    const dot = el(`dot-${d.device_id}`);
+    if (dot) dot.classList.toggle('on', !!d.online);
+  });
+}
+
+// ── Стріми (WHEP з MediaMTX, як у lowercam.html) ────────────
+function renderStreams() {
+  Object.keys(players).forEach(stopPeer);
+  const grid = el('streamsGrid');
+  if (!devices.length) {
+    grid.innerHTML = '<div class="mesh-empty">Немає підтверджених бортів</div>';
+    return;
+  }
+  grid.innerHTML = devices.map(d => `
+    <div class="mesh-card" id="card-${d.device_id}">
+      <div class="mesh-head">
+        <span><span class="mesh-dot${d.online ? ' on' : ''}" id="dot-${d.device_id}"></span>${escapeHtml(deviceName(d))}
+          <span class="uplink-badge" id="uplink-${d.device_id}"></span></span>
+        <div class="actions">
+          <a class="btn btn-sm btn-outline-info" href="/telemetry/${d.device_id}">Телеметрія</a>
+          <button class="btn btn-sm btn-outline-secondary" onclick="connectStream('${d.device_id}')">↻</button>
+          <button class="btn btn-sm btn-outline-secondary" onclick="toggleFullscreen('${d.device_id}')">⛶</button>
+        </div>
+      </div>
+      <div class="mesh-video-shell">
+        <video class="mesh-video" id="video-${d.device_id}" autoplay muted playsinline></video>
+        <div class="mesh-overlay" id="overlay-${d.device_id}">Підключення…</div>
+      </div>
+    </div>`).join('');
+  devices.forEach(d => connectStream(d.device_id));
+}
+
+function setOverlay(deviceId, message, visible = true) {
+  const overlay = el(`overlay-${deviceId}`);
+  if (!overlay) return;
+  overlay.textContent = message;
+  overlay.classList.toggle('hidden', !visible);
+}
+
+function stopPeer(deviceId) {
+  const p = players[deviceId];
+  if (!p) return;
+  if (p.reconnectTimer) clearTimeout(p.reconnectTimer);
+  if (p.pc) {
+    p.pc.getReceivers().forEach(r => r.track && r.track.stop());
+    p.pc.close();
+  }
+  delete players[deviceId];
+  const video = el(`video-${deviceId}`);
+  if (video) video.srcObject = null;
+}
+
+function scheduleReconnect(deviceId) {
+  if (!el(`card-${deviceId}`)) return;
+  const p = players[deviceId] || (players[deviceId] = {});
+  if (p.reconnectTimer) return;
+  p.reconnectTimer = setTimeout(() => { p.reconnectTimer = null; connectStream(deviceId); }, 5000);
+}
+
+function waitIceGatheringComplete(peer) {
+  if (peer.iceGatheringState === 'complete') return Promise.resolve();
+  return new Promise(resolve => {
+    const done = () => {
+      if (peer.iceGatheringState === 'complete') {
+        peer.removeEventListener('icegatheringstatechange', done);
+        resolve();
+      }
+    };
+    peer.addEventListener('icegatheringstatechange', done);
+  });
+}
+
+async function connectStream(deviceId) {
+  stopPeer(deviceId);
+  setOverlay(deviceId, 'Підключення стріму…');
+  try {
+    const { ok, body: info } = await getJson(`/api/video/${deviceId}/stream`);
+    if (!ok) throw new Error(info.error || 'Метадані стріму недоступні');
+
+    const pc = new RTCPeerConnection();
+    players[deviceId] = { pc };
+    pc.addTransceiver('video', { direction: 'recvonly' });
+    pc.ontrack = event => {
+      el(`video-${deviceId}`).srcObject = event.streams[0];
+      setOverlay(deviceId, '', false);
+    };
+    pc.onconnectionstatechange = () => {
+      if (players[deviceId]?.pc !== pc) return;
+      if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) {
+        setOverlay(deviceId, 'Стрім відключено — перепідключення…');
+        scheduleReconnect(deviceId);
+      }
+    };
+
+    await pc.setLocalDescription(await pc.createOffer());
+    await waitIceGatheringComplete(pc);
+    const answer = await fetchNoCsrf(info.whep_url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/sdp' },
+      body: pc.localDescription.sdp,
+    });
+    if (!answer.ok) throw new Error(`MediaMTX WHEP не відповів (${answer.status})`);
+    await pc.setRemoteDescription({ type: 'answer', sdp: await answer.text() });
+  } catch (err) {
+    stopPeer(deviceId);
+    setOverlay(deviceId, err.message || 'Стрім недоступний');
+    scheduleReconnect(deviceId);
+  }
+}
+
+function toggleFullscreen(deviceId) {
+  el(`card-${deviceId}`)?.classList.toggle('mesh-fullscreen');
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.querySelectorAll('.mesh-fullscreen').forEach(c => c.classList.remove('mesh-fullscreen'));
+});
+
+// ── Налаштування відео (video-service-manager на борту, порт 9000) ─
+function renderDeviceSelect() {
+  const sel = el('settingsDevice');
+  sel.innerHTML = '<option value="">— борт —</option>' +
+    devices.map(d => `<option value="${d.device_id}">${escapeHtml(deviceName(d))}</option>`).join('');
+  if (devices.some(d => d.device_id === selectedDeviceId)) sel.value = selectedDeviceId;
+  else selectedDeviceId = null;
+}
+
+el('settingsDevice').addEventListener('change', e => {
+  selectedDeviceId = e.target.value || null;
+  loadSettings();
+});
+
+async function loadSettings() {
+  const box = el('settingsBox');
+  el('settingsError').textContent = '';
+  el('meshRow').style.display = selectedDeviceId ? '' : 'none';
+  el('diagBox').style.display = 'none';
+  if (!selectedDeviceId) { box.textContent = 'Оберіть борт'; return; }
+  box.textContent = 'Завантаження…';
+  loadMeshStatus();
+
+  const deviceId = selectedDeviceId;
+  const [cfg, cams] = await Promise.all([
+    getJson(`/api/devices/${deviceId}/video/settings`),
+    getJson(`/api/video/${deviceId}/cameras`),
+  ]);
+  if (deviceId !== selectedDeviceId) return;
+  if (!cfg.ok) {
+    box.textContent = '';
+    el('settingsError').textContent = cfg.body.error || 'Борт недоступний';
+    return;
+  }
+  currentSettings = cfg.body;
+  const s = currentSettings;
+
+  let camerasHtml = '<span class="text-secondary">недоступно</span>';
+  if (cams.ok && cams.body.success && Array.isArray(cams.body.cameras)) {
+    const active = cams.body.active || '';
+    const list = cams.body.cameras.slice().sort((a, b) => (a.id || a.path || '').localeCompare(b.id || b.path || ''));
+    camerasHtml = list.length ? list.map((c, i) => {
+      const target = c.id || c.path;
+      const isActive = target === active || c.path === active || c.id === active;
+      return `<button class="btn btn-sm cam-chip ${isActive ? 'btn-primary' : 'btn-outline-secondary'}"
+        ${isActive ? 'disabled' : ''} title="${escapeHtml(c.name || target)}"
+        onclick="switchCamera('${escapeHtml(target)}')">${i + 1}</button>`;
+    }).join(' ') : '<span class="text-secondary">камер не знайдено</span>';
+  }
+
+  box.innerHTML = `
+    <div class="setting-row"><span>Камера</span><span>${camerasHtml}</span></div>
+    <div class="setting-row"><span>FPS</span>
+      <input class="form-control form-control-sm" type="number" id="setFps" min="1" max="120" value="${escapeHtml(s.fps)}"></div>
+    <div class="setting-row"><span>Бітрейт (kbps)</span>
+      <input class="form-control form-control-sm" type="number" id="setBitrate" min="100" max="20000" value="${escapeHtml(s.bitrate)}"></div>
+    <div class="setting-row"><span>Ширина</span>
+      <input class="form-control form-control-sm" type="number" id="setWidth" min="160" max="3840" value="${escapeHtml(s.width)}"></div>
+    <div class="setting-row"><span>Висота</span>
+      <input class="form-control form-control-sm" type="number" id="setHeight" min="120" max="2160" value="${escapeHtml(s.height)}"></div>
+    <div class="setting-row"><span>Адаптивний бітрейт</span>
+      <input class="form-check-input" type="checkbox" id="setAbr" ${s.adaptive_bitrate ? 'checked' : ''}></div>
+    <div class="d-flex gap-2 mt-3">
+      <button class="btn btn-sm btn-outline-primary flex-fill" id="btnSave" onclick="saveSettings()">Зберегти</button>
+      <button class="btn btn-sm btn-outline-warning" id="btnRestart" onclick="restartVideo()">Перезапуск відео</button>
+    </div>`;
+}
+
+// ── Mesh на борту (sirena-mesh.service через sirena_manager) ─
+async function loadMeshStatus() {
+  const deviceId = selectedDeviceId;
+  const { body } = await getJson(`/api/devices/${deviceId}/mesh/status`);
+  if (deviceId !== selectedDeviceId) return;
+  el('meshDot').classList.toggle('on', !!body.active);
+  el('meshDot').title = body.error || (body.active ? 'mesh піднято' : 'mesh вимкнено');
+}
+
+async function meshAction(action) {
+  const deviceId = selectedDeviceId;
+  if (action === 'down' && !confirm('Опустити mesh на борту? Якщо зв\'язок з бортом іде через mesh — він обірветься.')) return;
+  el('btnMeshUp').disabled = el('btnMeshDown').disabled = true;
+  el('settingsError').textContent = action === 'up' ? 'Піднімаю mesh (до ~20с)…' : 'Опускаю mesh…';
+  const { ok, body } = await getJson(`/api/devices/${deviceId}/mesh/${action}`, { method: 'POST' });
+  el('btnMeshUp').disabled = el('btnMeshDown').disabled = false;
+  el('settingsError').textContent = ok ? '' : (body.error || 'Помилка mesh');
+  loadMeshStatus();
+  loadUplinkBadges();
+}
+
+async function meshAll() {
+  if (!devices.length) return;
+  if (!confirm(`Підняти mesh на всіх бортах (${devices.length})?`)) return;
+  const btn = el('btnMeshAll');
+  btn.disabled = true;
+  btn.textContent = 'Піднімаю…';
+  const results = await Promise.all(devices.map(d =>
+    getJson(`/api/devices/${d.device_id}/mesh/up`, { method: 'POST' }).then(r => ({ d, ...r }))));
+  btn.disabled = false;
+  btn.textContent = 'Меш для всіх';
+  const failed = results.filter(r => !r.ok);
+  if (failed.length) {
+    alert('Не піднявся mesh:\n' + failed.map(r => `${deviceName(r.d)}: ${r.body.error || r.status}`).join('\n'));
+  }
+  if (selectedDeviceId) loadMeshStatus();
+  loadUplinkBadges();
+}
+
+// ── Діагностика mesh / через що борт на зв'язку ─────────────
+const MODE_LABEL = { starlink: 'Starlink', relay: 'через сусіда', none: 'без зв\'язку' };
+
+function uplinkText(diag) {
+  if (diag.mode === 'relay' && diag.gateway) return `через ${diag.gateway.host || diag.gateway.ip}`;
+  return MODE_LABEL[diag.mode] || diag.mode;
+}
+
+async function loadUplinkBadges() {
+  await Promise.all(devices.map(async d => {
+    const { ok, body } = await getJson(`/api/devices/${d.device_id}/mesh/diag`);
+    const badge = el(`uplink-${d.device_id}`);
+    if (!badge) return;
+    // mesh вимкнено → сторож не працює, бейдж не показуємо
+    badge.className = 'uplink-badge' + (ok && body.success ? ` ${body.mode}` : '');
+    badge.textContent = ok && body.success ? uplinkText(body) : '';
+  }));
+}
+
+async function loadDiag() {
+  const box = el('diagBox');
+  const deviceId = selectedDeviceId;
+  box.style.display = '';
+  box.textContent = 'Завантаження діагностики…';
+  const { ok, body: d } = await getJson(`/api/devices/${deviceId}/mesh/diag`);
+  if (deviceId !== selectedDeviceId) return;
+  if (!ok || !d.success) {
+    box.textContent = d.error || 'Діагностика недоступна';
+    return;
+  }
+  const rows = (d.neighbours || []).map(n => `<tr>
+      <td>${escapeHtml(n.host || n.mac)}</td>
+      <td>${escapeHtml(n.ip || '—')}</td>
+      <td>${n.signal_dbm ?? '—'}</td>
+      <td>${n.uplink === true ? (n.via ? 'relay' : 'SL') : n.uplink === false ? '✗' : '?'}</td>
+    </tr>`).join('');
+  box.innerHTML = `
+    <dl>
+      <dt>Режим</dt><dd>${escapeHtml(uplinkText(d))}</dd>
+      <dt>Starlink</dt><dd>${escapeHtml(d.uplink_iface)} — ${d.uplink_ok ? 'OK' : 'немає'}</dd>
+      <dt>Mesh</dt><dd>${escapeHtml(d.mesh_iface)} ${escapeHtml(d.mesh_ip)}</dd>
+      <dt>WG endpoint</dt><dd>${escapeHtml(d.wg_endpoint)}</dd>
+      <dt>Змінено</dt><dd>${new Date(d.since * 1000).toLocaleTimeString()}</dd>
+    </dl>
+    ${rows ? `<table><tr><th>сусід</th><th>ip</th><th>dBm</th><th>канал</th></tr>${rows}</table>`
+           : '<div class="text-secondary">Сусідів у mesh немає</div>'}`;
+}
+
+async function saveSettings() {
+  const deviceId = selectedDeviceId;
+  const payload = {
+    fps: parseInt(el('setFps').value, 10),
+    bitrate: parseInt(el('setBitrate').value, 10),
+    width: parseInt(el('setWidth').value, 10),
+    height: parseInt(el('setHeight').value, 10),
+    adaptive_bitrate: el('setAbr').checked,
+  };
+  Object.keys(payload).forEach(k => Number.isNaN(payload[k]) && delete payload[k]);
+  el('btnSave').disabled = true;
+  el('settingsError').textContent = 'Застосування — відео на борту перезапускається…';
+  const { ok, body } = await getJson(`/api/devices/${deviceId}/video/settings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!ok || body.success === false) {
+    el('settingsError').textContent = body.error || body.applied?.error || 'Помилка збереження';
+    el('btnSave').disabled = false;
+    return;
+  }
+  await loadSettings();
+  connectStream(deviceId);
+}
+
+async function restartVideo() {
+  const deviceId = selectedDeviceId;
+  el('btnRestart').disabled = true;
+  const { ok, body } = await getJson(`/api/devices/${deviceId}/video/restart`, { method: 'POST' });
+  el('btnRestart').disabled = false;
+  el('settingsError').textContent = ok ? '' : (body.error || 'Не вдалось перезапустити відео');
+  if (ok) connectStream(deviceId);
+}
+
+async function switchCamera(target) {
+  const deviceId = selectedDeviceId;
+  el('settingsError').textContent = 'Перемикання камери…';
+  const { ok, body } = await getJson(`/api/video/${deviceId}/camera`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ camera: target }),
+  });
+  if (!ok || body.success === false) {
+    el('settingsError').textContent = body.error || 'Не вдалось перемкнути камеру';
+    return;
+  }
+  await loadSettings();
+  connectStream(deviceId);
+}
+
+// ── Пульт: моніторинг + прив'язка до борту ─────────────────
+// Керування (RC) іде не з браузера, а через crsf_module (UDP :5005 на борту).
+const AXIS_NAMES = ['Roll', 'Pitch', 'Throttle', 'Yaw', 'Aux1', 'Aux2', 'Aux3', 'Aux4'];
+const gpBindings = {};     // gamepad index -> device_id
+let gpActiveIdx = null;
+let gpRafId = null;
+let gpLastShape = '';
+
+function gpPads() {
+  return [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean);
+}
+
+function gpRenderBindings() {
+  const pads = gpPads();
+  if (!pads.length) { el('gpBindings').innerHTML = ''; return; }
+  el('gpBindings').innerHTML = '<div class="gp-title">Пульти</div>' + pads.map(gp => {
+    const name = gp.id.length > 28 ? gp.id.slice(0, 28) + '…' : gp.id;
+    return `<div class="setting-row">
+      <label class="d-flex align-items-center gap-2" style="cursor:pointer;">
+        <input type="radio" name="gpActive" value="${gp.index}" ${gp.index === gpActiveIdx ? 'checked' : ''}
+               onchange="gpSelect(${gp.index})">
+        <span style="font-family:monospace; font-size:.75rem;">${escapeHtml(name)}</span>
+      </label>
+      <select class="form-select form-select-sm" onchange="gpBind(${gp.index}, this.value)">
+        <option value="">— борт —</option>
+        ${devices.map(d => `<option value="${d.device_id}" ${gpBindings[gp.index] === d.device_id ? 'selected' : ''}>
+          ${escapeHtml(deviceName(d))}</option>`).join('')}
+      </select>
+    </div>`;
+  }).join('');
+}
+
+function gpBind(index, deviceId) {
+  // один борт — один пульт
+  Object.keys(gpBindings).forEach(k => { if (gpBindings[k] === deviceId) delete gpBindings[k]; });
+  if (deviceId) gpBindings[index] = deviceId; else delete gpBindings[index];
+  gpSelect(index);
+}
+
+function gpSelect(index) {
+  gpActiveIdx = index;
+  gpLastShape = '';
+  gpRenderBindings();
+  if (!gpRafId) gpLoop();
+}
+
+function gpUpdate() {
+  const pads = gpPads();
+  if (!pads.some(gp => gp.index === gpActiveIdx)) gpActiveIdx = pads.length ? pads[0].index : null;
+  gpLastShape = '';
+  gpRenderBindings();
+  if (gpActiveIdx === null) {
+    el('gpContent').innerHTML = '<div class="text-secondary">Підключіть пульт по USB і натисніть будь-яку кнопку</div>';
+  } else if (!gpRafId) {
+    gpLoop();
+  }
+}
+
+function axisStyle(val) {
+  const left = val < 0 ? (50 + val * 50).toFixed(1) : '50';
+  return `left:${left}%;width:${(Math.abs(val) * 50).toFixed(1)}%`;
+}
+
+function gpRenderFull(gp) {
+  let html = `<div class="gp-title">Осі (${gp.axes.length})</div>`;
+  gp.axes.forEach((val, i) => {
+    html += `<div class="axis-item"><div>${AXIS_NAMES[i] || 'Axis ' + i}</div>
+      <div class="axis-bar-wrap"><div class="axis-bar" id="gpAb${i}" style="${axisStyle(val)}"></div></div>
+      <div class="axis-val" id="gpAv${i}">${val.toFixed(3)}</div></div>`;
+  });
+  html += `<div class="gp-title">Кнопки (${gp.buttons.length})</div><div class="gp-btn-grid">`;
+  gp.buttons.forEach((btn, i) => {
+    html += `<div class="gp-btn${btn.pressed ? ' pressed' : ''}" id="gpBb${i}">${i}</div>`;
+  });
+  el('gpContent').innerHTML = html + '</div>';
+}
+
+function gpUpdateFast(gp) {
+  gp.axes.forEach((val, i) => {
+    el('gpAb' + i).style.cssText = axisStyle(val);
+    el('gpAv' + i).textContent = val.toFixed(3);
+  });
+  gp.buttons.forEach((btn, i) => {
+    el('gpBb' + i).className = 'gp-btn' + (btn.pressed ? ' pressed' : '');
+  });
+}
+
+function gpLoop() {
+  if (gpActiveIdx === null) { gpRafId = null; return; }
+  gpRafId = requestAnimationFrame(gpLoop);
+  const gp = (navigator.getGamepads ? navigator.getGamepads() : [])[gpActiveIdx];
+  if (!gp) return;
+  const shape = `${gp.index}:${gp.axes.length}:${gp.buttons.length}`;
+  if (shape !== gpLastShape) {
+    gpRenderFull(gp);
+    gpLastShape = shape;
+  } else {
+    gpUpdateFast(gp);
+  }
+}
+
+window.addEventListener('gamepadconnected', gpUpdate);
+window.addEventListener('gamepaddisconnected', gpUpdate);
+
+// ── Старт ───────────────────────────────────────────────────
+loadDevices().then(loadUplinkBadges);
+setInterval(loadDevices, 10000);
+setInterval(loadUplinkBadges, 5000);
+gpUpdate();
+</script>
+{% endblock %}

@@ -1,0 +1,18 @@
+[Unit]
+Description=Sirena Mesh (802.11s на окремому USB Wi-Fi адаптері)
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=-/opt/sirena/.env
+ExecStart=/opt/sirena-mesh/mesh-up.sh
+ExecStop=/opt/sirena-mesh/mesh-down.sh
+# Менше за таймаут `systemctl start` у sirena_manager (20с).
+TimeoutStartSec=18s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sirena-mesh
+
+# Без [Install]: юніт не enabled, вмикається лише кнопкою з адмінки
+# через sirena_manager (/api/v1/services/mesh/start|stop).
