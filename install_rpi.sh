@@ -2,7 +2,10 @@
 # ==============================================================================
 # Єдиний інсталятор борту Sirena (Raspberry Pi 4/5).
 #
-#   sudo bash install_rpi.sh http://<admin-server>:8080
+#   sudo bash install_rpi.sh [http://<admin-server>:8080]
+#
+# Адмінка за замовчуванням — через WireGuard (http://10.0.0.1:8080): тоді
+# переїзд сервера не потребує змін на бортах, крім Endpoint у wg0.conf.
 #
 # Ставить УСІ бортові модулі (mavlink, navigation, video, crsf, additional,
 # log collector), root manager, пише /opt/sirena/.env, налаштовує UART і в
@@ -39,8 +42,7 @@ if [ -z "$ADMIN_SERVER_URL" ] && [ -f "$ENV_FILE" ]; then
   ADMIN_SERVER_URL="$(sed -n 's/^SIRENA_ADMIN_SERVER_URL=//p' "$ENV_FILE" | tail -1)"
 fi
 if [ -z "$ADMIN_SERVER_URL" ]; then
-  echo "Вкажи адресу адмін-сервера: sudo bash install_rpi.sh http://<admin-server>:8080" >&2
-  exit 1
+  ADMIN_SERVER_URL="http://${SIRENA_SRT_HOST}:8080"
 fi
 
 exec > >(tee -a "$INSTALL_LOG") 2>&1
