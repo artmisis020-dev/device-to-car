@@ -1,0 +1,40 @@
+{# Колонка "Mesh" у списках бортів (index.html, room.html): адаптер, група, стан.
+   Дані — device.mesh з /api/devices і /api/my/devices (mesh_group_service.device_summary). #}
+<style>
+.mesh-cell { white-space:nowrap; font-size:.8rem; }
+.mesh-adapter { display:inline-block; min-width:1.4em; font-weight:700; }
+.mesh-adapter.yes { color:var(--sirena-online); }
+.mesh-adapter.no, .mesh-adapter.unknown { color:var(--sirena-inactive); }
+.mesh-status { font-size:.72rem; }
+.mesh-status.active { color:var(--sirena-online); }
+.mesh-status.pending { color:var(--sirena-warning); }
+.mesh-status.error { color:var(--sirena-danger); }
+.mesh-status.down, .mesh-status.disabled, .mesh-status.no_adapter,
+.mesh-status.not_in_group, .mesh-status.no_report { color:var(--sirena-muted); }
+</style>
+<script>
+function meshEsc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
+function meshCell(m) {
+  if (!m) return '<span class="text-muted">—</span>';
+  let adapter;
+  if (m.adapter === true) {
+    const speed = m.adapter_usb_speed ? `, USB ${m.adapter_usb_speed} Мбіт/с` : '';
+    adapter = `<span class="mesh-adapter yes" title="Wi-Fi адаптер: ${meshEsc(m.adapter_model || 'є')}${speed}">📡</span>`;
+  } else if (m.adapter === false) {
+    adapter = '<span class="mesh-adapter no" title="Немає Wi-Fi адаптера — mesh неможливий">✗</span>';
+  } else {
+    adapter = '<span class="mesh-adapter unknown" title="Борт ще не повідомив, чи є адаптер">?</span>';
+  }
+  const group = m.group_name
+    ? `<a href="/mesh/groups#group-${m.group_id}">${meshEsc(m.group_name)}</a>`
+    : '<span class="text-muted">без групи</span>';
+  const status = m.status === 'not_in_group' ? ''
+    : `<div class="mesh-status ${meshEsc(m.status)}">${meshEsc(m.status_text)}</div>`;
+  return `<div class="mesh-cell">${adapter} ${group}${status}</div>`;
+}
+</script>

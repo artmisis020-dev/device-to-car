@@ -31,6 +31,7 @@ body { background:var(--sirena-bg); color:var(--sirena-text); }
     <span class="navbar-brand fw-bold">🛰 Моя кімната</span>
     <div class="d-flex gap-2 align-items-center">
       <span class="text-light small">{{ current_user.username }}</span>
+      <a href="/mesh/groups" class="btn btn-sm btn-outline-light">Mesh-групи</a>
       <a href="/logout" class="btn btn-sm btn-outline-light">Вийти</a>
     </div>
   </div>
@@ -47,8 +48,8 @@ body { background:var(--sirena-bg); color:var(--sirena-text); }
         <div class="card-body p-0">
           <div class="table-responsive">
             <table class="table table-hover mb-0" id="devTable">
-              <thead><tr><th>Статус</th><th>Hostname</th><th>Дійсний до</th><th>Дії</th></tr></thead>
-              <tbody id="devBody"><tr><td colspan="4" class="text-center text-muted py-4">Завантаження…</td></tr></tbody>
+              <thead><tr><th>Статус</th><th>Hostname</th><th>Дійсний до</th><th>Mesh</th><th>Дії</th></tr></thead>
+              <tbody id="devBody"><tr><td colspan="5" class="text-center text-muted py-4">Завантаження…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -82,6 +83,7 @@ body { background:var(--sirena-bg); color:var(--sirena-text); }
     </div>
   </div>
 </div>
+{% include "_mesh_cell.html" %}
 {% endblock %}
 {% block scripts %}
 {{ super() }}
@@ -131,6 +133,7 @@ async function loadMyDevices() {
     <td><span class="online-dot ${d.online ? 'on' : ''}"></span>${statusBadge(d)}</td>
     <td class="fw-bold">${esc(d.hostname || '-')}</td>
     <td class="small" title="UTC: ${esc(d.valid_until || '-')}">${esc(utcToLocalText(d.valid_until))}</td>
+    <td>${meshCell(d.mesh)}</td>
     <td>
       <a href="/devices/${d.device_id}" class="btn btn-sm action-btn py-0 px-2 me-1">Дашборд</a>
       <a href="/telemetry/${d.device_id}" class="btn btn-sm action-btn py-0 px-2 me-1">Телеметрія</a>
@@ -138,7 +141,7 @@ async function loadMyDevices() {
     </td>
   </tr>`).join('');
   document.getElementById('devBody').innerHTML = body ||
-    '<tr><td colspan="4" class="text-center text-muted py-4">Пристроїв ще немає — додай за кодом</td></tr>';
+    '<tr><td colspan="5" class="text-center text-muted py-4">Пристроїв ще немає — додай за кодом</td></tr>';
 }
 
 async function loadMyClaims() {

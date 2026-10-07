@@ -16,15 +16,52 @@ WireGuard (а з ним MAVLink-керування з адмінки, телем
 mesh_module/
   mesh-up.sh / mesh-down.sh          802.11s на окремому USB Wi-Fi (oneshot), SAE через wpa_supplicant
   uplink_watchdog.py                 пробник Starlink, маячки, failover, NAT, діагностика :9076
-  services/sirena-mesh.service       enabled, стартує при завантаженні
+  mesh_agent.py                      конфіг групи з адмінки → кеш /etc/sirena-mesh → start/stop mesh
+  services/sirena-mesh-agent.service enabled на всіх бортах
+  services/sirena-mesh.service       НЕ enabled — запускає агент
   services/sirena-uplink.service     сторож, BindsTo=sirena-mesh, WantedBy=sirena-mesh
   install.sh / uninstall.sh          /opt/sirena-mesh (ставить install_rpi.sh)
   .env.example                       змінні для /opt/sirena/.env
-admin_module/routes/mesh_ui.py       /mesh + /api/devices/<id>/mesh/{status,diag,up,down}
-admin_module/services/mesh_control_service.py
+admin_module/services/mesh_group_service.py  групи, ліміт, канали, ключі, /api/mesh/sync, стан бортів
+admin_module/routes/mesh_groups_api.py       /mesh/groups + /api/mesh/groups/... + /api/mesh/sync
+admin_module/templates/mesh_groups.html      керування групами (клієнт — свої, адмін — усі)
+admin_module/templates/_mesh_cell.html       колонка "Mesh" у списках бортів
+admin_module/routes/mesh_ui.py       /mesh + /api/devices/<id>/mesh/{status,diag,disabled}
+admin_module/services/mesh_control_service.py  жива діагностика (:9076 борту)
 admin_module/templates/mesh.html     дашборд кількох бортів
-sirena_manager/config.py             сервіс "mesh" (кнопки), не в BOOT_SEQUENCE
+sirena_manager/config.py             сервіс "mesh" (стан юнітів), не в BOOT_SEQUENCE
 ```
+
+## Хто вирішує, чи працює mesh: групи в адмінці (1.0.5.1)
+
+Не всі борти мають Wi-Fi адаптер, а борти різних клієнтів не мають бачити
+одне одного. Тому mesh вмикається не налаштуванням на борті, а **членством у
+mesh-групі** в адмінці (`/mesh/groups`):
+
+- група — борти одного власника; клієнт керує своїми групами (їх може бути
+  кілька), адмін — усіма; борт — максимум в одній групі;
+- **ліміт 6 бортів** (`SIRENA_MESH_GROUP_MAX_DEVICES`): у найгіршому випадку
+  відео й телеметрія всієї групи йдуть через один Starlink;
+- ім'я mesh, **канал (автоматично, найменш зайнятий з 36/40/44/48)** і ключ
+  SAE задає група; різні групи — різні ключі, тож одна одну не бачать;
+- борт виходить з групи (прибрали / змінився власник / видалили) → ключ групи
+  змінюється автоматично;
+- адмін може тимчасово вимкнути mesh на борті (`/mesh`, діагностика).
+
+На борті `sirena-mesh-agent` (`mesh_agent.py`) кожні 15с:
+
+1. шукає USB Wi-Fi адаптер з mesh point (вбудований brcmfmac не вміє);
+2. `POST /api/mesh/sync {device_id, report}` → `{config}` — конфіг групи або
+   `null`; адмінка віддає ключ лише на запит з WG-адреси самого борту;
+3. змінився конфіг → пише `/etc/sirena-mesh/{config.json,mesh.env,mesh.key}`
+   (0600) і перезапускає mesh; `mesh.env` — `EnvironmentFile` юніта sirena-mesh;
+4. mesh працює ⇔ є конфіг ∧ не вимкнено ∧ є адаптер (адаптер зник >20с →
+   опускає; з'явився → піднімає).
+
+Без зв'язку з адмінкою агент працює з кешу — і після ребуту теж (mesh за ~10с
+від старту ядра). У звіті — адаптер (модель, швидкість USB), застосована версія
+конфігу, стан mesh (режим, шлюз, сусіди, шифрування, помилка mesh-up) — з нього
+колонка «Mesh» у списках бортів і «очікує застосування».
 
 ## Як піднімається mesh (`mesh-up.sh`)
 
@@ -41,22 +78,22 @@ sirena_manager/config.py             сервіс "mesh" (кнопки), не в
 
 ## Шифрування (SAE)
 
-- Ключ — `/etc/sirena-mesh/mesh.key` (0600, root), **однаковий на всіх бортах
-  групи**. Ставиться інсталятором: `sudo SIRENA_MESH_KEY='<ключ>' bash install_rpi.sh …`
-  (або `mesh_module/install.sh`); повторна інсталяція без змінної ключ не чіпає.
+- Ключ групи генерує адмінка (у БД — Fernet), агент кладе його в
+  `/etc/sirena-mesh/mesh.key` (0600, root).
 - Є ключ — mesh піднімає `wpa_supplicant` (mode=5): SAE (група 19), CCMP,
   обов'язковий PMF (`ieee80211w=2`) — без ключа до mesh не приєднатись, кадри
   не прочитати й не підробити (deauth тощо). Скан лише на частоті mesh
   (`scan_freq`), інакше скан усіх каналів на mt76 — 6с+.
-- Нема ключа — `iw mesh join`, відкритий, з попередженням у журналі. Відкритий і
-  SAE-борт один одного не бачать: ключ ставити на всі борти разом.
+- Нема ключа (mesh запущено вручну, без конфігу групи) — `iw mesh join`,
+  відкритий, з попередженням у журналі.
 - Сторож перезапускає mesh, якщо `wpa_supplicant` помер. У діагностиці —
   `security: sae|open` (на `/mesh` — рядок «Шифрування»).
 - Перевірено: `authorized: yes`, `MFP: yes`; UDP 40 Мбіт/с — 0.1% втрат (як
   без шифрування); failover 1.0с; борт з іншим ключем — plink LISTEN, 0 пакетів.
 
-Кнопка: адмінка → `sirena_manager :9070 /api/v1/services/mesh/{start,stop}` →
-`systemctl start|stop sirena-mesh sirena-uplink`. Повторний start — не помилка.
+Вручну (діагностика на борті): `systemctl start|stop sirena-mesh` — з
+конфігом групи з `/etc/sirena-mesh/mesh.env`; агент поверне стан за конфігом
+протягом ~5с.
 
 ## Failover (`uplink_watchdog.py`)
 

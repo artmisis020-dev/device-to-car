@@ -1,7 +1,8 @@
 [Unit]
 Description=Sirena Mesh (802.11s на окремому USB Wi-Fi адаптері)
-# Mesh має бути піднятий ДО втрати Starlink (після втрати борт недосяжний) —
-# тому стартує сам при завантаженні; кнопка в адмінці лише вмикає/вимикає.
+# Не enabled: запускає/зупиняє sirena-mesh-agent (mesh_agent.py) — за конфігом
+# групи з адмінки (кешується на борті, тож і без зв'язку з адмінкою) і
+# наявністю USB Wi-Fi адаптера.
 After=network.target NetworkManager.service
 # Адаптера може ще не бути (USB) — повторюємо без ліміту.
 StartLimitIntervalSec=0
@@ -10,6 +11,8 @@ StartLimitIntervalSec=0
 Type=oneshot
 RemainAfterExit=yes
 EnvironmentFile=-/opt/sirena/.env
+# Конфіг групи від агента (SIRENA_MESH_ID/FREQ/KEY_FILE) — перекриває .env.
+EnvironmentFile=-/etc/sirena-mesh/mesh.env
 ExecStart=/opt/sirena-mesh/mesh-up.sh
 ExecStop=/opt/sirena-mesh/mesh-down.sh
 Restart=on-failure
@@ -19,6 +22,3 @@ TimeoutStartSec=18s
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=sirena-mesh
-
-[Install]
-WantedBy=multi-user.target

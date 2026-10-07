@@ -7,7 +7,7 @@ from flask import current_app
 import requests
 
 from ..helpers import is_valid, now_str
-from . import repository
+from . import mesh_group_service, repository
 from . import video_service
 
 ONLINE_WINDOW_SEC = 120
@@ -148,6 +148,7 @@ def delete_device(device_id):
         return {"error": "device not found"}, 404
 
     removed_recording_dirs = _delete_recording_dirs(device, device_id)
+    mesh_group_service.on_device_deleted(device_id)
     deleted = repository.delete_device(device_id)
     if not deleted:
         return {"error": "device not found"}, 404

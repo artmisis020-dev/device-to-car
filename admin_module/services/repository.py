@@ -373,3 +373,101 @@ def list_fc_commands(device_id, limit=25):
             (device_id, limit),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+# ─── Mesh groups ────────────────────────────────────────────────────────────────
+
+def create_mesh_group(owner_user_id, name, mesh_id, freq, key_enc, ts):
+    with get_db() as db:
+        cur = db.execute(
+            """
+            INSERT INTO mesh_groups (owner_user_id, name, mesh_id, freq, key_enc, config_version, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+            """,
+            (owner_user_id, name, mesh_id, freq, key_enc, ts, ts),
+        )
+        db.commit()
+        return cur.lastrowid
+
+
+def get_mesh_group(group_id):
+    with get_db() as db:
+        return db.execute("SELECT * FROM mesh_groups WHERE id=?", (group_id,)).fetchone()
+
+
+def list_mesh_groups(owner_user_id=None):
+    query = """
+        SELECT g.*, u.username AS owner_username
+        FROM mesh_groups g LEFT JOIN users u ON u.id = g.owner_user_id
+    """
+    args = ()
+    if owner_user_id is not None:
+        query += " WHERE g.owner_user_id=?"
+        args = (owner_user_id,)
+    with get_db() as db:
+        rows = db.execute(query + " ORDER BY g.created_at, g.id", args).fetchall()
+    return [dict(r) for r in rows]
+
+
+def mesh_group_freq_usage():
+    with get_db() as db:
+        rows = db.execute("SELECT freq, COUNT(*) AS n FROM mesh_groups GROUP BY freq").fetchall()
+    return {r["freq"]: r["n"] for r in rows}
+
+
+def rename_mesh_group(group_id, name, ts):
+    with get_db() as db:
+        db.execute("UPDATE mesh_groups SET name=?, updated_at=? WHERE id=?", (name, ts, group_id))
+        db.commit()
+
+
+def rotate_mesh_group_key(group_id, key_enc, ts):
+    with get_db() as db:
+        db.execute(
+            "UPDATE mesh_groups SET key_enc=?, config_version=config_version+1, updated_at=? WHERE id=?",
+            (key_enc, ts, group_id),
+        )
+        db.commit()
+
+
+def delete_mesh_group(group_id):
+    with get_db() as db:
+        db.execute("UPDATE devices SET mesh_group_id=NULL WHERE mesh_group_id=?", (group_id,))
+        db.execute("DELETE FROM mesh_groups WHERE id=?", (group_id,))
+        db.commit()
+
+
+def add_device_to_mesh_group(device_id, group_id, max_devices):
+    """Одним UPDATE: ліміт перевіряється атомарно (gunicorn — 64 потоки)."""
+    with get_db() as db:
+        cur = db.execute(
+            """
+            UPDATE devices SET mesh_group_id=?
+            WHERE device_id=? AND mesh_group_id IS NULL
+              AND (SELECT COUNT(*) FROM devices WHERE mesh_group_id=?) < ?
+            """,
+            (group_id, device_id, group_id, max_devices),
+        )
+        db.commit()
+        return cur.rowcount == 1
+
+
+def clear_device_mesh_group(device_id):
+    with get_db() as db:
+        db.execute("UPDATE devices SET mesh_group_id=NULL WHERE device_id=?", (device_id,))
+        db.commit()
+
+
+def set_device_mesh_disabled(device_id, disabled):
+    with get_db() as db:
+        db.execute("UPDATE devices SET mesh_disabled=? WHERE device_id=?", (1 if disabled else 0, device_id))
+        db.commit()
+
+
+def save_device_mesh_report(device_id, report_json, ts):
+    with get_db() as db:
+        db.execute(
+            "UPDATE devices SET mesh_report=?, mesh_reported_at=? WHERE device_id=?",
+            (report_json, ts, device_id),
+        )
+        db.commit()

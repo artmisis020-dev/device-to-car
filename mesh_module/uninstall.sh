@@ -11,11 +11,11 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 INSTALL_DIR="/opt/sirena-mesh"
-UNITS="sirena-uplink.service sirena-mesh.service"
+UNITS="sirena-mesh-agent.service sirena-uplink.service sirena-mesh.service"
 
 echo "=== Початок видалення Sirena Mesh ==="
 
-# stop: сторож прибирає маршрути/правило/NAT, mesh-down.sh — адаптер повертається у звичайний режим.
+# Агент — першим, щоб не підняв mesh назад. stop: сторож прибирає маршрути/правило/NAT, mesh-down.sh — адаптер повертається у звичайний режим.
 systemctl disable --now $UNITS 2>/dev/null || true
 for unit in $UNITS; do
     rm -f "/etc/systemd/system/$unit"
@@ -23,7 +23,8 @@ done
 systemctl daemon-reload
 systemctl reset-failed 2>/dev/null || true
 rm -rf "$INSTALL_DIR"
-# Ключ mesh (/etc/sirena-mesh/mesh.key) лишаємо: він спільний для групи, і без
-# нього перевстановлений борт не приєднається до захищеного mesh.
+# Кешований конфіг групи (з ключем SAE) — прибираємо: після перевстановлення
+# агент отримає його з адмінки знову.
+rm -rf /etc/sirena-mesh
 
 echo "=== Видалення модуля Sirena Mesh успішно завершено! ==="

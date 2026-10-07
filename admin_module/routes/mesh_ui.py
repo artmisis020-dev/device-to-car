@@ -1,7 +1,8 @@
 from flask import Blueprint, jsonify, render_template
 
-from ..helpers import require_device_access, require_login
+from ..helpers import json_body, require_admin, require_device_access, require_login
 from ..services import mesh_control_service as mesh
+from ..services import mesh_group_service, repository
 
 mesh_ui_bp = Blueprint("mesh_ui", __name__)
 
@@ -9,8 +10,9 @@ mesh_ui_bp = Blueprint("mesh_ui", __name__)
 # сітка відео, налаштування відео обраного борту, моніторинг пульта.
 # Стрім, налаштування й перезапуск ідуть через наявні video_api
 # (/api/video/..., /api/devices/<id>/video/...), список бортів —
-# /api/devices (адмін) або /api/my/devices (користувач). Власне тут лише
-# сторінка і кнопка mesh на РПі (mesh_control_service.py).
+# /api/devices (адмін) або /api/my/devices (користувач).
+# Чи працює mesh на борту, вирішує членство в групі (mesh_groups_api.py);
+# тут — лише стан, діагностика і вимкнення адміном для діагностики.
 
 
 @mesh_ui_bp.route("/mesh")
@@ -22,7 +24,9 @@ def mesh_page():
 @mesh_ui_bp.route("/api/devices/<device_id>/mesh/status", methods=["GET"])
 @require_device_access
 def api_mesh_status(device_id):
-    return jsonify(mesh.status(device_id))
+    device = dict(repository.get_device(device_id))
+    group = repository.get_mesh_group(device["mesh_group_id"]) if device["mesh_group_id"] else None
+    return jsonify({"success": True, **mesh_group_service.device_summary(device, group)})
 
 
 @mesh_ui_bp.route("/api/devices/<device_id>/mesh/diag", methods=["GET"])
@@ -31,15 +35,10 @@ def api_mesh_diag(device_id):
     return jsonify(mesh.diag(device_id))
 
 
-@mesh_ui_bp.route("/api/devices/<device_id>/mesh/up", methods=["POST"])
-@require_device_access
-def api_mesh_up(device_id):
-    result = mesh.up(device_id)
-    return jsonify(result), (200 if result.get("success") else 502)
-
-
-@mesh_ui_bp.route("/api/devices/<device_id>/mesh/down", methods=["POST"])
-@require_device_access
-def api_mesh_down(device_id):
-    result = mesh.down(device_id)
-    return jsonify(result), (200 if result.get("success") else 502)
+@mesh_ui_bp.route("/api/devices/<device_id>/mesh/disabled", methods=["POST"])
+@require_admin
+def api_mesh_disabled(device_id):
+    try:
+        return jsonify(mesh_group_service.set_disabled(device_id, bool(json_body().get("disabled"))))
+    except mesh_group_service.MeshGroupError as exc:
+        return jsonify({"success": False, "error": exc.message}), exc.status

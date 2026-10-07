@@ -1,0 +1,20 @@
+[Unit]
+Description=Sirena Mesh Agent (конфіг mesh-групи з адмінки → sirena-mesh)
+# Працює завжди, з адаптером чи без: повідомляє адмінці, чи є адаптер, і
+# піднімає mesh з кешованого конфігу навіть без зв'язку з адмінкою.
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+EnvironmentFile=-/opt/sirena/.env
+ExecStart=/usr/bin/python3 /opt/sirena-mesh/mesh_agent.py
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sirena-mesh-agent
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

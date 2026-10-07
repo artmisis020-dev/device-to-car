@@ -158,5 +158,31 @@ def init_db():
         # ("database is locked" у insert_auth_log).
         db.execute("CREATE INDEX IF NOT EXISTS idx_tel_ts ON telemetry(ts)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_fc_commands_device_created ON fc_commands(device_id, created_at DESC)")
+        # Mesh-групи (mesh_group_service.py): борти одного власника, що
+        # резервують один одному Starlink. Ключ SAE — Fernet, як password_enc.
+        # config_version росте на кожну зміну, яку має застосувати борт
+        # (ключ, частота) — так видно "очікує застосування".
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mesh_groups (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_user_id  INTEGER NOT NULL REFERENCES users(id),
+                name           TEXT NOT NULL,
+                mesh_id        TEXT NOT NULL UNIQUE,
+                freq           INTEGER NOT NULL,
+                key_enc        TEXT NOT NULL,
+                config_version INTEGER NOT NULL DEFAULT 1,
+                created_at     TEXT NOT NULL,
+                updated_at     TEXT NOT NULL
+            )
+            """
+        )
+        db.execute("CREATE INDEX IF NOT EXISTS idx_mesh_groups_owner ON mesh_groups(owner_user_id)")
+        _ensure_column(db, "devices", "mesh_group_id", "INTEGER REFERENCES mesh_groups(id)")
+        # Адмін вимкнув mesh на борті (діагностика) — борт лишається в групі.
+        _ensure_column(db, "devices", "mesh_disabled", "INTEGER NOT NULL DEFAULT 0")
+        # Останній звіт mesh-агента борту (JSON: адаптер, застосований конфіг, стан).
+        _ensure_column(db, "devices", "mesh_report", "TEXT")
+        _ensure_column(db, "devices", "mesh_reported_at", "TEXT")
         _seed_admin(db)
         db.commit()

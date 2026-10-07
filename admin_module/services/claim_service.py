@@ -10,7 +10,7 @@ import secrets
 import sqlite3
 
 from ..helpers import now_str
-from . import device_service, repository
+from . import device_service, mesh_group_service, repository
 
 _CLAIM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 _CLAIM_CODE_LENGTH = 8
@@ -66,6 +66,7 @@ def approve_claim(claim_id, decided_by, valid_hours=24):
 
     device_id = claim["device_id"]
     repository.set_device_owner(device_id, claim["user_id"])
+    mesh_group_service.on_device_owner_changed(device_id)
     repository.clear_claim_code(device_id)  # одноразовий код
     approved = device_service.approve_device(device_id, valid_hours)
     repository.decide_claim(claim_id, "approved", now_str(), decided_by)
@@ -91,4 +92,5 @@ def reassign_owner(device_id, user_id):
     if not repository.get_device(device_id):
         return {"error": "device not found"}, 404
     repository.set_device_owner(device_id, user_id)
+    mesh_group_service.on_device_owner_changed(device_id)
     return {"status": "ok", "device_id": device_id, "owner_user_id": user_id}, 200

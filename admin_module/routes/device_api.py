@@ -1,7 +1,7 @@
 from flask import Blueprint, g, jsonify, request
 
 from ..helpers import json_body, parse_int, require_admin, require_device_access, require_login
-from ..services import claim_service, control_service, device_service, repository
+from ..services import claim_service, control_service, device_service, mesh_group_service, repository
 
 
 device_api_bp = Blueprint("device_api", __name__)
@@ -22,7 +22,7 @@ def api_heartbeat():
 @device_api_bp.route("/api/devices", methods=["GET"])
 @require_admin
 def api_devices():
-    return jsonify(device_service.list_devices_with_validity())
+    return jsonify(mesh_group_service.enrich_devices(device_service.list_devices_with_validity()))
 
 
 @device_api_bp.route("/api/my/devices", methods=["GET"])
@@ -32,7 +32,7 @@ def api_my_devices():
     for device in devices:
         device["is_valid"] = device_service.is_valid(device)
         device["online"] = device_service.is_online(device)
-    return jsonify(devices)
+    return jsonify(mesh_group_service.enrich_devices(devices))
 
 
 @device_api_bp.route("/api/devices/<device_id>", methods=["GET"])

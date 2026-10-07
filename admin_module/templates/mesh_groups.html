@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% block title %}Sirena — Mesh-групи{% endblock %}
+{% block head %}
+<style>
+body { background:var(--sirena-bg); color:var(--sirena-text); }
+.card { background:var(--sirena-surface); border:1px solid var(--sirena-border); color:var(--sirena-text); }
+.card-header { background:var(--sirena-header) !important; color:var(--sirena-text) !important; border-bottom:1px solid var(--sirena-border); font-size:.9rem; }
+.table { --bs-table-bg:var(--sirena-surface); --bs-table-color:var(--sirena-text); --bs-table-border-color:var(--sirena-border); color:var(--sirena-text); margin:0; }
+.table thead th { color:var(--sirena-muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; font-weight:600; border-bottom:1px solid var(--sirena-border) !important; }
+.table tbody td { border-color:var(--sirena-border) !important; vertical-align:middle; font-size:.85rem; }
+.form-control, .form-select { background:#172435 !important; border-color:var(--sirena-border) !important; color:var(--sirena-text) !important; }
+.online-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:.35rem; background:var(--sirena-inactive); }
+.online-dot.on { background:var(--sirena-online); box-shadow:0 0 0 3px rgba(84,176,138,.18); }
+.group-meta { color:var(--sirena-muted); font-size:.78rem; }
+.group-count.full { color:var(--sirena-warning); font-weight:700; }
+.group-card:target { box-shadow:0 0 0 2px var(--sirena-accent); }
+.icon-btn { border:1px solid var(--sirena-border); background:#172435; color:var(--sirena-text); border-radius:4px; padding:0 .45rem; font-size:.8rem; line-height:1.6; }
+.icon-btn:hover { border-color:var(--sirena-accent); }
+.icon-btn.danger:hover { border-color:var(--sirena-danger); color:var(--sirena-danger); }
+.neighbours { font-family:monospace; font-size:.72rem; color:var(--sirena-mono); }
+.page-error { color:var(--sirena-danger); font-size:.85rem; min-height:1.2em; }
+</style>
+{% endblock %}
+{% block content %}
+<nav class="navbar navbar-dark" style="background:var(--sirena-header);border-bottom:1px solid var(--sirena-border)">
+  <div class="container-fluid">
+    <span class="navbar-brand fw-bold">🛰 Mesh-групи</span>
+    <div class="d-flex gap-2 align-items-center">
+      <span class="text-light small">{{ current_user.username }}</span>
+      <a href="/mesh" class="btn btn-sm btn-outline-light">Mesh-дашборд</a>
+      {% if current_user and current_user.role == 'admin' %}
+      <a href="/" class="btn btn-sm btn-outline-light">Назад</a>
+      {% else %}
+      <a href="/room" class="btn btn-sm btn-outline-light">Назад</a>
+      {% endif %}
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid py-3">
+  <p class="text-muted small mb-3">
+    Борти однієї групи резервують один одному Starlink через Wi-Fi mesh: якщо Starlink борту
+    падає, зв'язок іде через сусіда. Mesh працює лише на бортах з USB Wi-Fi адаптером.
+    Ліміт — <b id="limitText">…</b> бортів на групу: більше — відео й телеметрія через один
+    Starlink не пролазять. Канал і ключ шифрування призначаються автоматично; борт застосовує
+    зміни протягом ~15с після виходу на зв'язок.
+  </p>
+
+  <div class="card mb-3">
+    <div class="card-header fw-bold">Нова група</div>
+    <div class="card-body">
+      <div class="row g-2 align-items-center">
+        <div class="col-sm-5 col-lg-4"><input type="text" id="newName" class="form-control form-control-sm" maxlength="60" placeholder="Назва групи"></div>
+        <div class="col-sm-4 col-lg-3" id="ownerWrap" style="display:none;">
+          <select id="newOwner" class="form-select form-select-sm" title="Власник групи"></select>
+        </div>
+        <div class="col-auto"><button class="btn btn-sm btn-primary" onclick="createGroup()">Створити</button></div>
+      </div>
+      <div class="page-error mt-2" id="createError"></div>
+    </div>
+  </div>
+
+  <div class="page-error mb-2" id="pageError"></div>
+  <div id="groups"></div>
+
+  <div class="card mt-3">
+    <div class="card-header fw-bold">Борти без групи</div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table">
+          <thead><tr><th>Борт</th><th id="ungroupedOwnerTh">Власник</th><th>Mesh</th></tr></thead>
+          <tbody id="ungrouped"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% include "_mesh_cell.html" %}
+{% endblock %}
+{% block scripts %}
+{{ super() }}
+<script>
+const el = id => document.getElementById(id);
+const esc = meshEsc;
+let state = { groups: [], devices: [], users: [], limit: 6, is_admin: false };
+
+async function api(url, body) {
+  const options = body === undefined ? {} : {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  };
+  const resp = await fetch(url, options);
+  if (resp.redirected || resp.url.includes('/login')) { window.location.href = '/login'; return {}; }
+  let data = {};
+  try { data = await resp.json(); } catch (_) {}
+  return { ok: resp.ok && data.success !== false, data };
+}
+
+function deviceName(d) { return d.hostname || d.device_id.slice(0, 12); }
+
+function neighboursText(m) {
+  if (!m.neighbours || !m.neighbours.length) return '';
+  return m.neighbours.map(n => `${n.host || n.mac}${n.signal_dbm != null ? ` ${n.signal_dbm}dBm` : ''}`).join(', ');
+}
+
+function memberRow(d, group) {
+  const m = d.mesh;
+  const security = m.security === 'sae' ? ' · SAE' : m.security === 'open' ? ' · відкритий' : '';
+  return `<tr>
+    <td><span class="online-dot ${d.online ? 'on' : ''}" title="${d.online ? 'Online' : 'Offline'}"></span><b>${esc(deviceName(d))}</b></td>
+    <td>${meshCell(m)}</td>
+    <td class="neighbours">${esc(neighboursText(m))}${esc(security)}</td>
+    <td class="text-end"><button class="icon-btn danger" onclick="removeDevice(${group.id}, '${esc(d.device_id)}')" title="Прибрати з групи">Прибрати</button></td>
+  </tr>`;
+}
+
+function groupCard(group) {
+  const members = state.devices.filter(d => d.mesh.group_id === group.id);
+  const candidates = state.devices.filter(d => d.mesh.group_id == null && d.owner_user_id === group.owner_user_id);
+  const full = members.length >= state.limit;
+  const options = candidates.map(d => {
+    const note = d.mesh.adapter === false ? ' — без адаптера' : d.mesh.adapter == null ? ' — адаптер невідомо' : '';
+    return `<option value="${esc(d.device_id)}">${esc(deviceName(d))}${note}</option>`;
+  }).join('');
+  const addRow = full
+    ? `<div class="text-warning small">Група заповнена (${state.limit} з ${state.limit}).</div>`
+    : candidates.length
+      ? `<div class="d-flex gap-2"><select class="form-select form-select-sm" id="add-${group.id}" style="max-width:320px">${options}</select>
+           <button class="btn btn-sm btn-outline-info" onclick="addDevice(${group.id})">Додати борт</button></div>`
+      : '<div class="text-muted small">Вільних бортів цього власника немає.</div>';
+  const owner = state.is_admin ? ` · власник: ${esc(group.owner_username || group.owner_user_id)}` : '';
+  return `<div class="card mb-3 group-card" id="group-${group.id}">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div>
+        <span class="fw-bold">${esc(group.name)}</span>
+        <span class="group-meta ms-2">канал ${group.channel} (${group.freq} МГц)${owner}</span>
+        <span class="group-meta ms-2 group-count ${full ? 'full' : ''}">${members.length}/${state.limit}</span>
+      </div>
+      <div class="d-flex gap-1">
+        <button class="icon-btn" onclick="renameGroup(${group.id})" title="Перейменувати">✎</button>
+        <button class="icon-btn danger" onclick="deleteGroup(${group.id})" title="Видалити групу">🗑</button>
+      </div>
+    </div>
+    <div class="card-body p-0">
+      ${members.length ? `<div class="table-responsive"><table class="table">
+        <thead><tr><th>Борт</th><th>Mesh</th><th>Сусіди</th><th></th></tr></thead>
+        <tbody>${members.map(d => memberRow(d, group)).join('')}</tbody></table></div>`
+        : '<div class="text-muted small p-3">У групі ще немає бортів.</div>'}
+      <div class="p-3 border-top" style="border-color:var(--sirena-border) !important;">${addRow}</div>
+    </div>
+  </div>`;
+}
+
+function render() {
+  el('limitText').textContent = state.limit;
+  el('ownerWrap').style.display = state.is_admin ? '' : 'none';
+  el('ungroupedOwnerTh').style.display = state.is_admin ? '' : 'none';
+  if (state.is_admin && !el('newOwner').options.length) {
+    el('newOwner').innerHTML = state.users.map(u => `<option value="${u.id}">${esc(u.username)}</option>`).join('');
+  }
+  el('groups').innerHTML = state.groups.length
+    ? state.groups.map(groupCard).join('')
+    : '<div class="text-muted small mb-3">Груп ще немає.</div>';
+  const ungrouped = state.devices.filter(d => d.mesh.group_id == null);
+  el('ungrouped').innerHTML = ungrouped.map(d => `<tr>
+      <td><span class="online-dot ${d.online ? 'on' : ''}"></span><b>${esc(deviceName(d))}</b></td>
+      ${state.is_admin ? `<td class="small">${esc(d.owner_username || '—')}</td>` : ''}
+      <td>${meshCell(d.mesh)}</td>
+    </tr>`).join('') || `<tr><td colspan="3" class="text-muted small">Усі борти в групах.</td></tr>`;
+}
+
+async function load() {
+  const { ok, data } = await api('/api/mesh/groups');
+  if (!ok) { el('pageError').textContent = data.error || 'Не вдалось завантажити групи'; return; }
+  el('pageError').textContent = '';
+  state = data;
+  // Відкритий select "Додати борт" не перемальовуємо під рукою користувача.
+  if (document.activeElement && document.activeElement.tagName === 'SELECT') return;
+  render();
+}
+
+async function act(promise, errorEl = 'pageError') {
+  const { ok, data } = await promise;
+  el(errorEl).textContent = ok ? '' : (data.error || 'Помилка');
+  await load();
+  return ok;
+}
+
+async function createGroup() {
+  const name = el('newName').value.trim();
+  if (!name) { el('createError').textContent = 'Вкажіть назву групи'; return; }
+  const body = { name };
+  if (state.is_admin) body.owner_user_id = el('newOwner').value;
+  if (await act(api('/api/mesh/groups', body), 'createError')) el('newName').value = '';
+}
+
+async function renameGroup(id) {
+  const group = state.groups.find(g => g.id === id);
+  const name = prompt('Нова назва групи', group ? group.name : '');
+  if (name === null) return;
+  await act(api(`/api/mesh/groups/${id}/rename`, { name }));
+}
+
+async function deleteGroup(id) {
+  const group = state.groups.find(g => g.id === id);
+  if (!confirm(`Видалити групу "${group ? group.name : id}"? Mesh на її бортах вимкнеться.`)) return;
+  await act(api(`/api/mesh/groups/${id}/delete`, {}));
+}
+
+async function addDevice(id) {
+  const deviceId = el(`add-${id}`).value;
+  if (!deviceId) return;
+  document.activeElement.blur();
+  await act(api(`/api/mesh/groups/${id}/devices`, { device_id: deviceId }));
+}
+
+async function removeDevice(id, deviceId) {
+  const device = state.devices.find(d => d.device_id === deviceId);
+  const name = device ? deviceName(device) : deviceId.slice(0, 12);
+  if (!confirm(`Прибрати ${name} з групи? Mesh на ньому вимкнеться, а групі буде видано новий ключ шифрування.`)) return;
+  await act(api(`/api/mesh/groups/${id}/devices/${encodeURIComponent(deviceId)}/remove`, {}));
+}
+
+load().then(() => { if (location.hash) document.querySelector(location.hash)?.scrollIntoView(); });
+setInterval(load, 10000);
+</script>
+{% endblock %}

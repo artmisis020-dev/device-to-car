@@ -55,6 +55,7 @@ body { background:var(--sirena-bg); color:var(--sirena-text); }
       <span class="text-light small" id="clock"></span>
       <span class="text-light small">{{ current_user.username }}</span>
       <a href="/mesh" class="btn btn-sm btn-outline-light">Mesh</a>
+      <a href="/mesh/groups" class="btn btn-sm btn-outline-light">Mesh-групи</a>
       <a href="/users" class="btn btn-sm btn-outline-light">Користувачі</a>
       <a href="/logout" class="btn btn-sm btn-outline-light">Вийти</a>
     </div>
@@ -74,7 +75,7 @@ body { background:var(--sirena-bg); color:var(--sirena-text); }
           <thead><tr>
             <th>Статус</th><th>Hostname</th><th>IP</th><th>Hardware ID</th>
             <th>Версія Sirena</th><th>Час останнього пінгу</th><th>Дійсний до</th>
-            <th>Власник</th><th>Код прив'язки</th><th>Дії</th>
+            <th>Власник</th><th>Mesh</th><th>Код прив'язки</th><th>Дії</th>
           </tr></thead>
           <tbody id="devBody"></tbody>
         </table>
@@ -129,6 +130,7 @@ body { background:var(--sirena-bg); color:var(--sirena-text); }
   </div></div>
 </div>
 {% include "_owner_reassign_modal.html" %}
+{% include "_mesh_cell.html" %}
 {% endblock %}
 {% block scripts %}
 {{ super() }}
@@ -254,6 +256,7 @@ async function loadDevices() {
         ${d.owner_username ? esc(d.owner_username) : '<span class="text-muted">—</span>'}
         <button class="btn btn-sm action-btn icon-only py-0 px-1 ms-1" onclick="openOwnerReassign('${d.device_id}')" title="Призначити/перепризначити власника">👤</button>
       </td>
+      <td>${meshCell(d.mesh)}</td>
       <td class="small">
         ${d.claim_code ? `<code>${esc(d.claim_code)}</code>` : '<span class="text-muted">—</span>'}
         <button class="btn btn-sm action-btn icon-only py-0 px-1 ms-1" onclick="genCode('${d.device_id}')" title="Згенерувати новий код">⟳</button>
@@ -269,7 +272,7 @@ async function loadDevices() {
     </tr>`;
   }).join('');
   document.getElementById('devBody').innerHTML = body ||
-    '<tr><td colspan="10" class="text-center text-muted py-4">Пристрої не зареєстровані</td></tr>';
+    '<tr><td colspan="11" class="text-center text-muted py-4">Пристрої не зареєстровані</td></tr>';
 }
 
 async function genCode(id) {

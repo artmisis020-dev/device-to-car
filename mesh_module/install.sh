@@ -2,12 +2,10 @@
 # ==============================================================================
 # Інсталятор модуля Sirena Mesh на Raspberry Pi
 # Цільова папка: /opt/sirena-mesh
-# Mesh вмикається при старті борту (SIRENA_MESH_AUTOSTART=0 у /opt/sirena/.env
-# — лише кнопкою з адмінки через sirena_manager).
-#
-# Шифрування (SAE): ключ, ОДИН для всіх бортів групи, —
-#   sudo SIRENA_MESH_KEY='<ключ>' bash install.sh      (або install_rpi.sh)
-# пишеться в /etc/sirena-mesh/mesh.key (0600). Без ключа mesh відкритий.
+# Ставиться на ВСІ борти, з адаптером чи без. Чи працює mesh, вирішує адмінка
+# (mesh-групи): sirena-mesh-agent отримує конфіг групи (ім'я, частота, ключ
+# SAE), кешує в /etc/sirena-mesh і сам піднімає/опускає mesh, коли борт у
+# групі і підключений USB Wi-Fi адаптер. Нічого задавати при інсталяції не треба.
 # ==============================================================================
 
 set -e
@@ -19,10 +17,9 @@ fi
 
 DEPLOY_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="/opt/sirena-mesh"
-UNITS="sirena-mesh.service sirena-uplink.service"
+UNITS="sirena-mesh.service sirena-uplink.service sirena-mesh-agent.service"
 ENV_FILE="/opt/sirena/.env"
-KEY_DIR="/etc/sirena-mesh"
-KEY_FILE="$KEY_DIR/mesh.key"
+CONFIG_DIR="/etc/sirena-mesh"
 
 echo "=== Початок встановлення Sirena Mesh ==="
 
@@ -30,7 +27,8 @@ echo "1. Встановлення системних залежностей..."
 apt-get update
 # rfkill/iw/nft/conntrack — mesh-up.sh і uplink_watchdog.py; wireguard-tools — `wg show`;
 # wpasupplicant — захищений mesh (SAE).
-apt-get install -y iw iproute2 nftables conntrack wireguard-tools rfkill python3 wpasupplicant
+# --no-upgrade: вже встановлені пакети не чіпаємо (на борті — лише те, чого бракує).
+apt-get install -y --no-upgrade iw iproute2 nftables conntrack wireguard-tools rfkill python3 wpasupplicant
 
 # USB3 LPM (U1/U2) на Pi 5 xhci + mt76: під навантаженням "enable of
 # device-initiated U1 failed" → reset SuperSpeed → адаптер перепідключається
@@ -72,25 +70,17 @@ for id in ${NOLPM_IDS//,/ }; do
     done
 done
 
-echo "1b. Ключ mesh (SAE)..."
-if [ -n "${SIRENA_MESH_KEY:-}" ]; then
-    if [ "${#SIRENA_MESH_KEY}" -lt 8 ]; then
-        echo "❌ SIRENA_MESH_KEY коротший за 8 символів" >&2
-        exit 1
-    fi
-    install -d -m 700 "$KEY_DIR"
-    ( umask 077; printf '%s\n' "$SIRENA_MESH_KEY" > "$KEY_FILE" )
-    echo "    записано в $KEY_FILE"
-elif [ -s "$KEY_FILE" ]; then
-    echo "    вже є: $KEY_FILE"
-else
-    echo "    УВАГА: ключа нема — mesh буде ВІДКРИТИЙ (без шифрування)." >&2
-    echo "    Задати: sudo SIRENA_MESH_KEY='<спільний ключ>' bash $0" >&2
+# Конфіг групи пише агент (0600, root). Ключ, заданий вручну до 1.0.5.1, —
+# прибираємо: тепер ключ лише від адмінки.
+install -d -m 700 "$CONFIG_DIR"
+if [ -f "$CONFIG_DIR/mesh.key" ] && [ ! -f "$CONFIG_DIR/config.json" ]; then
+    rm -f "$CONFIG_DIR/mesh.key"
+    echo "1b. Прибрано ручний ключ mesh (1.0.5) — конфіг тепер з адмінки"
 fi
 
 echo "2. Копіювання скриптів у $INSTALL_DIR..."
 mkdir -p "$INSTALL_DIR"
-for f in mesh-up.sh mesh-down.sh uplink_watchdog.py; do
+for f in mesh-up.sh mesh-down.sh uplink_watchdog.py mesh_agent.py; do
     sed 's/\r$//' "$DEPLOY_DIR/$f" > "$INSTALL_DIR/$f"
     chmod 755 "$INSTALL_DIR/$f"
 done
@@ -102,22 +92,26 @@ for unit in $UNITS; do
 done
 systemctl daemon-reload
 
-AUTOSTART="$(sed -n 's/^SIRENA_MESH_AUTOSTART=//p' "$ENV_FILE" 2>/dev/null | tail -1)"
-if [ "${AUTOSTART:-1}" = "0" ]; then
-    systemctl disable $UNITS 2>/dev/null || true
-    echo "4. Автостарт вимкнено (SIRENA_MESH_AUTOSTART=0) — лише кнопкою з адмінки."
-else
-    systemctl enable $UNITS
-    # restart, щоб підхопити нові скрипти; без адаптера — не помилка інсталяції
-    # (юніт сам повторюватиме спробу).
-    echo "4. Автостарт увімкнено, (пере)запуск mesh..."
-    systemctl restart sirena-mesh.service sirena-uplink.service \
-        || echo "УВАГА: mesh не піднявся (нема адаптера?) — journalctl -u sirena-mesh -n 30" >&2
+# sirena-mesh НЕ enabled (до 1.0.5.1 був) — ним керує агент. sirena-uplink
+# enabled = Wants у sirena-mesh: старт mesh тягне сторожа.
+systemctl disable sirena-mesh.service 2>/dev/null || true
+# disable дивиться в [Install] нового юніта (його вже нема) — старе посилання прибираємо явно.
+rm -f /etc/systemd/system/multi-user.target.wants/sirena-mesh.service
+systemctl daemon-reload
+systemctl enable sirena-uplink.service sirena-mesh-agent.service
+echo "4. (Пере)запуск sirena-mesh-agent..."
+systemctl restart sirena-mesh-agent.service
+# Скрипти mesh оновились — якщо mesh уже піднятий, перезапускаємо його.
+if systemctl is-active --quiet sirena-mesh.service; then
+    systemctl restart sirena-mesh.service || true
+fi
+if ! grep -q '^SIRENA_ADMIN_SERVER_URL=.' "$ENV_FILE" 2>/dev/null; then
+    echo "УВАГА: SIRENA_ADMIN_SERVER_URL не задано в $ENV_FILE — агент не отримає конфіг групи." >&2
 fi
 
 echo "------------------------------------------------------------"
 echo "Встановлення завершено!"
-echo "Перевірка: systemctl status sirena-mesh sirena-uplink"
-echo "           journalctl -u sirena-mesh -u sirena-uplink -n 50"
+echo "Перевірка: systemctl status sirena-mesh-agent sirena-mesh sirena-uplink"
+echo "           journalctl -u sirena-mesh-agent -u sirena-mesh -u sirena-uplink -n 50"
 echo "           curl -s localhost:9076/api/v1/mesh/diag"
 echo "------------------------------------------------------------"
