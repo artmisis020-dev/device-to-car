@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import os
+from pathlib import Path
 from typing import Tuple
 
 
@@ -9,7 +10,19 @@ MANAGER_HOST = os.environ.get("SIRENA_MANAGER_HOST", os.environ.get("MANAGER_HOS
 MANAGER_PORT = int(os.environ.get("SIRENA_MANAGER_PORT", os.environ.get("MANAGER_PORT", "9070")))
 SYSTEMCTL = os.environ.get("SIRENA_SYSTEMCTL", "sudo systemctl")
 ADMIN_SERVER_URL = os.environ.get("SIRENA_ADMIN_SERVER_URL", "http://127.0.0.1:8080")
-SIRENA_VERSION = os.environ.get("SIRENA_VERSION", "dev")
+# Джерело правди — файл VERSION (install_rpi.sh кладе його в /opt/sirena і
+# пише SIRENA_VERSION у .env); env має пріоритет.
+_VERSION_FILE = Path(__file__).resolve().parent.parent / "VERSION"
+
+
+def _file_version() -> str:
+    try:
+        return _VERSION_FILE.read_text(encoding="utf-8").strip() or "dev"
+    except OSError:
+        return "dev"
+
+
+SIRENA_VERSION = os.environ.get("SIRENA_VERSION") or _file_version()
 HEARTBEAT_INTERVAL_SEC = int(os.environ.get("SIRENA_HEARTBEAT_INTERVAL_SEC", "30"))
 WG_INTERFACES = tuple(
     iface.strip()

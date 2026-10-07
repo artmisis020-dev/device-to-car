@@ -85,6 +85,9 @@ chmod -R 755 "$INSTALL_DIR"
 
 echo "6. Встановлення твоїх системних сервісів..."
 cp "$DEPLOY_DIR/services/"*.service /etc/systemd/system/
+for unit in "$DEPLOY_DIR/services/"*.service; do
+    chmod 644 "/etc/systemd/system/$(basename "$unit")"
+done
 
 systemctl enable --now avahi-daemon
 systemctl daemon-reload

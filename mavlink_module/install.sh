@@ -97,9 +97,10 @@ usermod -aG systemd-journal "$SERVICE_USER"
 # Даємо стабільні права на UART FC. На деяких образах Raspberry Pi
 # /dev/ttyAMA0 створюється як root:tty 0600, і сервіс sirena не може його відкрити.
 UDEV_RULE_FILE="/etc/udev/rules.d/99-sirena-uart.rules"
-echo 'KERNEL=="ttyAMA0", GROUP="dialout", MODE="0660"' > "$UDEV_RULE_FILE"
+# Усі ttyAMA*: FC MAVLink (AMA0), Beitian/CRSF (AMA2), NMEA→FC/fire-device (AMA3).
+echo 'KERNEL=="ttyAMA[0-9]*", GROUP="dialout", MODE="0660"' > "$UDEV_RULE_FILE"
 udevadm control --reload-rules || true
-udevadm trigger --name-match=ttyAMA0 || true
+udevadm trigger --subsystem-match=tty || true
 if [ -e /dev/ttyAMA0 ]; then
     chgrp dialout /dev/ttyAMA0 || true
     chmod 0660 /dev/ttyAMA0 || true
@@ -122,6 +123,7 @@ cp -p "$DEPLOY_DIR/fire_device_status_daemon.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/mavlink_router.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/mavlink_client.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/mavlink_bridge.py" "$INSTALL_DIR/"
+cp -p "$DEPLOY_DIR/telemetry_watchdog.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/config.py" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/requirements.txt" "$INSTALL_DIR/"
 cp -p "$DEPLOY_DIR/run_mavlink_router.sh" "$INSTALL_DIR/"
@@ -170,12 +172,31 @@ else
     echo "Попередження: mavlink-router.service не знайдено в папці services."
 fi
 
-if [ -f "$SERVICES_SRC_DIR/fire_device-status.service" ]; then
-    cp "$SERVICES_SRC_DIR/fire_device-status.service" /etc/systemd/system/
-    chmod 644 /etc/systemd/system/fire_device-status.service
-    echo "fire_device-status.service скопійовано."
+# Старі інсталятори ставили юніт як fire_device-status.service, а
+# sirena_manager стартує fire-device-status.service.
+if [ -f /etc/systemd/system/fire_device-status.service ]; then
+    systemctl disable --now fire_device-status.service 2>/dev/null || true
+    rm -f /etc/systemd/system/fire_device-status.service
+fi
+if [ -f "$SERVICES_SRC_DIR/fire-device-status.service" ]; then
+    cp "$SERVICES_SRC_DIR/fire-device-status.service" /etc/systemd/system/
+    chmod 644 /etc/systemd/system/fire-device-status.service
+    echo "fire-device-status.service скопійовано."
 else
-    echo "Попередження: fire_device-status.service не знайдено в папці services."
+    echo "Попередження: fire-device-status.service не знайдено в папці services."
+fi
+
+# telemetry-watchdog — незалежний від sirena-manager спостерігач (root, лише
+# stdlib, пише в /var/log/sirena): вмикаємо одразу, не через BOOT_SEQUENCE.
+if [ -f "$SERVICES_SRC_DIR/telemetry-watchdog.service" ]; then
+    cp "$SERVICES_SRC_DIR/telemetry-watchdog.service" /etc/systemd/system/
+    chmod 644 /etc/systemd/system/telemetry-watchdog.service
+    systemctl daemon-reload
+    systemctl enable telemetry-watchdog.service
+    systemctl restart telemetry-watchdog.service
+    echo "telemetry-watchdog.service встановлено й запущено."
+else
+    echo "Попередження: telemetry-watchdog.service не знайдено в папці services."
 fi
 
 # Оновлення демона без запуску сервісів.

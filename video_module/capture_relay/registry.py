@@ -2,6 +2,7 @@ import hashlib
 import socket
 import urllib.request
 import json
+import os
 import time
 import logging
 import capture_relay.config as config
@@ -56,7 +57,10 @@ def run_video_handshake():
         "device_id": device_id,
         "hostname": socket.gethostname(),
         "hardware": device_id[:16],
-        "sirena_version": "—",
+        # Той самий device_id, що й у sirena_manager: заглушка "—" тут
+        # перезаписувала версію Sirena в адмінці (відео реєструється після
+        # менеджера). Порожнє значення адмінка ігнорує й лишає наявне.
+        "sirena_version": os.environ.get("SIRENA_VERSION", ""),
         "video_version": config.VIDEO_VERSION
     }
 

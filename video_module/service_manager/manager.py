@@ -32,6 +32,11 @@ class ServiceManager:
         self._lock = threading.Lock()
         self.config_file = VIDEO_CONFIG_PATH
         self.config = self._load_config()
+        # Нормалізуємо ДО _enforce_single_mode: із застарілим mode (напр.
+        # "srt-relay" у збереженому JSON до перейменування ключа) він зупиняв
+        # єдиний живий srt-relay-capture одразу після старту (відтворено на
+        # свіжому RPi5 — відео не піднімалось після ребуту).
+        self.config["mode"] = _resolve_mode(self.config.get("mode", "srt"))
         self._enforce_single_mode()
 
     def _enforce_single_mode(self):

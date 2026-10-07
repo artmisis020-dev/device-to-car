@@ -17,7 +17,7 @@ Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PYTHONPATH=/home/sirena/sirena:/home/sirena/sirena/starlink-grpc-tools
 EnvironmentFile=/opt/sirena/.env
-MemoryLimit=256M
+MemoryMax=256M
 
 [Install]
 WantedBy=multi-user.target

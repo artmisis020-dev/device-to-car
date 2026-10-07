@@ -20,6 +20,7 @@ echo "1. Зупинка активних фонових процесів та с
 SERVICES=(
     "telemetry-sender.service"
     "fire-device-status.service"
+    "telemetry-watchdog.service"
     "mavlink-router.service"
 )
 

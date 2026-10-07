@@ -77,12 +77,15 @@ class SirenaSupervisor:
         services = self.list_services()
         controllable = [svc for svc in services if svc.get("controllable")]
         active = [svc for svc in controllable if svc.get("active")]
+        # ready — лише по BOOT_SEQUENCE: lowercam/lowercam_preview controllable,
+        # але вмикаються вручну з адмінки, і з ними ready ніколи не був би True.
+        boot_ready = all(svc.get("active") for svc in services if svc.get("name") in BOOT_SEQUENCE)
         return {
             "success": True,
             "boot_sequence": list(BOOT_SEQUENCE),
             "controllable_total": len(controllable),
             "controllable_active": len(active),
-            "ready": len(active) == len(controllable),
+            "ready": boot_ready,
             "services": services,
         }
 

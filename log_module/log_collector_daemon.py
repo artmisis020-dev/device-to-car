@@ -23,7 +23,7 @@ UNITS = [
     "telemetry-sender.service",
     "mavlink-router.service",
     "crsf-bridge.service",
-    "fire_device-status.service"
+    "fire-device-status.service"
 ]
 LOG_DIR = Path("/home/sirena/logs")
 MAX_BYTES = 20_000_000

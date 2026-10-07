@@ -44,7 +44,7 @@ def register_device(data, remote_ip):
     if existing:
         new_sirena = (
             sirena_version
-            if sirena_version and sirena_version not in {"-", "â€”"}
+            if sirena_version and sirena_version not in {"-", "—", "â€”"}
             else existing["sirena_version"]
         )
         new_video = video_version if video_version and video_version != "inactive" else existing["video_version"]

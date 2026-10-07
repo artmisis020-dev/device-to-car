@@ -1,1 +1,5 @@
 flask>=3.0
+# tracker.py імпортує cv2/numpy; на чистому образі (trixie) їх нема в
+# system-site-packages, тому явно.
+opencv-python-headless
+numpy
