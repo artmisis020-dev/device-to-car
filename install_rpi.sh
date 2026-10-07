@@ -101,8 +101,10 @@ case "$PI_MODEL" in
     grep -qE '^(dtoverlay=uart0(-pi5)?|dtparam=uart0=on)$' "$BOOT_CONFIG" || ensure_boot_line "dtoverlay=uart0" ;;
   *) ensure_boot_line "dtoverlay=disable-bt" ;;
 esac
-ensure_boot_line "dtoverlay=uart2"
-ensure_boot_line "dtoverlay=uart3"
+# uartN і uartN-pi5 — той самий overlay (overlay_map на Pi 5); дублікат не пишемо.
+for n in 2 3; do
+  grep -qE "^dtoverlay=uart${n}(-pi5)?$" "$BOOT_CONFIG" || ensure_boot_line "dtoverlay=uart${n}"
+done
 
 # Serial-консоль на serial0 конфліктує з MAVLink на ttyAMA0 (Pi 3/4).
 if [ -f "$CMDLINE" ] && grep -qE 'console=(serial0|ttyAMA0|ttyS0),[0-9]+ ?' "$CMDLINE"; then
