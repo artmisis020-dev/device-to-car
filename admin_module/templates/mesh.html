@@ -443,6 +443,7 @@ async function loadDiag() {
       <dt>Режим</dt><dd>${escapeHtml(uplinkText(d))}</dd>
       <dt>Starlink</dt><dd>${escapeHtml(d.uplink_iface)} — ${d.uplink_ok ? 'OK' : 'немає'}</dd>
       <dt>Mesh</dt><dd>${escapeHtml(d.mesh_iface)} ${escapeHtml(d.mesh_ip)}</dd>
+      <dt>Шифрування</dt><dd>${d.security === 'sae' ? 'SAE' : d.security === 'open' ? 'немає (відкритий)' : '—'}</dd>
       <dt>WG endpoint</dt><dd>${escapeHtml(d.wg_endpoint)}</dd>
       <dt>Змінено</dt><dd>${new Date(d.since * 1000).toLocaleTimeString()}</dd>
     </dl>

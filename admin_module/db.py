@@ -151,6 +151,12 @@ def init_db():
             """
         )
         db.execute("CREATE INDEX IF NOT EXISTS idx_tel_device_ts ON telemetry(device_id, ts)")
+        # cleanup_telemetry_older_than() — `DELETE ... WHERE ts<?` кожні 50
+        # ingest-запитів. Без окремого індексу по ts це повний SCAN таблиці
+        # (7.6M рядків / 3.4ГБ за добу на 2026-10-07 — >10с), весь час з
+        # блокуванням запису: падали ingest телеметрії і навіть логін
+        # ("database is locked" у insert_auth_log).
+        db.execute("CREATE INDEX IF NOT EXISTS idx_tel_ts ON telemetry(ts)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_fc_commands_device_created ON fc_commands(device_id, created_at DESC)")
         _seed_admin(db)
         db.commit()

@@ -42,6 +42,9 @@ VIDEO_RELAY_UNIT = "video-relay.service"
 SRT_RELAY_CAPTURE_UNIT = "srt-relay-capture.service"
 LOWERCAM_UNIT = "additional-lowercam.service"            # запис
 LOWERCAM_PREVIEW_UNIT = "additional-lowercam-preview.service"  # легкий live-стрім
+# mesh_module: 802.11s між бортами + failover Starlink → Starlink сусіда.
+MESH_UNIT = "sirena-mesh.service"
+UPLINK_WATCHDOG_UNIT = "sirena-uplink.service"
 ROOT_ENV_PATH = os.environ.get("SIRENA_ROOT_ENV_PATH", "/opt/sirena/.env")
 TELEMETRY_SNAPSHOT_PATH = os.environ.get("SIRENA_TELEMETRY_SNAPSHOT_PATH", "/tmp/sirena_mavlink_snapshot.json")
 # Той самий файл, що читає/пише video_module/service_manager (video-service-manager,
@@ -127,6 +130,15 @@ SERVICES = {
         name="lowercam_preview",
         label="Lowercam Preview (CSI, live-перевірка)",
         units=(LOWERCAM_PREVIEW_UNIT,),
+    ),
+    # Mesh — mesh_module/. Не в BOOT_SEQUENCE: юніти enabled у systemd і
+    # стартують самі при завантаженні (mesh має бути піднятий ДО втрати
+    # Starlink); тут — лише кнопки "Підняти/Опустити меш" на /mesh.
+    # Старт по черзі, стоп — у зворотному порядку (сторож прибирає маршрути до mesh-down).
+    "mesh": ServiceDefinition(
+        name="mesh",
+        label="Mesh + Starlink failover",
+        units=(MESH_UNIT, UPLINK_WATCHDOG_UNIT),
     ),
 }
 

@@ -15,6 +15,15 @@ if [ -z "$IFACE" ]; then
 fi
 
 echo "[mesh-down] Вихід з mesh на $IFACE"
+# Захищений mesh тримає wpa_supplicant (mesh-up.sh) — спершу зупиняємо його.
+wpa_pid="$(cat "$STATE_DIR/wpa_supplicant.pid" 2>/dev/null || true)"
+if [ -n "$wpa_pid" ]; then
+    kill "$wpa_pid" 2>/dev/null || true
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        kill -0 "$wpa_pid" 2>/dev/null || break
+        sleep 0.2
+    done
+fi
 iw dev "$IFACE" mesh leave 2>/dev/null || true
 ip addr flush dev "$IFACE" 2>/dev/null || true
 ip link set "$IFACE" down 2>/dev/null || true

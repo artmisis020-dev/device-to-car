@@ -7,7 +7,7 @@
 # Адмінка за замовчуванням — через WireGuard (http://10.0.0.1:8080): тоді
 # переїзд сервера не потребує змін на бортах, крім Endpoint у wg0.conf.
 #
-# Ставить УСІ бортові модулі (mavlink, navigation, video, crsf, additional,
+# Ставить УСІ бортові модулі (mavlink, navigation, video, crsf, additional, mesh,
 # log collector), root manager, пише /opt/sirena/.env, налаштовує UART і в
 # кінці (якщо змінювався config.txt/cmdline.txt) перезавантажує РПі.
 # Повторний запуск безпечний: існуючий /opt/sirena/.env зберігається (ручні
@@ -29,7 +29,7 @@ INSTALL_LOG="/var/log/sirena-install.log"
 
 # Порядок важливий: mavlink першим (ставить /opt/sirena-telemetry, з якого
 # імпортує navigation), log collector — останнім (читає журнали інших юнітів).
-MODULES=(mavlink_module navigation_module video_module crsf_module additional_modules log_module)
+MODULES=(mavlink_module navigation_module video_module crsf_module additional_modules log_module mesh_module)
 
 trap 'echo "!!! Помилка в рядку $LINENO (код $?). Повний лог: $INSTALL_LOG" >&2' ERR
 
@@ -139,6 +139,26 @@ if [ -f /etc/wireguard/wg0.conf ]; then
       apt-get install -y openresolv
     fi
   fi
+  # Повний тунель (AllowedIPs=0.0.0.0/0) забирає у table 51820 і тарілку
+  # Starlink 192.168.100.1 → gRPC навігації йде в WG і не доходить. Правило
+  # `to 192.168.100.1 lookup main` бере актуальний default eth0 щоразу (на
+  # відміну від PostUp з `ip route ... via <gw>`, що фіксує шлюз на момент
+  # підйому WG і губиться, якщо DHCP ще не встиг). Трафік WG не зачіпає;
+  # без Starlink — просто нема куди слати, як і раніше.
+  # Пріоритет НЕ задаємо: ядро ставить правило перед першим наявним, а PostUp
+  # виконується вже після правил wg-quick — тож наше гарантовано вище за
+  # `not fwmark → 51820` (з фіксованим 31001 після рестарту wg0 було нижче).
+  STARLINK_DISH_RULE="ip rule add to 192.168.100.1 lookup main"
+  if grep -qE '^\s*AllowedIPs\s*=.*0\.0\.0\.0/0' /etc/wireguard/wg0.conf \
+     && ! grep -q 'to 192.168.100.1 lookup main' /etc/wireguard/wg0.conf; then
+    cp -p /etc/wireguard/wg0.conf /etc/wireguard/wg0.conf.sirena.bak
+    sed -i "/^\[Interface\]/a PostUp = $STARLINK_DISH_RULE || true\nPostDown = ip rule del to 192.168.100.1 lookup main || true" /etc/wireguard/wg0.conf
+    echo "WireGuard: + правило для тарілки Starlink (бекап: wg0.conf.sirena.bak)"
+  fi
+  # Живцем, без рестарту wg0 (інсталятор часто йде саме через нього). Видаляємо
+  # і додаємо наново — так правило гарантовано стає перед правилами wg-quick.
+  while ip rule del to 192.168.100.1 lookup main 2>/dev/null; do :; done
+  $STARLINK_DISH_RULE || true
   systemctl enable wg-quick@wg0
   echo "WireGuard: wg-quick@wg0 увімкнено на автозапуск."
 else

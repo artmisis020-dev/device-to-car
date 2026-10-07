@@ -28,7 +28,7 @@ echo "=== Sirena Raspberry Pi uninstall ==="
 systemctl disable --now sirena-manager.service 2>/dev/null || true
 
 # 2. Модулі з власними uninstall.sh
-for module in mavlink_module navigation_module video_module crsf_module; do
+for module in mesh_module mavlink_module navigation_module video_module crsf_module; do
   if [ -f "$PROJECT_DIR/$module/uninstall.sh" ]; then
     echo "--- $module"
     bash "$PROJECT_DIR/$module/uninstall.sh"

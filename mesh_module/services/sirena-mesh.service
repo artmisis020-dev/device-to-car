@@ -1,0 +1,24 @@
+[Unit]
+Description=Sirena Mesh (802.11s на окремому USB Wi-Fi адаптері)
+# Mesh має бути піднятий ДО втрати Starlink (після втрати борт недосяжний) —
+# тому стартує сам при завантаженні; кнопка в адмінці лише вмикає/вимикає.
+After=network.target NetworkManager.service
+# Адаптера може ще не бути (USB) — повторюємо без ліміту.
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=-/opt/sirena/.env
+ExecStart=/opt/sirena-mesh/mesh-up.sh
+ExecStop=/opt/sirena-mesh/mesh-down.sh
+Restart=on-failure
+RestartSec=10s
+# Менше за таймаут `systemctl start` у sirena_manager (20с).
+TimeoutStartSec=18s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sirena-mesh
+
+[Install]
+WantedBy=multi-user.target

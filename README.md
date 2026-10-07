@@ -8,6 +8,10 @@ On the RPi, the local manager starts and supervises:
 - `navigation` for GPS/Starlink/Beitian handling
 - `video_manager` and `video_relay` for camera streaming
 
+Independently of the manager boot sequence, `mesh_module` brings up an 802.11s
+mesh between boards on a separate USB Wi-Fi adapter at boot: if a board's
+Starlink dies, its WireGuard goes through a neighbour's Starlink (~1s switchover).
+
 The remote admin server stores registered drones, telemetry, video state, and the drone detail page.
 
 ## Video
@@ -19,6 +23,12 @@ patches, adaptive bitrate design and settings: [`video_module/README.md`](video_
 The admin server must run the **patched** MediaMTX build from
 `admin_module/deploy/mediamtx-patches/` (installed automatically by
 `deploy.sh`); the stock release adds ~90ms of latency.
+
+## Mesh (Starlink failover between boards)
+
+Design, failover logic, tuning, bench test results and known hardware issues:
+[`mesh_module/README.md`](mesh_module/README.md). Installed by `install_rpi.sh`;
+admin UI page — `/mesh`. Release notes: [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Deploy Admin Server
 
