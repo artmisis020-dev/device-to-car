@@ -723,15 +723,22 @@
     try {
       const res = await fetch('/api/devices/' + DEVICE_ID + '/update/status');
       const data = await res.json().catch(() => ({}));
-      const label = UPDATE_LABELS[data.status] ?? ('⚙ ' + esc(data.status || 'невідомо'));
+      if (!res.ok || !data.status) {
+        // install_rpi.sh в кінці сам перезапускає sirena-manager.service —
+        // на кілька секунд борт не відповідає на опитування статусу, це
+        // штатна частина апдейту, а не збій. Опитування НЕ зупиняємо.
+        line.textContent = '⏳ Борт перезапускає службу (нормально під час апдейту)…';
+        return;
+      }
+      const label = UPDATE_LABELS[data.status] ?? ('⚙ ' + esc(data.status));
       line.textContent = label;
-      if (data.status === 'done' || (data.status || '').startsWith('failed')) {
+      if (data.status === 'done' || data.status.startsWith('failed')) {
         clearInterval(updatePollTimer);
         updatePollTimer = null;
         document.getElementById('btnUpdateDevice').disabled = false;
       }
     } catch (e) {
-      line.textContent = '⚠ не вдалось перевірити статус оновлення';
+      line.textContent = '⏳ Борт перезапускає службу (нормально під час апдейту)…';
     }
   }
 
