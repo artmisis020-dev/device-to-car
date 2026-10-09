@@ -2,4 +2,4 @@
 (sirena_manager/updater.py). Якщо ти бачиш це на борту в /opt/sirena/sirena_manager/
 після кнопки "Оновити" — файл дійшов, апдейт застосувався.
 
-version: 1.0.5.4
+version: 1.0.5.5
