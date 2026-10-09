@@ -255,6 +255,10 @@
       <!-- <button id="btnToggle" class="btn btn-sm btn-success" onclick="toggleTelemetry()">▶ Старт</button> -->
       <button id="btnRestartMavlink" class="btn btn-sm btn-outline-info" onclick="restartMavlink()">🔄 MAVLink</button>
       <button id="btnRestartVideo" class="btn btn-sm btn-outline-info" onclick="restartVideo()">🔄 Відео</button>
+      <button id="btnUpdateDevice" class="btn btn-sm {{ 'btn-warning' if needs_update else 'btn-outline-secondary' }}"
+              onclick="updateDevice()" title="Версія борту: {{ sirena_version or '—' }} / остання: {{ latest_version }}">
+        ⬆ {{ 'Оновити (' + sirena_version + ' → ' + latest_version + ')' if needs_update else 'Версія актуальна' }}
+      </button>
       <button id="btnSystemTest" class="btn btn-sm btn-danger" onclick="runSystemTest()">🧪 Тестування усіх систем</button>
       <button class="btn btn-sm btn-outline-warning" onclick="clearTelemetry()">🗑 Очистити</button>
       {% if current_user and current_user.role == 'admin' %}
@@ -277,6 +281,7 @@
     <span class="small">Flight: <code id="flightId" class="text-info">—</code></span>
     <span class="small" id="lastSeen"></span>
     <span class="small text-warning" id="dbgLine"></span>
+    <span class="small text-info" id="updateStatusLine"></span>
   </div>
 
   <div class="row g-2 mb-2">
@@ -673,6 +678,61 @@
       'Перезапустити весь відео-ланцюг на пристрої?',
       '⏳ Відео…'
     );
+  }
+
+  // ─── Апдейт борту (git archive з адмінки → install_rpi.sh на РПі) ──────────
+  const UPDATE_LABELS = {
+    idle: '', downloading: '⬇ Завантаження пакета…', installing: '⚙ Встановлення (може тривати кілька хвилин)…',
+    done: '✅ Оновлено — очікуємо перереєстрацію борту', failed_download: '❌ Помилка завантаження пакета',
+    failed_checksum: '❌ Помилка: sha256 не збігається', failed_install: '❌ install_rpi.sh завершився з помилкою',
+    failed_bad_ref: '❌ Невірний ref', failed_bad_checksum_format: '❌ Невірний формат sha256',
+    failed_no_env: '❌ На борту нема /opt/sirena/.env', failed_no_admin_url: '❌ На борту не задано адресу адмінки',
+    failed_bad_package: '❌ Пошкоджений пакет',
+  };
+  let updatePollTimer = null;
+
+  async function updateDevice() {
+    if (!confirm('Запустити оновлення цього борту до останньої версії? Борт сам завантажить код і перевстановить модулі — зайде кілька хвилин.')) return;
+    const btn = document.getElementById('btnUpdateDevice');
+    btn.disabled = true;
+    try {
+      const res = await fetch('/api/devices/' + DEVICE_ID + '/update', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        alert('Помилка: ' + (data.error || data.detail || `HTTP ${res.status}`));
+        btn.disabled = false;
+        return;
+      }
+      startUpdatePolling();
+    } catch (e) {
+      alert('Помилка запиту: ' + e.message);
+      btn.disabled = false;
+    }
+  }
+
+  function startUpdatePolling() {
+    if (updatePollTimer) return;
+    updatePollTimer = setInterval(pollUpdateStatus, 3000);
+    pollUpdateStatus();
+  }
+
+  async function pollUpdateStatus() {
+    const line = document.getElementById('updateStatusLine');
+    try {
+      const res = await fetch('/api/devices/' + DEVICE_ID + '/update/status');
+      const data = await res.json().catch(() => ({}));
+      const label = UPDATE_LABELS[data.status] ?? ('⚙ ' + esc(data.status || 'невідомо'));
+      line.textContent = label;
+      if (data.status === 'done' || (data.status || '').startsWith('failed')) {
+        clearInterval(updatePollTimer);
+        updatePollTimer = null;
+        document.getElementById('btnUpdateDevice').disabled = false;
+      }
+    } catch (e) {
+      line.textContent = '⚠ не вдалось перевірити статус оновлення';
+    }
   }
 
   function esc(value) {

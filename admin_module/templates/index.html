@@ -249,7 +249,7 @@ async function loadDevices() {
       <td class="fw-bold">${esc(hostname)}</td>
       <td>${esc(d.ip || '-')}</td>
       <td><code title="${esc(d.device_id)}">${shortId(d.device_id)}</code></td>
-      <td><span class="badge bg-secondary">${esc(d.sirena_version || '-')}</span></td>
+      <td><span class="badge ${d.needs_update ? 'bg-warning text-dark' : 'bg-secondary'}" title="${d.needs_update ? 'Остання версія: ' + esc(d.latest_version) : ''}">${esc(d.sirena_version || '-')}</span></td>
       <td class="small ${lastSeenClass(d.last_seen)}" title="${esc(utcToLocalText(d.last_seen))}">${esc(timeAgoUa(d.last_seen))}</td>
       <td class="small" title="UTC: ${esc(d.valid_until||'-')}">${esc(utcToLocalText(d.valid_until))}</td>
       <td class="small">
@@ -267,6 +267,7 @@ async function loadDevices() {
         <a href="/video/${d.device_id}" class="btn btn-sm action-btn py-0 px-2 me-1 actions-btn" title="Відео">${vidBtn}</a>
         ${approveBtn}
         ${revokeBtn}
+        ${d.needs_update ? `<button class="btn btn-sm btn-warning icon-only py-0 px-2 me-1" onclick="updateDevice('${d.device_id}','${esc(hostname)}')" title="Оновити до останньої версії (${esc(d.latest_version)})">⬆</button>` : ''}
         <button class="btn btn-sm action-btn icon-only py-0 px-2" onclick="deleteDevice('${d.device_id}','${esc(hostname)}')" title="Видалити пристрій">🗑</button>
       </td>
     </tr>`;
@@ -313,6 +314,20 @@ async function deleteDevice(id, hostname) {
     const msg = await res.json().catch(() => ({error: 'delete failed'}));
     alert(msg.error || 'Delete failed');
   }
+  loadDevices();
+}
+
+async function updateDevice(id, hostname) {
+  if (!confirm('Запустити оновлення борту "' + hostname + '" до останньої версії?\nБорт сам завантажить код і перевстановить модулі — зайде кілька хвилин.')) return;
+  const res = await fetch('/api/devices/' + id + '/update', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.success === false) {
+    alert('Помилка: ' + (data.error || data.detail || `HTTP ${res.status}`));
+    return;
+  }
+  alert('Оновлення запущено. Прогрес видно на сторінці телеметрії цього пристрою; версія в цій таблиці оновиться сама після перезапуску борту.');
   loadDevices();
 }
 

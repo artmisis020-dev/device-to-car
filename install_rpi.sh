@@ -173,7 +173,14 @@ if ! id "$SERVICE_USER" &>/dev/null; then
 fi
 usermod -aG dialout,video,systemd-journal "$SERVICE_USER"
 
-echo "sirena ALL=(ALL) NOPASSWD: /usr/bin/systemctl" > /etc/sudoers.d/sirena-systemd
+# start_update.sh — фіксований шлях (не wildcard): апдейтер (sirena_manager/
+# updater.py) запускає ЛИШЕ цей один скрипт із root, сам валідує REF/SHA256
+# регексом перед sudo. systemctl лишається тут же — потрібен Supervisor-у
+# для start/stop/restart юнітів.
+cat > /etc/sudoers.d/sirena-systemd <<'EOF'
+sirena ALL=(ALL) NOPASSWD: /usr/bin/systemctl
+sirena ALL=(ALL) NOPASSWD: /opt/sirena/sirena_manager/deploy/start_update.sh
+EOF
 chmod 0440 /etc/sudoers.d/sirena-systemd
 
 if systemctl is-active --quiet "$ROOT_SERVICE" 2>/dev/null; then

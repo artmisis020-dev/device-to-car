@@ -4,7 +4,7 @@ import requests
 from flask import Blueprint, Response, current_app, render_template, request
 
 from ..helpers import require_admin, require_device_access, require_login
-from ..services import device_service
+from ..services import device_service, update_service
 
 
 ui_bp = Blueprint("ui", __name__)
@@ -48,7 +48,15 @@ def telemetry_page(device_id):
     dev = device_service.get_device(device_id)
     if not dev:
         return "Device not found", 404
-    return render_template("telemetry.html", device_id=device_id, hostname=dev["hostname"] or device_id[:12])
+    latest_version = update_service.latest_version()
+    return render_template(
+        "telemetry.html",
+        device_id=device_id,
+        hostname=dev["hostname"] or device_id[:12],
+        sirena_version=dev["sirena_version"] or "",
+        latest_version=latest_version,
+        needs_update=bool(dev["sirena_version"]) and dev["sirena_version"] != latest_version,
+    )
 
 
 @ui_bp.route("/video/<device_id>")

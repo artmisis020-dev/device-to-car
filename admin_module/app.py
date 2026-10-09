@@ -19,6 +19,7 @@ from .routes.internal_api import internal_api_bp
 from .routes.telemetry_api import telemetry_api_bp
 from .routes.track_api import track_api_bp
 from .routes.ui import ui_bp
+from .routes.update_api import update_api_bp
 from .routes.user_api import user_api_bp
 from .routes.video_api import video_api_bp
 from .routes.vision_api import vision_api_bp
@@ -77,6 +78,7 @@ def create_app(settings=None):
     app.register_blueprint(vision_api_bp)
     app.register_blueprint(track_api_bp)
     app.register_blueprint(user_api_bp)
+    app.register_blueprint(update_api_bp)
 
     _register_error_handlers(app)
     _register_security_hooks(app)

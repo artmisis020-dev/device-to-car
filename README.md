@@ -77,6 +77,29 @@ SIRENA_ADMIN_SERVER_URL=http://<admin-server-host>:8080 python main.py
 If you run the manager as a systemd service, use the `sirena-manager.service` unit from `sirena_manager/deploy/`.
 Set `SIRENA_ADMIN_SERVER_URL` in `/opt/sirena/.env` or in the service environment so the RPi can register with the remote admin server.
 
+## Updates
+
+No more manually copying files to boards. The admin server's own checkout
+(`/opt/sirena-admin`) is the single source of truth: a board is "outdated"
+when its reported `sirena_version` (root `VERSION` file) differs from the
+admin server's own `VERSION` file.
+
+- **Admin server itself:** `sudo bash /opt/sirena-admin/admin_module/deploy/update_admin.sh`
+  (git pull + re-run `deploy.sh`). Kept as a manual SSH step on purpose — this
+  is the most sensitive machine (it controls every board), so it doesn't get
+  a self-restarting HTTP endpoint.
+- **Boards:** click "⬆ Оновити" next to an outdated device (device list or its
+  telemetry page). The admin server packages its current checkout
+  (`git archive`) and pushes a command to the board's control API
+  (`sirena_manager`, port 9070); the board downloads that package over the
+  existing WireGuard link, verifies its sha256, and re-runs `install_rpi.sh`
+  (the same idempotent installer used for the first setup) — no manual file
+  transfer involved. Progress/result: `GET /api/v1/update/status` on the
+  board, proxied by the admin server at `/api/devices/<id>/update/status`.
+
+Note: boards can only download what the admin server has **committed** —
+`git archive` doesn't include uncommitted working-tree changes.
+
 ## Useful endpoints
 
 - `GET /api/v1/health` on the root manager

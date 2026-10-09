@@ -36,13 +36,23 @@ pixel_tracker.py` — копія з `additional_modules/pixel_tracking/tracker.p
   юнітами через `systemctl`. Реєстр сервісів — декларативний, у
   `config.py`: `SERVICES` з `depends_on` + `BOOT_SEQUENCE`. Шле реєстрацію
   й heartbeat на адмінку кожні 30 с. Кореневий `main.py` — лише лоадер його
-  `main()`.
+  `main()`. `updater.py` — апдейт борту за командою з адмінки: тягне
+  git archive-пакет поточного коду з адмінки й прогонить крізь
+  `install_rpi.sh` (той самий ідемпотентний інсталятор). Запуск — через
+  `sudo` на фіксований шлях (`deploy/start_update.sh`) + `systemd-run`
+  (окремий транзитний юніт, поза cgroup `sirena-manager.service`, бо
+  install_rpi.sh сам її рестартує в кінці). Статус — файл
+  `/tmp/sirena_update_status.json`.
 - **`admin_module/`** (4.7k) — найбільший. `routes/` (13 блюпринтів, 91
   маршрут) → `services/` (18 сервісів) → `db.py` (SQLite: users, devices,
   device_claims, auth_log, telemetry, fc_commands). Jinja-шаблони UI.
   Безпека в `app.py`: CSRF на всі мутуючі `/api/`, rate-limit логіну,
   security-хедери, проксі на MediaMTX WebRTC. Керує бортом **push-ом**
-  (стукає в control-API РПі), не полінгом.
+  (стукає в control-API РПі), не полінгом. `services/update_service.py` —
+  "остання версія" = поточний HEAD чекауту `/opt/sirena-admin` (сам цей
+  чекаут — джерело правди); пакує його `git archive`-ом і штовхає команду
+  на борт (README.md, розділ "Updates"). Апдейт самої адмінки — вручну,
+  `admin_module/deploy/update_admin.sh` (свідомо без web-ендпоінта).
 - **`mavlink_module/`** (1.9k) — `mavlink_router` роздає MAVLink від FC по
   UDP: **14551** → навігація, **14562** → телеметрія; 14550 → GCS.
   `mavlink_bridge` мостить FC↔GCS↔GPS-UART. `telemetry_sender/daemon`
@@ -117,4 +127,11 @@ pixel_tracker.py` — копія з `additional_modules/pixel_tracking/tracker.p
 - **Код заліза не перевіриш локально**: UART (`/dev/ttyAMA2/3/5`), V4L2,
   GStreamer, Starlink gRPC, systemd. Максимум — `py_compile` та імпорт
   чистих модулів (математика, NMEA-формування, EKF).
+- **Апдейтер борту (09.10.2026, sirena_manager/updater.py +
+  admin_module/services/update_service.py) — ще НЕ перевірений на живому
+  борту**: `sudo`+`systemd-run`+sudoers-правило (`install_rpi.sh`) та сам
+  `install_rpi.sh`, що рестартує власний сервіс під час виконання, —
+  перевірені лише `py_compile`/`bash -n`/імпортом Flask-застосунків і
+  реальним `git archive` локально. Перед польотами — прогнати апдейт на
+  тестовому борту хоч раз.
 - Гілка для роботи — `main`.

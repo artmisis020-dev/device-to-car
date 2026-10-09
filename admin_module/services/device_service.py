@@ -7,7 +7,7 @@ from flask import current_app
 import requests
 
 from ..helpers import is_valid, now_str
-from . import mesh_group_service, repository
+from . import mesh_group_service, repository, update_service
 from . import video_service
 
 ONLINE_WINDOW_SEC = 120
@@ -109,9 +109,12 @@ def heartbeat_device(data):
 
 def list_devices_with_validity():
     devices = repository.list_devices()
+    latest = update_service.latest_version()
     for device in devices:
         device["is_valid"] = is_valid(device)
         device["online"] = is_online(device)
+        device["latest_version"] = latest
+        device["needs_update"] = bool(device["sirena_version"]) and device["sirena_version"] != latest
     return devices
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 from flask import Flask, Response, jsonify, request, send_file
+from . import updater
 from .config import MANAGER_HOST, MANAGER_PORT
 from .supervisor import SirenaSupervisor
 
@@ -89,6 +90,18 @@ def create_app() -> Flask:
     @app.get("/api/v1/logs/<name>")
     def view_service_logs(name: str):
         return jsonify(supervisor.get_service_logs(name, for_download=False))
+
+    @app.post("/api/v1/update")
+    def apply_update():
+        payload = request.get_json(silent=True) or {}
+        result = updater.start_update(
+            payload.get("ref", ""), payload.get("package_url", ""), payload.get("sha256", "")
+        )
+        return jsonify(result), (200 if result.get("success") else 400)
+
+    @app.get("/api/v1/update/status")
+    def update_status():
+        return jsonify(updater.status())
 
     @app.get("/api/v1/logs/<name>/download")
     def download_service_logs(name: str):

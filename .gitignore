@@ -44,4 +44,6 @@ logs/
 /local
 # Усе, що завантажується з РПі на перевірку (записи камери, логи тощо) — не в git.
 rpi_downloads/
+# Кеш update_service.py на адмін-сервері (git archive по SHA) — runtime, не в git.
+/.update_cache/
 /video_module/.venv-build/
