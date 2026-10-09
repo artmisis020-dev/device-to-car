@@ -50,10 +50,16 @@ fi
 
 usermod -aG video "$SERVICE_USER"
 
-# Оновлюємо права sudoers, дозволяючи ПОВНИЙ контроль над systemctl без пароля
+# Оновлюємо права sudoers, дозволяючи ПОВНИЙ контроль над systemctl без пароля.
+# Додаємо рядок, а НЕ перезаписуємо файл: install_rpi.sh (кореневий інсталятор,
+# що й викликає цей install.sh) пише сюди ще й правило для
+# sirena_manager/deploy/start_update.sh (апдейтер) ДО запуску модулів — `>`
+# тут стирало б той другий рядок щоразу.
 SUDOERS_FILE="/etc/sudoers.d/sirena-systemd"
 echo "Оновлення прав sudo для керування сервісами..."
-echo "sirena ALL=(ALL) NOPASSWD: /usr/bin/systemctl" > "$SUDOERS_FILE"
+touch "$SUDOERS_FILE"
+grep -qxF "sirena ALL=(ALL) NOPASSWD: /usr/bin/systemctl" "$SUDOERS_FILE" || \
+  echo "sirena ALL=(ALL) NOPASSWD: /usr/bin/systemctl" >> "$SUDOERS_FILE"
 chmod 0440 "$SUDOERS_FILE"
 
 echo "3. Зупинка старих сервісів..."

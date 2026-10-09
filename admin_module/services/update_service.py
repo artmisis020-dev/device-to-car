@@ -1,8 +1,23 @@
 """Апдейт бортів без ручного заливання файлів.
 
-Адмін-сервер — єдине джерело правди: /opt/sirena-admin — це сам git-чекаут
-проєкту (deploy/README), тож поточний HEAD цього чекауту вже Є "остання
-версія". Апдейт адмінки саму (git pull) лишається ручним через
+"Остання версія" — ЖИВА: читається з `origin/main` (git fetch кожного
+запиту), а не зі статичного чекауту /opt/sirena-admin. Зроблено так після
+того, як сам чекаут адмінки виявився на 3 місяці застарілим без того, щоб
+хоч щось це показало (09.10.2026) — якщо версія визначається лише
+локальним файлом, застій чекауту НІЧИМ не видно, доки хтось не поліз руками
+перевіряти git log. Fetch — read-only, нічого не мержить і не чіпає робоче
+дерево адмінки; якщо мережі/origin нема (офлайн, редагований .env без
+remote) — тихо падає назад на локальний HEAD/VERSION, фіча лишається
+робочою, просто як і раніше, "наосліп".
+
+Пакет для борту (`git archive`) теж будується з `origin/main`, НЕ з
+локального HEAD адмінки: це розв'язує саму проблему, яку ми вперше
+зловили — борт отримає справжній останній код навіть якщо ніхто не
+прогнав update_admin.sh на самій адмінці (той скрипт і далі потрібен —
+ЩОБ АДМІНКА САМА працювала на новому коді, — але коректність борт-пакета
+від нього більше не залежить).
+
+Апдейт адмінки саму (git pull) лишається ручним через
 admin_module/deploy/update_admin.sh — свідомо без web-ендпоінта: тут
 найчутливіша машина (контролює всі борти), self-update по HTTP із
 перезапуском власного Gunicorn-процесу — зайвий ризик, а SSH на один сервер
@@ -30,17 +45,60 @@ VERSION_FILE = PROJECT_ROOT / "VERSION"
 CACHE_DIR = PROJECT_ROOT / ".update_cache"
 
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
+_FETCH_TIMEOUT_S = 15
+
+
+def _fetch_origin() -> bool:
+    """Read-only — лише оновлює знання git про origin/main, нічого в
+    робочому дереві адмінки не чіпає. False — немережева/офлайн ситуація,
+    викликач падає назад на локальний стан."""
+    try:
+        subprocess.run(
+            ["git", "-C", str(PROJECT_ROOT), "fetch", "origin", "main", "--quiet"],
+            capture_output=True, timeout=_FETCH_TIMEOUT_S, check=True,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _git_show(ref: str, path: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(PROJECT_ROOT), "show", f"{ref}:{path}"],
+            capture_output=True, text=True, timeout=10, check=True,
+        )
+        return result.stdout
+    except Exception:
+        return None
 
 
 def latest_version() -> str:
-    """Версія, яку показує СЕЙ чекаут адмінки — та, до якої підтягуються борти."""
+    """Версія з `origin/main` (живий fetch) — не з локального чекауту
+    адмінки, щоб застій чекауту не ховав "насправді є новіша версія"."""
+    if _fetch_origin():
+        remote = _git_show("origin/main", "VERSION")
+        if remote is not None:
+            return remote.strip() or "dev"
     try:
         return VERSION_FILE.read_text(encoding="utf-8").strip() or "dev"
     except OSError:
         return "dev"
 
 
-def _current_commit() -> str | None:
+def _latest_ref() -> str | None:
+    """SHA, з якого будується пакет для борту — origin/main, якщо
+    досяжний, інакше локальний HEAD адмінки (той самий фолбек, що й
+    latest_version())."""
+    if _fetch_origin():
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(PROJECT_ROOT), "rev-parse", "origin/main"],
+                capture_output=True, text=True, timeout=10, check=True,
+            )
+            return result.stdout.strip()
+        except Exception:
+            pass
     try:
         result = subprocess.run(
             ["git", "-C", str(PROJECT_ROOT), "rev-parse", "HEAD"],
@@ -89,7 +147,7 @@ def push_update(device_id: str) -> tuple[dict, int]:
     # (needs_update у списках пристроїв), уникаємо циклу на рівні модуля.
     from . import device_service
 
-    ref = _current_commit()
+    ref = _latest_ref()
     if not ref:
         return {"error": "admin server checkout has no git history (not a git clone?)"}, 500
 
